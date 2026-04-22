@@ -21,8 +21,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3NEYxNzc4NDZFQTJFQTgKUldTb0x1cEdlQmRQdDE1TWxjUzJzbEQ2bFJUZ2NWVGRoTkMvYnYyMzJTR2FsdFBkZUVqeGtta0UK",
+      "endpoints": [
+        "https://github.com/zezeping-ai/MediaX/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",

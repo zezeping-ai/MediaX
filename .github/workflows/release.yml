@@ -54,10 +54,21 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      # Tauri updater key notes (for future key rotation):
+      # 1) Generate a new key pair locally:
+      #    pnpm tauri signer generate -w src-tauri/keys/updater.key
+      # 2) Copy the public key string from:
+      #    src-tauri/keys/updater.key.pub
+      #    Then update `src-tauri/tauri.conf.json` -> `plugins.updater.pubkey`.
+      # 3) Copy the private key content from:
+      #    src-tauri/keys/updater.key
+      #    Then replace `TAURI_SIGNING_PRIVATE_KEY` below with the new value.
+      # 4) Commit the updated `tauri.conf.json` and workflow, then create a new release tag.
       - name: Build and publish release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: "dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5ClJXUlRZMEl5QVFDVjhlYVY1ZkdZZVdsUFBkTDgxV21vZ1NkdEQzbzlnZ004NmNNakR5RUFBQkFBQUFBQUFBQUFBQUlBQUFBQU16RjVtd2IwbGExNmpxYWZHMkpZRGwvVVA2MFpkbU5RbDVDODh6U2hqYkloaUpaa3B4SmlqWlZ3a1VzNjRxK2ZBeHVaaWdUT1FVb3hmTEY0bjl2SDJXSk1jM0ZRK1R1K3NWTUxRa3BVdUsvSzZKMmh2OW5vT3ZZaFlSdnBGOHZaaUJDL1E2aTJNV2s9Cg=="
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "MediaX ${{ github.ref_name }}"
