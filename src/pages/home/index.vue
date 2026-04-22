@@ -2,10 +2,10 @@
 import { computed, ref, watch } from "vue";
 import { Icon } from "@iconify/vue";
 import { useMouse } from "@vueuse/core";
-import { trim, capitalize } from "lodash-es";
+import { capitalize, trim } from "lodash-es";
 import { invoke } from "@tauri-apps/api/core";
-import DemoTsx from "../components/DemoTsx";
-import { useCounterStore } from "../stores/counter";
+import DemoTsx from "../../components/DemoTsx";
+import { useCounterStore } from "../../stores/counter";
 
 const greetMsg = ref("");
 const name = ref("");
@@ -42,7 +42,7 @@ watch(name, () => {
           <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
         </a>
         <a href="https://vuejs.org/" target="_blank" rel="noreferrer">
-          <img src="../assets/vue.svg" class="logo vue" alt="Vue logo" />
+          <img src="../../assets/vue.svg" class="logo vue" alt="Vue logo" />
         </a>
       </div>
 
@@ -115,3 +115,4 @@ watch(name, () => {
   font-size: 1.25em;
 }
 </style>
+
