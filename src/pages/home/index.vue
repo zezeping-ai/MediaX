@@ -42,7 +42,7 @@ watch(name, () => {
           <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
         </a>
         <a href="https://vuejs.org/" target="_blank" rel="noreferrer">
-          <img src="../../assets/vue.svg" class="logo vue" alt="Vue logo" />
+          <img src="../../assets/images/logo.svg" class="logo vue" alt="MediaX logo" />
         </a>
       </div>
 
