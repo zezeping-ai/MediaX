@@ -1,0 +1,984 @@
+use crate::app::media::player::decode_context::open_video_decode_context;
+use crate::app::media::player::events::{
+    MediaDebugPayload, MediaErrorPayload, MediaMetadataPayload, MEDIA_DEBUG_EVENT,
+    MEDIA_ERROR_EVENT, MEDIA_METADATA_EVENT, MEDIA_STATE_EVENT,
+};
+use crate::app::media::player::renderer::RendererState;
+use crate::app::media::player::state::{AudioControls, MediaState, TimingControls};
+use crate::app::media::player::video_frame::{
+    ensure_scaler, transfer_hw_frame_if_needed, video_frame_to_nv12_planes,
+};
+use crate::app::media::types::MediaSnapshot;
+use ffmpeg_next as ffmpeg;
+use ffmpeg_next::channel_layout::ChannelLayout;
+use ffmpeg_next::codec;
+use ffmpeg_next::format;
+use ffmpeg_next::format::sample::Type as SampleType;
+use ffmpeg_next::frame;
+use ffmpeg_next::media::Type;
+use ffmpeg_next::software::resampling::context::Context as ResamplingContext;
+use ffmpeg_next::software::scaling::{context::Context as ScalingContext, flag::Flags};
+use ffmpeg_next::Error as FfmpegError;
+use ffmpeg_next::Packet;
+use rodio::{buffer::SamplesBuffer, DeviceSinkBuilder, MixerDeviceSink, Player};
+use std::num::{NonZeroU16, NonZeroU32};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
+use tauri::Manager;
+use tauri::{AppHandle, Emitter, State};
+
+const MAX_EMIT_FPS: u32 = 60;
+
+fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) {
+    let at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let _ = app.emit(
+        MEDIA_DEBUG_EVENT,
+        MediaDebugPayload {
+            stage,
+            message: message.into(),
+            at_ms,
+        },
+    );
+}
+
+pub fn stop_decode_stream(state: &State<'_, MediaState>) -> Result<(), String> {
+    let mut guard = state
+        .stream_stop_flag
+        .lock()
+        .map_err(|_| "stream state poisoned".to_string())?;
+    if let Some(flag) = guard.take() {
+        flag.store(true, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+pub fn start_decode_stream(
+    app: &AppHandle,
+    state: &State<'_, MediaState>,
+    source: String,
+) -> Result<(), String> {
+    stop_decode_stream(state)?;
+    emit_debug(
+        app,
+        "stream_start",
+        format!("start decode stream: {source}"),
+    );
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    {
+        let mut guard = state
+            .stream_stop_flag
+            .lock()
+            .map_err(|_| "stream state poisoned".to_string())?;
+        *guard = Some(stop_flag.clone());
+    }
+    let renderer = {
+        let handle = app.clone();
+        (*handle.state::<RendererState>()).clone()
+    };
+    let audio_controls = state.audio_controls.clone();
+    let timing_controls = state.timing_controls.clone();
+    let app_handle = app.clone();
+    thread::spawn(move || {
+        if let Err(err) = decode_and_emit_stream(
+            &app_handle,
+            &renderer,
+            &source,
+            &stop_flag,
+            &audio_controls,
+            &timing_controls,
+        ) {
+            if let Ok(mut playback) = app_handle.state::<MediaState>().playback.lock() {
+                playback.update_hw_decode_status(false, None, Some(err.clone()));
+            }
+            emit_debug(&app_handle, "decode_error", err.clone());
+            let _ = app_handle.emit(
+                MEDIA_ERROR_EVENT,
+                MediaErrorPayload {
+                    code: "DECODE_FAILED",
+                    message: err,
+                },
+            );
+        }
+    });
+    Ok(())
+}
+
+pub fn write_latest_stream_position(
+    state: &State<'_, MediaState>,
+    position_seconds: f64,
+) -> Result<(), String> {
+    let mut guard = state
+        .latest_stream_position_seconds
+        .lock()
+        .map_err(|_| "latest position state poisoned".to_string())?;
+    *guard = position_seconds.max(0.0);
+    Ok(())
+}
+
+pub fn read_latest_stream_position(state: &State<'_, MediaState>) -> Result<f64, String> {
+    let guard = state
+        .latest_stream_position_seconds
+        .lock()
+        .map_err(|_| "latest position state poisoned".to_string())?;
+    Ok((*guard).max(0.0))
+}
+
+fn decode_and_emit_stream(
+    app: &AppHandle,
+    renderer: &RendererState,
+    source: &str,
+    stop_flag: &Arc<AtomicBool>,
+    audio_controls: &Arc<AudioControls>,
+    timing_controls: &Arc<TimingControls>,
+) -> Result<(), String> {
+    let media_state = app.state::<MediaState>();
+    let hw_mode = {
+        let playback = media_state
+            .playback
+            .lock()
+            .map_err(|_| "playback state poisoned".to_string())?;
+        playback.hw_decode_mode()
+    };
+    emit_debug(
+        app,
+        "open",
+        format!("open decode context (hw_mode={hw_mode:?})"),
+    );
+    let mut video_ctx = open_video_decode_context(source, hw_mode)?;
+    emit_debug(
+        app,
+        "decoder_ready",
+        format!(
+            "video: {}x{} fps={:.3} duration={:.3}s output={}x{} hw_active={} backend={}",
+            video_ctx.decoder.width(),
+            video_ctx.decoder.height(),
+            video_ctx.fps_value,
+            video_ctx.duration_seconds,
+            video_ctx.output_width,
+            video_ctx.output_height,
+            video_ctx.hw_decode_active,
+            video_ctx.hw_decode_backend.as_deref().unwrap_or("<none>")
+        ),
+    );
+    if let Some(video_stream) = video_ctx
+        .input_ctx
+        .streams()
+        .find(|stream| stream.index() == video_ctx.video_stream_index)
+    {
+        let tb = video_stream.time_base();
+        let avg = video_stream.avg_frame_rate();
+        let r = video_stream.rate();
+        let duration_ts = video_stream.duration();
+        let duration_from_stream = if duration_ts > 0 {
+            (duration_ts as f64) * f64::from(tb)
+        } else {
+            0.0
+        };
+        emit_debug(
+            app,
+            "video_stream",
+            format!(
+                "codec={:?} tb={}/{} avg_fps={:.3} nominal_fps={:.3} duration={:.3}s duration_ts={} start_ts={}",
+                video_stream.parameters().id(),
+                tb.numerator(),
+                tb.denominator(),
+                if avg.denominator() != 0 {
+                    f64::from(avg.numerator()) / f64::from(avg.denominator())
+                } else {
+                    0.0
+                },
+                if r.denominator() != 0 {
+                    f64::from(r.numerator()) / f64::from(r.denominator())
+                } else {
+                    0.0
+                },
+                duration_from_stream,
+                duration_ts,
+                video_stream.start_time()
+            ),
+        );
+    }
+    {
+        let mut playback = media_state
+            .playback
+            .lock()
+            .map_err(|_| "playback state poisoned".to_string())?;
+        playback.update_hw_decode_status(
+            video_ctx.hw_decode_active,
+            video_ctx.hw_decode_backend.clone(),
+            None,
+        );
+    }
+    let mut scaler: Option<ScalingContext> = None;
+    let audio_stream_index = video_ctx
+        .input_ctx
+        .streams()
+        .best(Type::Audio)
+        .map(|stream| stream.index());
+    emit_debug(
+        app,
+        "audio",
+        match audio_stream_index {
+            Some(i) => format!("audio stream index={i}"),
+            None => "no audio stream".to_string(),
+        },
+    );
+    let mut audio_pipeline = build_audio_pipeline(
+        &video_ctx.input_ctx,
+        audio_stream_index,
+        audio_controls,
+        timing_controls,
+    )?;
+    let _ = app.emit(
+        MEDIA_METADATA_EVENT,
+        MediaMetadataPayload {
+            width: video_ctx.output_width,
+            height: video_ctx.output_height,
+            fps: video_ctx.fps_value,
+            duration_seconds: video_ctx.duration_seconds,
+        },
+    );
+    let mut playback_clock = PlaybackClock::new(
+        video_ctx.fps_value,
+        MAX_EMIT_FPS,
+        0.0,
+        timing_controls.clone(),
+    );
+    let mut last_progress_emit = Instant::now() - Duration::from_millis(250);
+    let mut current_position_seconds = 0.0;
+    let mut audio_clock: Option<AudioClock> = None;
+    let mut audio_queue_depth_sources: Option<usize> = None;
+    let mut active_seek_target_seconds: Option<f64> = None;
+    let mut last_video_pts_seconds: Option<f64> = None;
+    let mut fps_window = FpsWindow::default();
+    renderer.reset_timeline(0.0, timing_controls.playback_rate() as f64);
+    emit_debug(app, "running", "decode loop running");
+    loop {
+        if stop_flag.load(Ordering::Relaxed) {
+            emit_debug(app, "stop", "stop flag observed; exiting decode loop");
+            return Ok(());
+        }
+        // Keep decode near real-time. If we run far ahead (especially with a tiny video queue),
+        // we can reach EOF quickly and the video will appear to "end" while audio is still draining.
+        let max_lead_seconds = 0.25;
+        let rate = timing_controls.playback_rate().max(0.25) as f64;
+        let audio_now_seconds = audio_clock.as_ref().map(|clock| clock.now_seconds(rate));
+        if let (Some(video_pts), Some(audio_pts)) = (last_video_pts_seconds, audio_now_seconds)
+        {
+            let lead = video_pts - audio_pts;
+            if lead.is_finite() && lead > max_lead_seconds {
+                std::thread::sleep(Duration::from_millis(5));
+                continue;
+            }
+        }
+        if let Some(target_seconds) = take_pending_seek_seconds(app)? {
+            emit_debug(app, "seek", format!("apply seek to {target_seconds:.3}s"));
+            apply_seek_to_stream(
+                &mut video_ctx.input_ctx,
+                &mut video_ctx.decoder,
+                target_seconds,
+                &mut playback_clock,
+                &mut current_position_seconds,
+                audio_pipeline.as_mut(),
+            )?;
+            renderer.reset_timeline(target_seconds.max(0.0), timing_controls.playback_rate() as f64);
+            // Seek creates a discontinuity. Drop previous audio clock/queue observations
+            // so video pacing does not use stale pre-seek timing and cause stutter.
+            audio_clock = None;
+            audio_queue_depth_sources = None;
+            active_seek_target_seconds = Some(target_seconds.max(0.0));
+            last_video_pts_seconds = None;
+            last_progress_emit = Instant::now() - Duration::from_millis(250);
+            continue;
+        }
+        let mut packet = Packet::empty();
+        match packet.read(&mut video_ctx.input_ctx) {
+            Ok(_) => {
+                if packet.stream() == video_ctx.video_stream_index {
+                    video_ctx
+                        .decoder
+                        .send_packet(&packet)
+                        .map_err(|err| format!("send packet failed: {err}"))?;
+                    drain_frames(
+                        app,
+                        renderer,
+                        &mut video_ctx.decoder,
+                        video_ctx.video_time_base,
+                        &mut scaler,
+                        video_ctx.duration_seconds,
+                        video_ctx.output_width,
+                        video_ctx.output_height,
+                        stop_flag,
+                        &mut playback_clock,
+                        &mut last_progress_emit,
+                        &mut current_position_seconds,
+                        audio_clock,
+                        audio_queue_depth_sources,
+                        &mut active_seek_target_seconds,
+                        &mut last_video_pts_seconds,
+                        &mut fps_window,
+                    )?;
+                    continue;
+                }
+                if let Some(audio_state) = audio_pipeline.as_mut() {
+                    if packet.stream() == audio_state.stream_index {
+                        audio_state
+                            .decoder
+                            .send_packet(&packet)
+                            .map_err(|err| format!("send audio packet failed: {err}"))?;
+                        drain_audio_frames(
+                            app,
+                            audio_state,
+                            stop_flag,
+                            timing_controls,
+                            &mut audio_clock,
+                            &mut audio_queue_depth_sources,
+                            &mut active_seek_target_seconds,
+                        )?;
+                    }
+                    continue;
+                }
+            }
+            Err(FfmpegError::Eof) => break,
+            Err(_) => continue,
+        }
+    }
+    video_ctx
+        .decoder
+        .send_eof()
+        .map_err(|err| format!("send eof failed: {err}"))?;
+    drain_frames(
+        app,
+        renderer,
+        &mut video_ctx.decoder,
+        video_ctx.video_time_base,
+        &mut scaler,
+        video_ctx.duration_seconds,
+        video_ctx.output_width,
+        video_ctx.output_height,
+        stop_flag,
+        &mut playback_clock,
+        &mut last_progress_emit,
+        &mut current_position_seconds,
+        audio_clock,
+        audio_queue_depth_sources,
+        &mut active_seek_target_seconds,
+        &mut last_video_pts_seconds,
+        &mut fps_window,
+    )?;
+    if let Some(audio_state) = audio_pipeline.as_mut() {
+        audio_state
+            .decoder
+            .send_eof()
+            .map_err(|err| format!("send audio eof failed: {err}"))?;
+        drain_audio_frames(
+            app,
+            audio_state,
+            stop_flag,
+            timing_controls,
+            &mut audio_clock,
+            &mut audio_queue_depth_sources,
+            &mut active_seek_target_seconds,
+        )?;
+        if audio_state.stats.packets > 0 && audio_state.stats.decoded_frames == 0 {
+            emit_debug(
+                app,
+                "audio_silent",
+                format!(
+                    "audio packets observed ({}) but no decoded audio frames produced",
+                    audio_state.stats.packets
+                ),
+            );
+        }
+    }
+    // EOF means the source is fully demuxed/decoded, but playback may still be in progress
+    // (audio buffers draining, or video clock not yet reaching duration). Avoid ending early.
+    let mut tail_position_seconds = current_position_seconds.max(0.0);
+    let mut last_tail_tick = Instant::now();
+    let mut last_tail_progress_emit = Instant::now() - Duration::from_millis(250);
+    loop {
+        if stop_flag.load(Ordering::Relaxed) {
+            emit_debug(app, "stop", "stop flag observed during eof tail; exiting");
+            return Ok(());
+        }
+        // If duration is unknown, fall back to finishing when audio drains (if any).
+        let duration_seconds = video_ctx.duration_seconds.max(0.0);
+        let rate = timing_controls.playback_rate().max(0.25) as f64;
+        let now = Instant::now();
+        let elapsed = now.saturating_duration_since(last_tail_tick);
+        last_tail_tick = now;
+        if duration_seconds > 0.0 {
+            tail_position_seconds =
+                (tail_position_seconds + elapsed.as_secs_f64() * rate).min(duration_seconds);
+        }
+        renderer.update_clock(tail_position_seconds, rate);
+        write_latest_stream_position(&app.state::<MediaState>(), tail_position_seconds)?;
+        if last_tail_progress_emit.elapsed() >= Duration::from_millis(200) {
+            update_playback_progress(app, tail_position_seconds, duration_seconds, false)?;
+            last_tail_progress_emit = Instant::now();
+        }
+
+        let audio_done = audio_pipeline
+            .as_ref()
+            .map(|audio| audio.output.player.len() == 0)
+            .unwrap_or(true);
+        let duration_done = duration_seconds <= 0.0 || tail_position_seconds + 1e-3 >= duration_seconds;
+        if audio_done && duration_done {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    update_playback_progress(app, tail_position_seconds, video_ctx.duration_seconds, true)?;
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct AudioClock {
+    anchor_instant: Instant,
+    anchor_media_seconds: f64,
+}
+
+impl AudioClock {
+    fn now_seconds(&self, rate: f64) -> f64 {
+        let elapsed = Instant::now()
+            .saturating_duration_since(self.anchor_instant)
+            .as_secs_f64();
+        (self.anchor_media_seconds + elapsed * rate.max(0.25)).max(0.0)
+    }
+}
+
+fn drain_frames(
+    app: &AppHandle,
+    renderer: &RendererState,
+    decoder: &mut ffmpeg::decoder::Video,
+    video_time_base: ffmpeg::Rational,
+    scaler: &mut Option<ScalingContext>,
+    duration_seconds: f64,
+    output_width: u32,
+    output_height: u32,
+    stop_flag: &Arc<AtomicBool>,
+    playback_clock: &mut PlaybackClock,
+    last_progress_emit: &mut Instant,
+    current_position_seconds: &mut f64,
+    audio_clock: Option<AudioClock>,
+    audio_queue_depth_sources: Option<usize>,
+    active_seek_target_seconds: &mut Option<f64>,
+    last_video_pts_seconds: &mut Option<f64>,
+    fps_window: &mut FpsWindow,
+) -> Result<(), String> {
+    let mut decoded = frame::Video::empty();
+    while decoder.receive_frame(&mut decoded).is_ok() {
+        if stop_flag.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let hinted_seconds = decoded
+            .timestamp()
+            .or_else(|| decoded.pts())
+            .map(|ts| ts as f64 * f64::from(video_time_base));
+        let hinted_valid = hinted_seconds.filter(|v| v.is_finite() && *v >= 0.0);
+        if let (Some(target), Some(hint)) = (
+            *active_seek_target_seconds,
+            hinted_valid,
+        ) {
+            // FFmpeg seek usually lands on/near keyframe before target; drop preroll frames.
+            if hint + 0.03 < target {
+                continue;
+            }
+            *active_seek_target_seconds = None;
+        }
+
+        // Apply backpressure when the renderer is backed up. For "pro" playback quality,
+        // prefer waiting briefly over dropping a large run of consecutive frames (which
+        // feels like a slideshow).
+        while !renderer.can_accept_frame() {
+            if stop_flag.load(Ordering::Relaxed) {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+
+        let frame_for_scale =
+            transfer_hw_frame_if_needed(&decoded).unwrap_or_else(|_| decoded.clone());
+        ensure_scaler(
+            scaler,
+            frame_for_scale.format(),
+            frame_for_scale.width(),
+            frame_for_scale.height(),
+            format::pixel::Pixel::NV12,
+            output_width,
+            output_height,
+            Flags::BILINEAR,
+        )?;
+        let mut nv12_frame = frame::Video::empty();
+        if let Some(scaler) = scaler.as_mut() {
+            scaler
+                .run(&frame_for_scale, &mut nv12_frame)
+                .map_err(|err| format!("scale frame failed: {err}"))?;
+        }
+        let audio_now_seconds = audio_clock.map(|clock| clock.now_seconds(playback_clock.playback_rate()));
+        let position_seconds = playback_clock.tick(
+            hinted_seconds,
+            audio_now_seconds,
+            audio_queue_depth_sources,
+        );
+        // Use stream PTS when available; otherwise estimate a monotonic PTS so we don't
+        // mislabel far-ahead decoded frames as "due now" (which looks like fast-forward).
+        let estimated_pts = hinted_valid.unwrap_or_else(|| {
+            if let Some(prev) = *last_video_pts_seconds {
+                prev + playback_clock.frame_duration.as_secs_f64()
+            } else {
+                position_seconds.max(0.0)
+            }
+        });
+        if let Some(prev) = *last_video_pts_seconds {
+            let gap = estimated_pts - prev;
+            let expected = playback_clock.frame_duration.as_secs_f64();
+            if gap.is_finite() && gap > expected * 1.8 {
+                emit_debug(
+                    app,
+                    "video_gap",
+                    format!("detected frame pts gap={gap:.3}s expected~{expected:.3}s"),
+                );
+            }
+        }
+        *last_video_pts_seconds = Some(estimated_pts);
+        *current_position_seconds = if duration_seconds > 0.0 {
+            position_seconds.min(duration_seconds)
+        } else {
+            position_seconds
+        };
+        write_latest_stream_position(&app.state::<MediaState>(), *current_position_seconds)?;
+        renderer.update_clock(*current_position_seconds, playback_clock.playback_rate());
+        renderer.submit_frame(video_frame_to_nv12_planes(&nv12_frame, Some(estimated_pts)));
+        if let Some(render_fps) = fps_window.record_frame_and_compute() {
+            emit_debug(app, "video_fps", format!("render_fps={render_fps:.2}"));
+            emit_debug(
+                app,
+                "video_pipeline",
+                format!(
+                    "pts={:.3}s queue_depth={} clock={:.3}s rate={:.2} output={}x{}",
+                    estimated_pts.max(0.0),
+                    renderer.queue_depth(),
+                    *current_position_seconds,
+                    playback_clock.playback_rate(),
+                    output_width,
+                    output_height
+                ),
+            );
+        }
+        if last_progress_emit.elapsed() >= Duration::from_millis(200) {
+            update_playback_progress(app, *current_position_seconds, duration_seconds, false)?;
+            *last_progress_emit = Instant::now();
+        }
+    }
+    Ok(())
+}
+
+struct PlaybackClock {
+    frame_duration: Duration,
+    last_emit_instant: Option<Instant>,
+    media_seconds: f64,
+    timing_controls: Arc<TimingControls>,
+}
+
+#[derive(Default)]
+struct FpsWindow {
+    started_at: Option<Instant>,
+    frames: u32,
+}
+
+impl FpsWindow {
+    fn record_frame_and_compute(&mut self) -> Option<f64> {
+        let now = Instant::now();
+        let started_at = self.started_at.get_or_insert(now);
+        self.frames = self.frames.saturating_add(1);
+        let elapsed = now.saturating_duration_since(*started_at);
+        if elapsed >= Duration::from_secs(1) {
+            let fps = (self.frames as f64) / elapsed.as_secs_f64().max(1e-6);
+            self.started_at = Some(now);
+            self.frames = 0;
+            return Some(fps);
+        }
+        None
+    }
+}
+
+impl PlaybackClock {
+    fn new(
+        fps: f64,
+        max_emit_fps: u32,
+        start_seconds: f64,
+        timing_controls: Arc<TimingControls>,
+    ) -> Self {
+        let safe_fps = if fps.is_finite() && fps >= 1.0 {
+            fps
+        } else {
+            30.0
+        };
+        let limited_fps = if max_emit_fps > 0 {
+            safe_fps.min(max_emit_fps as f64)
+        } else {
+            safe_fps
+        };
+        Self {
+            frame_duration: Duration::from_secs_f64(1.0 / limited_fps.max(1.0)),
+            last_emit_instant: None,
+            media_seconds: start_seconds.max(0.0),
+            timing_controls,
+        }
+    }
+
+    fn reset_to(&mut self, media_seconds: f64) {
+        self.media_seconds = media_seconds.max(0.0);
+        self.last_emit_instant = None;
+    }
+
+    fn playback_rate(&self) -> f64 {
+        self.timing_controls.playback_rate() as f64
+    }
+
+    fn tick(
+        &mut self,
+        hinted_seconds: Option<f64>,
+        audio_position_seconds: Option<f64>,
+        audio_queue_depth_sources: Option<usize>,
+    ) -> f64 {
+        let rate = self.playback_rate().max(0.25);
+        let low_audio_buffer = audio_queue_depth_sources
+            .map(|depth| depth < 3)
+            .unwrap_or(false);
+        let now = Instant::now();
+
+        // Advance clock by real elapsed time (not "frames decoded"), so decode throughput
+        // can never accelerate playback.
+        if let Some(last) = self.last_emit_instant {
+            let elapsed = now.saturating_duration_since(last).as_secs_f64();
+            if elapsed.is_finite() && elapsed > 0.0 {
+                self.media_seconds = (self.media_seconds + elapsed * rate).max(0.0);
+            }
+        }
+        self.last_emit_instant = Some(now);
+
+        // If audio clock is available and healthy, treat it as master.
+        if !low_audio_buffer {
+            if let Some(audio_seconds) = audio_position_seconds.filter(|v| v.is_finite() && *v >= 0.0)
+            {
+                // Audio is the master clock: lock video time to audio time (plus a tiny
+                // allowed lead to absorb jitter).
+                let allowed_lead_seconds = 0.02;
+                self.media_seconds = (audio_seconds + allowed_lead_seconds).max(0.0);
+                return self.media_seconds;
+            }
+        }
+
+        // With no audio clock, keep using the monotonic clock. Optionally snap to the first
+        // available video PTS to avoid starting from 0.0 when streams begin with non-zero PTS.
+        if self.media_seconds <= 0.0 {
+            if let Some(hint) = hinted_seconds.filter(|v| v.is_finite() && *v >= 0.0) {
+                self.media_seconds = hint;
+            }
+        }
+
+        self.media_seconds
+    }
+}
+
+fn take_pending_seek_seconds(app: &AppHandle) -> Result<Option<f64>, String> {
+    let media_state = app.state::<MediaState>();
+    let mut guard = media_state
+        .pending_seek_seconds
+        .lock()
+        .map_err(|_| "pending seek state poisoned".to_string())?;
+    Ok(guard.take())
+}
+
+fn apply_seek_to_stream(
+    input_ctx: &mut format::context::Input,
+    decoder: &mut ffmpeg::decoder::Video,
+    target_seconds: f64,
+    playback_clock: &mut PlaybackClock,
+    current_position_seconds: &mut f64,
+    audio_pipeline: Option<&mut AudioPipeline>,
+) -> Result<(), String> {
+    let clamped = target_seconds.max(0.0);
+    let ts = (clamped * f64::from(ffmpeg::ffi::AV_TIME_BASE)).round() as i64;
+    input_ctx
+        .seek(ts, ..)
+        .map_err(|err| format!("seek stream failed: {err}"))?;
+    decoder.flush();
+    if let Some(audio_state) = audio_pipeline {
+        audio_state.decoder.flush();
+        audio_state.output.player.clear();
+        // rodio::Player::clear() also pauses playback. Ensure audio resumes after seek.
+        audio_state.output.player.play();
+    }
+    playback_clock.reset_to(clamped);
+    *current_position_seconds = clamped;
+    Ok(())
+}
+
+struct AudioPipeline {
+    stream_index: usize,
+    decoder: ffmpeg::decoder::Audio,
+    time_base: ffmpeg::Rational,
+    resampler: ResamplingContext,
+    output: AudioOutput,
+    stats: AudioStats,
+}
+
+struct AudioOutput {
+    _stream: MixerDeviceSink,
+    player: Player,
+    controls: Arc<AudioControls>,
+    timing_controls: Arc<TimingControls>,
+}
+
+#[derive(Default)]
+struct AudioStats {
+    packets: u64,
+    decoded_frames: u64,
+    queued_samples: u64,
+    last_debug_instant: Option<Instant>,
+}
+
+impl AudioOutput {
+    fn new(
+        controls: Arc<AudioControls>,
+        timing_controls: Arc<TimingControls>,
+    ) -> Result<Self, String> {
+        let mut stream = DeviceSinkBuilder::open_default_sink()
+            .map_err(|err| format!("open default audio output failed: {err}"))?;
+        stream.log_on_drop(false);
+        let player = Player::connect_new(stream.mixer());
+        let output = Self {
+            _stream: stream,
+            player,
+            controls,
+            timing_controls,
+        };
+        output.player.play();
+        output.apply_controls();
+        Ok(output)
+    }
+
+    fn apply_controls(&self) {
+        let volume = if self.controls.muted() {
+            0.0
+        } else {
+            self.controls.volume()
+        };
+        self.player.set_volume(volume);
+        self.player
+            .set_speed(self.timing_controls.playback_rate().max(0.25));
+    }
+
+    fn append_pcm_i16(&self, sample_rate: u32, channels: u16, pcm: &[i16]) {
+        let Some(channels) = NonZeroU16::new(channels) else {
+            return;
+        };
+        let Some(sample_rate) = NonZeroU32::new(sample_rate) else {
+            return;
+        };
+        if pcm.is_empty() {
+            return;
+        }
+        self.apply_controls();
+        let samples: Vec<f32> = pcm
+            .iter()
+            .map(|sample| (*sample as f32) / (i16::MAX as f32))
+            .collect();
+        self.player
+            .append(SamplesBuffer::new(channels, sample_rate, samples));
+    }
+}
+
+fn build_audio_pipeline(
+    input_ctx: &format::context::Input,
+    audio_stream_index: Option<usize>,
+    audio_controls: &Arc<AudioControls>,
+    timing_controls: &Arc<TimingControls>,
+) -> Result<Option<AudioPipeline>, String> {
+    let Some(stream_index) = audio_stream_index else {
+        return Ok(None);
+    };
+    let input_stream = input_ctx
+        .streams()
+        .find(|stream| stream.index() == stream_index)
+        .ok_or_else(|| "audio stream index not found".to_string())?;
+    let audio_context = codec::context::Context::from_parameters(input_stream.parameters())
+        .map_err(|err| format!("audio decoder context failed: {err}"))?;
+    let decoder = audio_context
+        .decoder()
+        .audio()
+        .map_err(|err| format!("audio decoder create failed: {err}"))?;
+    let channel_layout = if decoder.channel_layout().is_empty() {
+        ChannelLayout::default(decoder.channels().into())
+    } else {
+        decoder.channel_layout()
+    };
+    let resampler = ResamplingContext::get(
+        decoder.format(),
+        channel_layout,
+        decoder.rate(),
+        ffmpeg::format::Sample::I16(SampleType::Packed),
+        channel_layout,
+        decoder.rate(),
+    )
+    .map_err(|err| format!("audio resampler create failed: {err}"))?;
+    let output = AudioOutput::new(audio_controls.clone(), timing_controls.clone())?;
+    Ok(Some(AudioPipeline {
+        stream_index,
+        decoder,
+        time_base: input_stream.time_base(),
+        resampler,
+        output,
+        stats: AudioStats::default(),
+    }))
+}
+
+fn drain_audio_frames(
+    app: &AppHandle,
+    audio_state: &mut AudioPipeline,
+    stop_flag: &Arc<AtomicBool>,
+    timing_controls: &Arc<TimingControls>,
+    audio_clock: &mut Option<AudioClock>,
+    audio_queue_depth_sources: &mut Option<usize>,
+    active_seek_target_seconds: &mut Option<f64>,
+) -> Result<(), String> {
+    audio_state.stats.packets = audio_state.stats.packets.saturating_add(1);
+    let mut decoded = frame::Audio::empty();
+    while audio_state.decoder.receive_frame(&mut decoded).is_ok() {
+        if stop_flag.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        audio_state.stats.decoded_frames = audio_state.stats.decoded_frames.saturating_add(1);
+        let mut converted = frame::Audio::empty();
+        audio_state
+            .resampler
+            .run(&decoded, &mut converted)
+            .map_err(|err| format!("audio resample failed: {err}"))?;
+        let channels = converted.channels().max(1) as usize;
+        let samples_per_channel = converted.samples();
+        let total_samples = samples_per_channel.saturating_mul(channels);
+        if total_samples == 0 {
+            continue;
+        }
+        let bytes_per_sample = std::mem::size_of::<i16>();
+        let expected_bytes = total_samples.saturating_mul(bytes_per_sample);
+        let data = converted.data(0);
+        if data.is_empty() {
+            continue;
+        }
+        let clamped_bytes = expected_bytes.min(data.len());
+        if clamped_bytes < bytes_per_sample {
+            continue;
+        }
+        audio_state
+            .output
+            .player
+            .set_speed(timing_controls.playback_rate().max(0.25));
+        if audio_state.output.player.is_paused() {
+            audio_state.output.player.play();
+            emit_debug(app, "audio_resume", "audio player resumed from paused state");
+        }
+        if let Some(seconds) = decoded
+            .timestamp()
+            .or_else(|| decoded.pts())
+            .map(|ts| ts as f64 * f64::from(audio_state.time_base))
+            .filter(|value| value.is_finite() && *value >= 0.0)
+        {
+            if let Some(target) = *active_seek_target_seconds {
+                if seconds + 0.03 < target {
+                    continue;
+                }
+                *active_seek_target_seconds = None;
+            }
+            if audio_clock.is_none() {
+                *audio_clock = Some(AudioClock {
+                    anchor_instant: Instant::now(),
+                    anchor_media_seconds: seconds,
+                });
+            }
+        }
+        let pcm: Vec<i16> = data[..clamped_bytes]
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        audio_state.stats.queued_samples = audio_state
+            .stats
+            .queued_samples
+            .saturating_add(pcm.len() as u64);
+        audio_state
+            .output
+            .append_pcm_i16(converted.rate(), converted.channels(), &pcm);
+        *audio_queue_depth_sources = Some(audio_state.output.player.len());
+        let now = Instant::now();
+        let should_emit = audio_state
+            .stats
+            .last_debug_instant
+            .map(|last| now.saturating_duration_since(last) >= Duration::from_millis(1000))
+            .unwrap_or(true);
+        if should_emit {
+            audio_state.stats.last_debug_instant = Some(now);
+            emit_debug(
+                app,
+                "audio_stats",
+                format!(
+                    "packets={} frames={} queued_samples={} rate={:.2} channels={} samples_per_ch={} bytes={} pts={}",
+                    audio_state.stats.packets,
+                    audio_state.stats.decoded_frames,
+                    audio_state.stats.queued_samples,
+                    timing_controls.playback_rate(),
+                    channels,
+                    samples_per_channel,
+                    clamped_bytes,
+                    audio_clock
+                        .as_ref()
+                        .map(|clock| clock.now_seconds(timing_controls.playback_rate().max(0.25) as f64))
+                        .map(|v| format!("{v:.3}s"))
+                        .unwrap_or_else(|| "n/a".to_string()),
+                ),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn update_playback_progress(
+    app: &AppHandle,
+    position_seconds: f64,
+    duration_seconds: f64,
+    finalize: bool,
+) -> Result<(), String> {
+    let state = app.state::<MediaState>();
+    let snapshot = {
+        let library = state
+            .library
+            .lock()
+            .map_err(|_| "media library state poisoned".to_string())?
+            .state();
+        let mut playback = state
+            .playback
+            .lock()
+            .map_err(|_| "playback state poisoned".to_string())?;
+        if finalize {
+            playback.stop();
+        } else {
+            playback.sync_position(position_seconds, duration_seconds);
+        }
+        let playback_state = playback.state();
+        MediaSnapshot {
+            playback: playback_state,
+            library,
+        }
+    };
+    app.emit(MEDIA_STATE_EVENT, &snapshot)
+        .map_err(|err| format!("emit media state failed: {err}"))?;
+    Ok(())
+}

@@ -5,10 +5,19 @@ export type ThemePreference = "system" | "dark" | "light";
 
 export type Preferences = {
   theme: ThemePreference;
+  player: {
+    hwDecodeEnabled: boolean;
+    parseDebugEnabled: boolean;
+  };
 };
 
 const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
+  player: {
+    hwDecodeEnabled: false,
+    // 默认打开：方便定位“打开/解析/解码”阶段的问题
+    parseDebugEnabled: true,
+  },
 };
 
 /**
@@ -48,6 +57,24 @@ export function usePreferences() {
       get: () => preferences.value.theme,
       set: (v: ThemePreference) => {
         preferences.value = { ...preferences.value, theme: v };
+      },
+    }),
+    playerHwDecodeEnabled: computed({
+      get: () => preferences.value.player.hwDecodeEnabled,
+      set: (v: boolean) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, hwDecodeEnabled: v },
+        };
+      },
+    }),
+    playerParseDebugEnabled: computed({
+      get: () => preferences.value.player.parseDebugEnabled,
+      set: (v: boolean) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, parseDebugEnabled: v },
+        };
       },
     }),
   };

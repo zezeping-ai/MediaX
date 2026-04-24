@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { MediaItem } from "../../../modules/media";
+import type { MediaItem } from "@/modules/media-types";
 
 defineProps<{
   roots: string[];

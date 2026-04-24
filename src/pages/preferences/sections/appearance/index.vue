@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { usePreferences, type ThemePreference } from "../../../../modules/preferences";
+import { usePreferences, type ThemePreference } from "@/modules/preferences";
 
 const { theme } = usePreferences();
 

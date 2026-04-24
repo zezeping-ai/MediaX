@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory } from "vue-router";
-import HomePage from "../pages/home/index.vue";
-import PreferencesPage from "../pages/preferences/index.vue";
+import HomePage from "@/pages/home/index.vue";
+import PreferencesPage from "@/pages/preferences/index.vue";
 
 export const router = createRouter({
   history: createWebHashHistory(),

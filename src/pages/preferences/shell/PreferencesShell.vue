@@ -3,8 +3,9 @@ import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Icon } from "@iconify/vue";
 import AppearanceSection from "../sections/appearance/index.vue";
+import PlayerSection from "../sections/player/index.vue";
 
-type SectionKey = "appearance";
+type SectionKey = "appearance" | "player";
 
 type Section = {
   key: SectionKey;
@@ -19,6 +20,12 @@ const SECTIONS: Section[] = [
     label: "外观",
     icon: "mdi:palette-outline",
     component: AppearanceSection,
+  },
+  {
+    key: "player",
+    label: "播放器",
+    icon: "mdi:play-circle-outline",
+    component: PlayerSection,
   },
 ];
 

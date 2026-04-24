@@ -9,6 +9,20 @@ pub enum PlaybackStatus {
     Stopped,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HardwareDecodeMode {
+    Auto,
+    On,
+    Off,
+}
+
+impl Default for HardwareDecodeMode {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaybackState {
     pub engine: String,
@@ -18,6 +32,10 @@ pub struct PlaybackState {
     pub duration_seconds: f64,
     pub playback_rate: f64,
     pub error: Option<String>,
+    pub hw_decode_mode: HardwareDecodeMode,
+    pub hw_decode_active: bool,
+    pub hw_decode_backend: Option<String>,
+    pub hw_decode_error: Option<String>,
 }
 
 impl Default for PlaybackState {
@@ -30,6 +48,10 @@ impl Default for PlaybackState {
             duration_seconds: 0.0,
             playback_rate: 1.0,
             error: None,
+            hw_decode_mode: HardwareDecodeMode::Auto,
+            hw_decode_active: false,
+            hw_decode_backend: None,
+            hw_decode_error: None,
         }
     }
 }
@@ -55,4 +77,13 @@ pub struct MediaLibraryState {
 pub struct MediaSnapshot {
     pub playback: PlaybackState,
     pub library: MediaLibraryState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreviewFrame {
+    pub mime_type: String,
+    pub data_base64: String,
+    pub width: u32,
+    pub height: u32,
+    pub position_seconds: f64,
 }

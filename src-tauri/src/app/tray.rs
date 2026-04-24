@@ -10,13 +10,20 @@ const MENU_QUIT_ID: &str = "mediax.menu.quit";
 
 pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     let preferences = MenuItem::with_id(app, MENU_PREFERENCES_ID, "偏好设置", true, None::<&str>)?;
-    let check_update = MenuItem::with_id(app, MENU_CHECK_UPDATE_ID, "检查更新", true, None::<&str>)?;
+    let check_update =
+        MenuItem::with_id(app, MENU_CHECK_UPDATE_ID, "检查更新", true, None::<&str>)?;
     let separator_top = PredefinedMenuItem::separator(app)?;
     let separator_bottom = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, MENU_QUIT_ID, "退出", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
-        &[&preferences, &separator_top, &check_update, &separator_bottom, &quit],
+        &[
+            &preferences,
+            &separator_top,
+            &check_update,
+            &separator_bottom,
+            &quit,
+        ],
     )?;
 
     let icon = app.default_window_icon().cloned();

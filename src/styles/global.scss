@@ -6,6 +6,14 @@ body {
   height: 100%;
 }
 
+// Required for transparent Tauri windows (wgpu underlay renderer).
+// Keep the WebView background transparent so the native renderer is visible behind UI.
+html,
+body,
+#app {
+  background: transparent !important;
+}
+
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;

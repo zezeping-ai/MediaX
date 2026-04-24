@@ -8,8 +8,20 @@ const MENU_FILE_OPEN_URL_ID: &str = "mediax.file.open_url";
 const MENU_FILE_QUIT_ID: &str = "mediax.file.quit";
 
 pub fn setup(app: &tauri::App) -> tauri::Result<()> {
-    let open_local = MenuItem::with_id(app, MENU_FILE_OPEN_LOCAL_ID, "打开本地文件...", true, None::<&str>)?;
-    let open_url = MenuItem::with_id(app, MENU_FILE_OPEN_URL_ID, "打开 URL...", true, None::<&str>)?;
+    let open_local = MenuItem::with_id(
+        app,
+        MENU_FILE_OPEN_LOCAL_ID,
+        "打开本地文件...",
+        true,
+        None::<&str>,
+    )?;
+    let open_url = MenuItem::with_id(
+        app,
+        MENU_FILE_OPEN_URL_ID,
+        "打开 URL...",
+        true,
+        None::<&str>,
+    )?;
     let separator = MenuItem::with_id(app, "mediax.file.separator", "-", false, None::<&str>)?;
     let quit = MenuItem::with_id(app, MENU_FILE_QUIT_ID, "退出", true, Some("CmdOrCtrl+Q"))?;
 
@@ -22,8 +34,12 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     let paste = PredefinedMenuItem::paste(app, None)?;
     let select_all = PredefinedMenuItem::select_all(app, None)?;
 
-    let file_submenu =
-        Submenu::with_items(app, "File", true, &[&open_local, &open_url, &separator, &quit])?;
+    let file_submenu = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[&open_local, &open_url, &separator, &quit],
+    )?;
     let edit_submenu = Submenu::with_items(
         app,
         "Edit",

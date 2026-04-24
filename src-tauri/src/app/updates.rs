@@ -36,7 +36,9 @@ pub async fn check_and_install_update(app: tauri::AppHandle) {
             show_error_dialog(
                 &app,
                 "检查更新失败",
-                &format!("无法检查更新：{err}\n请确认 GitHub Releases 与 updater endpoint 已正确配置。"),
+                &format!(
+                    "无法检查更新：{err}\n请确认 GitHub Releases 与 updater endpoint 已正确配置。"
+                ),
             );
             return;
         }

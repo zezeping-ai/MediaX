@@ -1,4 +1,4 @@
-use crate::app::media::types::{PlaybackState, PlaybackStatus};
+use crate::app::media::types::{HardwareDecodeMode, PlaybackState, PlaybackStatus};
 
 #[derive(Default)]
 pub struct MediaPlaybackService {
@@ -17,6 +17,9 @@ impl MediaPlaybackService {
         // 仅“打开”媒体时不应假定已播放，状态应等待真实播放事件驱动。
         self.state.status = PlaybackStatus::Paused;
         self.state.error = None;
+        self.state.hw_decode_active = false;
+        self.state.hw_decode_backend = None;
+        self.state.hw_decode_error = None;
         self.state()
     }
 
@@ -44,6 +47,27 @@ impl MediaPlaybackService {
 
     pub fn set_rate(&mut self, playback_rate: f64) -> PlaybackState {
         self.state.playback_rate = playback_rate.clamp(0.25, 3.0);
+        self.state()
+    }
+
+    pub fn hw_decode_mode(&self) -> HardwareDecodeMode {
+        self.state.hw_decode_mode
+    }
+
+    pub fn set_hw_decode_mode(&mut self, mode: HardwareDecodeMode) -> PlaybackState {
+        self.state.hw_decode_mode = mode;
+        self.state()
+    }
+
+    pub fn update_hw_decode_status(
+        &mut self,
+        active: bool,
+        backend: Option<String>,
+        error: Option<String>,
+    ) -> PlaybackState {
+        self.state.hw_decode_active = active;
+        self.state.hw_decode_backend = backend;
+        self.state.hw_decode_error = error;
         self.state()
     }
 

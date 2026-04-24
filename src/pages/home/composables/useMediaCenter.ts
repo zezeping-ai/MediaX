@@ -1,22 +1,39 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { usePreferences } from "@/modules/preferences";
 import {
   getMediaSnapshot,
   openMedia,
   pauseMedia,
   playMedia,
+  previewMediaFrame,
   seekMedia,
+  setMediaMuted,
+  setMediaHwDecodeMode,
   setMediaRate,
+  setMediaVolume,
   stopMedia,
   syncMediaPosition,
-  type MediaSnapshot,
-} from "../../../modules/media";
+} from "@/modules/media-player";
+import type { MediaSnapshot, PreviewFrame } from "@/modules/media-types";
 
 const MEDIA_STATE_EVENT = "media://state";
 const MEDIA_MENU_EVENT = "media://menu-action";
+const DEV_SEEK_LOG = import.meta.env.DEV;
+const MEDIA_ERROR_TEXT: Record<string, string> = {
+  INVALID_URL: "媒体地址无效，请检查 URL 或文件路径。",
+  OPEN_FAILED: "媒体打开失败，请确认文件存在且格式受支持。",
+  STREAM_START_FAILED: "媒体流启动失败，请重试或切换解码源。",
+  DECODE_FAILED: "媒体解码失败，请检查媒体格式或尝试转码后播放。",
+  UNSUPPORTED_FORMAT: "当前媒体格式暂不支持，请尝试转码后再播放。",
+  NETWORK_ERROR: "网络连接异常，请检查网络状态后重试。",
+  DECODE_ERROR: "媒体解码失败，可能是编码参数不兼容。",
+  INTERNAL_ERROR: "播放器内部错误，请稍后重试。",
+};
 
 export function useMediaCenter() {
+  const { playerHwDecodeEnabled } = usePreferences();
   const snapshot = ref<MediaSnapshot | null>(null);
   const currentSource = ref("");
   const isBusy = ref(false);
@@ -31,8 +48,22 @@ export function useMediaCenter() {
 
   const playback = computed(() => snapshot.value?.playback ?? null);
 
+  async function runPlaybackCommand(command: () => Promise<MediaSnapshot>) {
+    snapshot.value = await command();
+    return snapshot.value;
+  }
+
   async function refreshSnapshot() {
     snapshot.value = await getMediaSnapshot();
+  }
+
+  async function applyHwDecodePreference(enabled: boolean) {
+    const mode = enabled ? "auto" : "off";
+    try {
+      snapshot.value = await setMediaHwDecodeMode(mode);
+    } catch {
+      // Keep silent here; player surface already emits error events.
+    }
   }
 
   async function openLocalFileByDialog() {
@@ -53,7 +84,8 @@ export function useMediaCenter() {
   }
 
   async function openPath(path: string) {
-    snapshot.value = await openMedia(path);
+    await runPlaybackCommand(() => openMedia(path));
+    await runPlaybackCommand(playMedia);
     errorMessage.value = "";
   }
 
@@ -79,23 +111,53 @@ export function useMediaCenter() {
   }
 
   async function play() {
-    snapshot.value = await playMedia();
+    await runPlaybackCommand(playMedia);
   }
 
   async function pause() {
-    snapshot.value = await pauseMedia();
+    await runPlaybackCommand(pauseMedia);
   }
 
   async function stop() {
-    snapshot.value = await stopMedia();
+    await runPlaybackCommand(stopMedia);
   }
 
   async function seek(positionSeconds: number) {
-    snapshot.value = await seekMedia(positionSeconds);
+    const status = playback.value?.status ?? "unknown";
+    const forceRender = status === "paused";
+    logSeekDecision("seek", positionSeconds, forceRender, status);
+    await runPlaybackCommand(() => seekMedia(positionSeconds, { forceRender }));
+  }
+
+  async function seekPreview(positionSeconds: number) {
+    // Scrubbing preview should stay responsive and not lock controls with busy state.
+    try {
+      const status = playback.value?.status ?? "unknown";
+      logSeekDecision("seekPreview", positionSeconds, false, status);
+      await runPlaybackCommand(() => seekMedia(positionSeconds, { forceRender: false }));
+    } catch (error) {
+      errorMessage.value = toUserErrorMessage(error);
+    }
   }
 
   async function setRate(playbackRate: number) {
-    snapshot.value = await setMediaRate(playbackRate);
+    await runPlaybackCommand(() => setMediaRate(playbackRate));
+  }
+
+  async function setVolume(volume: number) {
+    await runPlaybackCommand(() => setMediaVolume(volume));
+  }
+
+  async function setMuted(muted: boolean) {
+    await runPlaybackCommand(() => setMediaMuted(muted));
+  }
+
+  async function requestPreviewFrame(positionSeconds: number, maxWidth = 160, maxHeight = 90) {
+    try {
+      return await previewMediaFrame(positionSeconds, maxWidth, maxHeight);
+    } catch {
+      return null as PreviewFrame | null;
+    }
   }
 
   async function syncPosition(positionSeconds: number, durationSeconds: number) {
@@ -104,7 +166,7 @@ export function useMediaCenter() {
       return;
     }
     lastSyncedSecond.value = second;
-    snapshot.value = await syncMediaPosition(positionSeconds, durationSeconds);
+    await runPlaybackCommand(() => syncMediaPosition(positionSeconds, durationSeconds));
   }
 
   async function withBusyState(action: () => Promise<void>) {
@@ -112,7 +174,7 @@ export function useMediaCenter() {
     try {
       await action();
     } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : String(error);
+      errorMessage.value = toUserErrorMessage(error);
     } finally {
       isBusy.value = false;
     }
@@ -120,6 +182,8 @@ export function useMediaCenter() {
 
   onMounted(async () => {
     await withBusyState(refreshSnapshot);
+    // Ensure backend matches persisted preference.
+    await applyHwDecodePreference(playerHwDecodeEnabled.value);
     unlistenMediaEvent = await listen<MediaSnapshot>(MEDIA_STATE_EVENT, (event) => {
       snapshot.value = event.payload;
     });
@@ -154,6 +218,14 @@ export function useMediaCenter() {
     currentSource.value = currentPath;
   });
 
+  watch(
+    playerHwDecodeEnabled,
+    (enabled) => {
+      void applyHwDecodePreference(enabled);
+    },
+    { immediate: false },
+  );
+
   return {
     playback,
     currentSource,
@@ -170,10 +242,30 @@ export function useMediaCenter() {
     pause: () => withBusyState(pause),
     stop: () => withBusyState(stop),
     seek: (seconds: number) => withBusyState(() => seek(seconds)),
+    seekPreview: (seconds: number) => seekPreview(seconds),
     setRate: (rate: number) => withBusyState(() => setRate(rate)),
+    setVolume: (volume: number) => withBusyState(() => setVolume(volume)),
+    setMuted: (muted: boolean) => withBusyState(() => setMuted(muted)),
+    requestPreviewFrame: (positionSeconds: number, maxWidth?: number, maxHeight?: number) =>
+      requestPreviewFrame(positionSeconds, maxWidth, maxHeight),
     syncPosition: (positionSeconds: number, durationSeconds: number) =>
       withBusyState(() => syncPosition(positionSeconds, durationSeconds)),
   };
+}
+
+function logSeekDecision(
+  action: "seek" | "seekPreview",
+  positionSeconds: number,
+  forceRender: boolean,
+  status: string,
+) {
+  if (!DEV_SEEK_LOG) {
+    return;
+  }
+  const seconds = Number.isFinite(positionSeconds) ? positionSeconds.toFixed(3) : String(positionSeconds);
+  console.debug(
+    `[media-seek] action=${action} status=${status} target=${seconds}s forceRender=${forceRender}`,
+  );
 }
 
 function normalizePlayableUrl(raw: string) {
@@ -196,5 +288,26 @@ function normalizePlayableUrl(raw: string) {
     return "";
   }
   return parsed.toString();
+}
+
+function toUserErrorMessage(error: unknown) {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const normalized = rawMessage.trim();
+  const [codeCandidate, detailCandidate] = normalized.split(":");
+  const code = codeCandidate?.trim().toUpperCase();
+  if (code && MEDIA_ERROR_TEXT[code]) {
+    const detail = detailCandidate?.trim();
+    return detail ? `${MEDIA_ERROR_TEXT[code]}（${detail}）` : MEDIA_ERROR_TEXT[code];
+  }
+  if (/url|uri|协议|protocol/i.test(normalized)) {
+    return MEDIA_ERROR_TEXT.INVALID_URL;
+  }
+  if (/network|timeout|连接|dns|socket/i.test(normalized)) {
+    return MEDIA_ERROR_TEXT.NETWORK_ERROR;
+  }
+  if (/decode|codec|demux|parse/i.test(normalized)) {
+    return MEDIA_ERROR_TEXT.DECODE_ERROR;
+  }
+  return normalized || MEDIA_ERROR_TEXT.INTERNAL_ERROR;
 }
 

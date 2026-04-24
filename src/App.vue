@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { theme as antdTheme } from "ant-design-vue";
-import { usePreferences } from "./modules/preferences";
+import { usePreferences } from "@/modules/preferences";
 
 const { resolvedTheme } = usePreferences();
 

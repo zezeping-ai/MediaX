@@ -1,18 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { useEventListener } from "@vueuse/core";
-import PlayerCanvas from "./components/PlayerCanvas.vue";
+import { computed, ref, watch } from "vue";
+import { clamp } from "lodash-es";
+import MediaViewport from "./components/MediaViewport.vue";
 import PlaybackControls from "./components/PlaybackControls.vue";
 import { useMediaCenter } from "./composables/useMediaCenter";
-
-type PlayerCanvasExposed = {
-  playMedia: () => Promise<void>;
-  pauseMedia: () => void;
-  stopMedia: () => void;
-  seekTo: (seconds: number) => void;
-  setRate: (rate: number) => void;
-  isPlaying: () => boolean;
-};
+import { usePlayerOverlayControls } from "./composables/usePlayerOverlayControls";
+import { usePlaybackShortcuts } from "./composables/usePlaybackShortcuts";
 
 const {
   playback,
@@ -30,47 +23,76 @@ const {
   pause,
   stop,
   seek,
+  seekPreview,
+  requestPreviewFrame,
   setRate,
+  setVolume,
+  setMuted,
 } = useMediaCenter();
 
-const canvasRef = ref<PlayerCanvasExposed | null>(null);
 const playbackRate = ref(1);
-const controlsVisible = ref(true);
-const controlsLocked = ref(false);
+const volume = ref(1);
+const muted = ref(false);
 const playerErrorMessage = ref("");
-let hideControlsTimer: number | null = null;
 
 const displayErrorMessage = computed(() => playerErrorMessage.value || errorMessage.value);
+const hasSource = computed(() => Boolean(currentSource.value));
+const {
+  controlsVisible,
+  controlsLocked,
+  scheduleHideControls,
+  markMouseActive,
+  toggleLock,
+  onControlsMouseEnter,
+  onControlsMouseLeave,
+} = usePlayerOverlayControls({
+  hasSource,
+  isBusy,
+});
 
 async function handlePlay() {
-  try {
-    await canvasRef.value?.playMedia();
-    await play();
-    playerErrorMessage.value = "";
-  } catch {
-    // 播放失败已通过 playback-error 事件展示
-  }
+  await play();
+  playerErrorMessage.value = "";
 }
 
-async function handlePause() {
-  canvasRef.value?.pauseMedia();
+async function handlePause(positionSeconds?: number) {
+  if (typeof positionSeconds === "number" && Number.isFinite(positionSeconds)) {
+    await seek(positionSeconds);
+  }
   await pause();
 }
 
 async function handleStop() {
-  canvasRef.value?.stopMedia();
   await stop();
 }
 
 async function handleSeek(seconds: number) {
-  canvasRef.value?.seekTo(seconds);
   await seek(seconds);
+}
+
+async function handleSeekPreview(seconds: number) {
+  await seekPreview(seconds);
+}
+
+async function handleRequestPreviewFrame(positionSeconds: number, maxWidth = 160, maxHeight = 90) {
+  return requestPreviewFrame(positionSeconds, maxWidth, maxHeight);
 }
 
 async function changePlaybackRate(rate: number) {
   playbackRate.value = rate;
-  canvasRef.value?.setRate(rate);
   await setRate(rate);
+}
+
+async function changeVolume(nextVolume: number) {
+  const normalized = clamp(nextVolume, 0, 1);
+  volume.value = normalized;
+  muted.value = normalized <= 0;
+  await setVolume(normalized);
+}
+
+async function toggleMute() {
+  muted.value = !muted.value;
+  await setMuted(muted.value);
 }
 
 function increasePlaybackRate() {
@@ -83,15 +105,6 @@ function decreasePlaybackRate() {
   void changePlaybackRate(nextRate);
 }
 
-async function handleVideoPlaying() {
-  playerErrorMessage.value = "";
-  await play();
-}
-
-async function handleVideoPause() {
-  await pause();
-}
-
 async function handleVideoEnded() {
   await handleStop();
 }
@@ -100,91 +113,17 @@ function handlePlaybackError(message: string) {
   playerErrorMessage.value = message;
 }
 
-const shouldKeepControlsVisible = computed(
-  () => controlsLocked.value || !currentSource.value || isBusy.value,
-);
-
-function showControls() {
-  controlsVisible.value = true;
-}
-
-function clearHideTimer() {
-  if (hideControlsTimer !== null) {
-    window.clearTimeout(hideControlsTimer);
-    hideControlsTimer = null;
-  }
-}
-
-function scheduleHideControls() {
-  clearHideTimer();
-  if (shouldKeepControlsVisible.value) {
-    showControls();
-    return;
-  }
-  hideControlsTimer = window.setTimeout(() => {
-    controlsVisible.value = false;
-  }, 1800);
-}
-
-function handleMouseActivity() {
-  showControls();
-  scheduleHideControls();
-}
-
-function toggleControlsLock() {
-  controlsLocked.value = !controlsLocked.value;
-  if (controlsLocked.value) {
-    clearHideTimer();
-    showControls();
-    return;
-  }
-  scheduleHideControls();
-}
-
-watch(shouldKeepControlsVisible, (keepVisible) => {
-  if (keepVisible) {
-    clearHideTimer();
-    showControls();
-    return;
-  }
-  scheduleHideControls();
-});
-
 watch(currentSource, () => {
   playerErrorMessage.value = "";
 });
 
-onBeforeUnmount(() => {
-  clearHideTimer();
-});
-
-useEventListener(window, "keydown", (event: KeyboardEvent) => {
-  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
-    return;
-  }
-  if (event.code === "Space") {
-    event.preventDefault();
-    if (playback.value?.status === "playing") {
-      void handlePause();
-    } else {
-      void handlePlay();
-    }
-    return;
-  }
-  if (event.key === "]") {
-    event.preventDefault();
-    increasePlaybackRate();
-    return;
-  }
-  if (event.key === "[") {
-    event.preventDefault();
-    decreasePlaybackRate();
-    return;
-  }
-  if (event.key === "0") {
-    event.preventDefault();
-    void changePlaybackRate(1);
-  }
+usePlaybackShortcuts({
+  playback,
+  onPlay: () => void handlePlay(),
+  onPause: (positionSeconds) => void handlePause(positionSeconds),
+  onResetRate: () => void changePlaybackRate(1),
+  onIncreaseRate: increasePlaybackRate,
+  onDecreaseRate: decreasePlaybackRate,
 });
 
 watch(playback, (value) => {
@@ -197,35 +136,40 @@ watch(playback, (value) => {
 
 <template>
   <main class="media-player-page">
-    <section class="player-shell" @mousemove="handleMouseActivity" @mouseleave="scheduleHideControls">
-      <PlayerCanvas
-        ref="canvasRef"
+    <section class="player-shell" @mousemove="markMouseActive" @mouseleave="scheduleHideControls">
+      <MediaViewport
         :source="currentSource"
+        :playback="playback"
         :loading="isBusy"
         @metadata="(duration) => syncPosition(0, duration)"
-        @timeupdate="(position, duration) => syncPosition(position, duration)"
-        @playing="handleVideoPlaying"
-        @pause="handleVideoPause"
         @ended="handleVideoEnded"
         @quick-open-local="openLocalFileByDialog"
         @quick-open-url="requestOpenUrlInput"
         @playback-error="handlePlaybackError"
       />
       <PlaybackControls
+        v-if="hasSource"
         class="overlay-controls"
         :class="{ 'overlay-controls-hidden': !controlsVisible }"
         :playback="playback"
         :playback-rate="playbackRate"
+        :volume="volume"
+        :muted="muted"
         :locked="controlsLocked"
         :disabled="!currentSource || isBusy"
-        @mouseenter="showControls"
-        @mousemove="handleMouseActivity"
+        :request-preview-frame="handleRequestPreviewFrame"
+        @mouseenter="onControlsMouseEnter"
+        @mouseleave="onControlsMouseLeave"
+        @mousemove="markMouseActive"
         @play="handlePlay"
-        @pause="handlePause"
+        @pause="(position) => handlePause(position)"
         @stop="handleStop"
         @seek="handleSeek"
+        @seek-preview="handleSeekPreview"
         @change-rate="(value) => void changePlaybackRate(value)"
-        @toggle-lock="toggleControlsLock"
+        @change-volume="(value) => void changeVolume(value)"
+        @toggle-mute="() => void toggleMute()"
+        @toggle-lock="toggleLock"
       />
       <a-alert
         v-if="displayErrorMessage"
@@ -260,7 +204,7 @@ watch(playback, (value) => {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: #000;
+  background: transparent;
 }
 
 .player-shell {

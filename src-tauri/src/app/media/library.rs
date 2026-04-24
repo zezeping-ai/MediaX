@@ -65,7 +65,9 @@ impl MediaLibraryService {
             let (last_played_at, last_position_seconds) = self
                 .recent_progress
                 .get(&path_string)
-                .map_or((None, 0.0), |(played_at, position)| (Some(*played_at), *position));
+                .map_or((None, 0.0), |(played_at, position)| {
+                    (Some(*played_at), *position)
+                });
             items.push(MediaItem {
                 id: path_string.clone(),
                 path: path_string,
