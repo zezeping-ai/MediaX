@@ -40,3 +40,17 @@ pub fn handle_close_requested(window: &tauri::Window, event: &tauri::WindowEvent
         let _ = window.hide();
     }
 }
+
+#[tauri::command]
+pub fn window_set_main_always_on_top(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| "main window not found".to_string())?;
+    window
+        .set_always_on_top(enabled)
+        .map_err(|err| format!("set always on top failed: {err}"))?;
+    Ok(())
+}

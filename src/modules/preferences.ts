@@ -8,6 +8,7 @@ export type Preferences = {
   player: {
     hwDecodeEnabled: boolean;
     parseDebugEnabled: boolean;
+    alwaysOnTop: boolean;
   };
 };
 
@@ -17,6 +18,7 @@ const DEFAULT_PREFERENCES: Preferences = {
     hwDecodeEnabled: false,
     // 默认打开：方便定位“打开/解析/解码”阶段的问题
     parseDebugEnabled: true,
+    alwaysOnTop: false,
   },
 };
 
@@ -74,6 +76,15 @@ export function usePreferences() {
         preferences.value = {
           ...preferences.value,
           player: { ...preferences.value.player, parseDebugEnabled: v },
+        };
+      },
+    }),
+    playerAlwaysOnTop: computed({
+      get: () => preferences.value.player.alwaysOnTop,
+      set: (v: boolean) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, alwaysOnTop: v },
         };
       },
     }),

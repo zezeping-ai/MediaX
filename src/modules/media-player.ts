@@ -69,3 +69,7 @@ export function previewMediaFrame(positionSeconds: number, maxWidth = 160, maxHe
     maxHeight,
   });
 }
+
+export function setMainWindowAlwaysOnTop(enabled: boolean) {
+  return invoke<void>("window_set_main_always_on_top", { enabled });
+}

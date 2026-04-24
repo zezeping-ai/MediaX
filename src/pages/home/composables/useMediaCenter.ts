@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { usePreferences } from "@/modules/preferences";
-import { getMediaSnapshot } from "@/modules/media-player";
+import { getMediaSnapshot, setMainWindowAlwaysOnTop } from "@/modules/media-player";
 import type { MediaSnapshot } from "@/modules/media-types";
 import { useMediaCommands } from "./useMediaCommands";
 import { useMediaErrorMap } from "./useMediaErrorMap";
@@ -9,7 +9,7 @@ import { useMediaSession } from "./useMediaSession";
 const DEV_SEEK_LOG = import.meta.env.DEV;
 
 export function useMediaCenter() {
-  const { playerHwDecodeEnabled } = usePreferences();
+  const { playerHwDecodeEnabled, playerAlwaysOnTop } = usePreferences();
   const {
     snapshot,
     currentSource,
@@ -46,6 +46,14 @@ export function useMediaCenter() {
       updateSnapshot(await commands.setHwMode(mode));
     } catch {
       // Keep silent here; player surface already emits error events.
+    }
+  }
+
+  async function applyAlwaysOnTopPreference(enabled: boolean) {
+    try {
+      await setMainWindowAlwaysOnTop(enabled);
+    } catch {
+      // Keep silent here; user action should not break playback flow.
     }
   }
 
@@ -167,6 +175,7 @@ export function useMediaCenter() {
     await withBusyState(refreshSnapshot);
     // Ensure backend matches persisted preference.
     await applyHwDecodePreference(playerHwDecodeEnabled.value);
+    await applyAlwaysOnTopPreference(playerAlwaysOnTop.value);
     await mount((action) => {
       if (action === "open_local") {
         void withBusyState(openLocalFileByDialog);
@@ -185,6 +194,13 @@ export function useMediaCenter() {
     playerHwDecodeEnabled,
     (enabled) => {
       void applyHwDecodePreference(enabled);
+    },
+    { immediate: false },
+  );
+  watch(
+    playerAlwaysOnTop,
+    (enabled) => {
+      void applyAlwaysOnTopPreference(enabled);
     },
     { immediate: false },
   );

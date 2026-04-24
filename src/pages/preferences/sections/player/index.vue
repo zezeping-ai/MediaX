@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { usePreferences } from "@/modules/preferences";
-import { setMediaHwDecodeMode } from "@/modules/media-player";
+import { setMainWindowAlwaysOnTop, setMediaHwDecodeMode } from "@/modules/media-player";
 
-const { playerHwDecodeEnabled, playerParseDebugEnabled } = usePreferences();
+const { playerHwDecodeEnabled, playerParseDebugEnabled, playerAlwaysOnTop } = usePreferences();
 
 async function applyHwDecode(enabled: boolean) {
   // “开”使用 auto：尽可能启用硬解，失败则自动回退。
@@ -11,6 +11,14 @@ async function applyHwDecode(enabled: boolean) {
     await setMediaHwDecodeMode(mode);
   } catch {
     // 不把错误强行冒泡到偏好页；播放页会显示具体错误事件。
+  }
+}
+
+async function applyAlwaysOnTop(enabled: boolean) {
+  try {
+    await setMainWindowAlwaysOnTop(enabled);
+  } catch {
+    // 不把错误强行冒泡到偏好页；主窗口功能不应阻塞设置面板。
   }
 }
 </script>
@@ -45,6 +53,21 @@ async function applyHwDecode(enabled: boolean) {
             <div class="setting-desc">在播放器上展示加载/解析过程以及调试信息（默认开启）。</div>
           </div>
           <a-switch v-model:checked="playerParseDebugEnabled" />
+        </div>
+      </a-space>
+    </a-card>
+
+    <a-card title="窗口" :bordered="false">
+      <a-space direction="vertical" style="width: 100%">
+        <div class="setting-row">
+          <div class="setting-text">
+            <div class="setting-title">窗口置顶</div>
+            <div class="setting-desc">开启后播放器主窗口将保持在其它窗口上方显示。</div>
+          </div>
+          <a-switch
+            v-model:checked="playerAlwaysOnTop"
+            @change="(checked: boolean) => void applyAlwaysOnTop(checked)"
+          />
         </div>
       </a-space>
     </a-card>

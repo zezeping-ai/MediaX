@@ -41,6 +41,7 @@ pub fn run() {
             app::media::player::commands::media_set_hw_decode_mode,
             app::media::player::commands::media_sync_position,
             app::media::player::commands::media_preview_frame,
+            app::windows::window_set_main_always_on_top,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
