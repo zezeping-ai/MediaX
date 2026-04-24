@@ -1,14 +1,18 @@
 use crate::app::media::player::decode_context::open_video_decode_context;
 use crate::app::media::player::events::{
-    MediaDebugPayload, MediaErrorPayload, MediaMetadataPayload, MEDIA_DEBUG_EVENT,
-    MEDIA_ERROR_EVENT, MEDIA_METADATA_EVENT, MEDIA_STATE_EVENT,
+    MediaDebugPayload, MediaErrorPayload, MediaEventEnvelope, MediaMetadataPayload,
+    MediaTelemetryPayload, MEDIA_DEBUG_EVENT, MEDIA_DEBUG_EVENT_V2, MEDIA_ERROR_EVENT,
+    MEDIA_METADATA_EVENT, MEDIA_PROTOCOL_VERSION, MEDIA_TELEMETRY_EVENT_V2,
 };
+use crate::app::media::player::pts::timestamp_to_seconds;
+use crate::app::media::player::runtime::audio::clamp_playback_rate;
+use crate::app::media::player::runtime::clock::{AudioClock, FpsWindow, PlaybackClock};
+use crate::app::media::player::runtime::progress::update_playback_progress;
 use crate::app::media::player::renderer::RendererState;
 use crate::app::media::player::state::{AudioControls, MediaState, TimingControls};
 use crate::app::media::player::video_frame::{
     ensure_scaler, transfer_hw_frame_if_needed, video_frame_to_nv12_planes,
 };
-use crate::app::media::types::MediaSnapshot;
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::channel_layout::ChannelLayout;
 use ffmpeg_next::codec;
@@ -31,17 +35,37 @@ use tauri::{AppHandle, Emitter, State};
 
 const MAX_EMIT_FPS: u32 = 60;
 
+mod audio;
+mod clock;
+mod progress;
+mod session;
+
 fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) {
     let at_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
+    let msg = message.into();
     let _ = app.emit(
         MEDIA_DEBUG_EVENT,
         MediaDebugPayload {
             stage,
-            message: message.into(),
+            message: msg.clone(),
             at_ms,
+        },
+    );
+    let _ = app.emit(
+        MEDIA_DEBUG_EVENT_V2,
+        MediaEventEnvelope {
+            protocol_version: MEDIA_PROTOCOL_VERSION,
+            event_type: "debug",
+            request_id: None,
+            emitted_at_ms: at_ms,
+            payload: MediaDebugPayload {
+                stage,
+                message: msg,
+                at_ms,
+            },
         },
     );
 }
@@ -438,21 +462,6 @@ fn decode_and_emit_stream(
     Ok(())
 }
 
-#[derive(Clone, Copy)]
-struct AudioClock {
-    anchor_instant: Instant,
-    anchor_media_seconds: f64,
-}
-
-impl AudioClock {
-    fn now_seconds(&self, rate: f64) -> f64 {
-        let elapsed = Instant::now()
-            .saturating_duration_since(self.anchor_instant)
-            .as_secs_f64();
-        (self.anchor_media_seconds + elapsed * rate.max(0.25)).max(0.0)
-    }
-}
-
 fn drain_frames(
     app: &AppHandle,
     renderer: &RendererState,
@@ -477,10 +486,7 @@ fn drain_frames(
         if stop_flag.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let hinted_seconds = decoded
-            .timestamp()
-            .or_else(|| decoded.pts())
-            .map(|ts| ts as f64 * f64::from(video_time_base));
+        let hinted_seconds = timestamp_to_seconds(decoded.timestamp(), decoded.pts(), video_time_base);
         let hinted_valid = hinted_seconds.filter(|v| v.is_finite() && *v >= 0.0);
         if let (Some(target), Some(hint)) = (
             *active_seek_target_seconds,
@@ -558,6 +564,8 @@ fn drain_frames(
         renderer.submit_frame(video_frame_to_nv12_planes(&nv12_frame, Some(estimated_pts)));
         if let Some(render_fps) = fps_window.record_frame_and_compute() {
             emit_debug(app, "video_fps", format!("render_fps={render_fps:.2}"));
+            let audio_now = audio_clock.map(|clock| clock.now_seconds(playback_clock.playback_rate()));
+            let audio_drift = audio_now.map(|a| estimated_pts - a);
             emit_debug(
                 app,
                 "video_pipeline",
@@ -571,6 +579,28 @@ fn drain_frames(
                     output_height
                 ),
             );
+            let _ = app.emit(
+                MEDIA_TELEMETRY_EVENT_V2,
+                MediaEventEnvelope {
+                    protocol_version: MEDIA_PROTOCOL_VERSION,
+                    event_type: "telemetry",
+                    request_id: None,
+                    emitted_at_ms: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0),
+                    payload: MediaTelemetryPayload {
+                        source_fps: 1.0 / playback_clock.frame_duration.as_secs_f64().max(1e-6),
+                        render_fps,
+                        queue_depth: renderer.queue_depth(),
+                        clock_seconds: *current_position_seconds,
+                        audio_drift_seconds: audio_drift,
+                        video_pts_gap_seconds: last_video_pts_seconds
+                            .map(|prev| (estimated_pts - prev).max(0.0)),
+                        seek_settle_ms: None,
+                    },
+                },
+            );
         }
         if last_progress_emit.elapsed() >= Duration::from_millis(200) {
             update_playback_progress(app, *current_position_seconds, duration_seconds, false)?;
@@ -580,114 +610,6 @@ fn drain_frames(
     Ok(())
 }
 
-struct PlaybackClock {
-    frame_duration: Duration,
-    last_emit_instant: Option<Instant>,
-    media_seconds: f64,
-    timing_controls: Arc<TimingControls>,
-}
-
-#[derive(Default)]
-struct FpsWindow {
-    started_at: Option<Instant>,
-    frames: u32,
-}
-
-impl FpsWindow {
-    fn record_frame_and_compute(&mut self) -> Option<f64> {
-        let now = Instant::now();
-        let started_at = self.started_at.get_or_insert(now);
-        self.frames = self.frames.saturating_add(1);
-        let elapsed = now.saturating_duration_since(*started_at);
-        if elapsed >= Duration::from_secs(1) {
-            let fps = (self.frames as f64) / elapsed.as_secs_f64().max(1e-6);
-            self.started_at = Some(now);
-            self.frames = 0;
-            return Some(fps);
-        }
-        None
-    }
-}
-
-impl PlaybackClock {
-    fn new(
-        fps: f64,
-        max_emit_fps: u32,
-        start_seconds: f64,
-        timing_controls: Arc<TimingControls>,
-    ) -> Self {
-        let safe_fps = if fps.is_finite() && fps >= 1.0 {
-            fps
-        } else {
-            30.0
-        };
-        let limited_fps = if max_emit_fps > 0 {
-            safe_fps.min(max_emit_fps as f64)
-        } else {
-            safe_fps
-        };
-        Self {
-            frame_duration: Duration::from_secs_f64(1.0 / limited_fps.max(1.0)),
-            last_emit_instant: None,
-            media_seconds: start_seconds.max(0.0),
-            timing_controls,
-        }
-    }
-
-    fn reset_to(&mut self, media_seconds: f64) {
-        self.media_seconds = media_seconds.max(0.0);
-        self.last_emit_instant = None;
-    }
-
-    fn playback_rate(&self) -> f64 {
-        self.timing_controls.playback_rate() as f64
-    }
-
-    fn tick(
-        &mut self,
-        hinted_seconds: Option<f64>,
-        audio_position_seconds: Option<f64>,
-        audio_queue_depth_sources: Option<usize>,
-    ) -> f64 {
-        let rate = self.playback_rate().max(0.25);
-        let low_audio_buffer = audio_queue_depth_sources
-            .map(|depth| depth < 3)
-            .unwrap_or(false);
-        let now = Instant::now();
-
-        // Advance clock by real elapsed time (not "frames decoded"), so decode throughput
-        // can never accelerate playback.
-        if let Some(last) = self.last_emit_instant {
-            let elapsed = now.saturating_duration_since(last).as_secs_f64();
-            if elapsed.is_finite() && elapsed > 0.0 {
-                self.media_seconds = (self.media_seconds + elapsed * rate).max(0.0);
-            }
-        }
-        self.last_emit_instant = Some(now);
-
-        // If audio clock is available and healthy, treat it as master.
-        if !low_audio_buffer {
-            if let Some(audio_seconds) = audio_position_seconds.filter(|v| v.is_finite() && *v >= 0.0)
-            {
-                // Audio is the master clock: lock video time to audio time (plus a tiny
-                // allowed lead to absorb jitter).
-                let allowed_lead_seconds = 0.02;
-                self.media_seconds = (audio_seconds + allowed_lead_seconds).max(0.0);
-                return self.media_seconds;
-            }
-        }
-
-        // With no audio clock, keep using the monotonic clock. Optionally snap to the first
-        // available video PTS to avoid starting from 0.0 when streams begin with non-zero PTS.
-        if self.media_seconds <= 0.0 {
-            if let Some(hint) = hinted_seconds.filter(|v| v.is_finite() && *v >= 0.0) {
-                self.media_seconds = hint;
-            }
-        }
-
-        self.media_seconds
-    }
-}
 
 fn take_pending_seek_seconds(app: &AppHandle) -> Result<Option<f64>, String> {
     let media_state = app.state::<MediaState>();
@@ -775,7 +697,7 @@ impl AudioOutput {
         };
         self.player.set_volume(volume);
         self.player
-            .set_speed(self.timing_controls.playback_rate().max(0.25));
+            .set_speed(clamp_playback_rate(self.timing_controls.playback_rate()));
     }
 
     fn append_pcm_i16(&self, sample_rate: u32, channels: u16, pcm: &[i16]) {
@@ -882,15 +804,12 @@ fn drain_audio_frames(
         audio_state
             .output
             .player
-            .set_speed(timing_controls.playback_rate().max(0.25));
+            .set_speed(clamp_playback_rate(timing_controls.playback_rate()));
         if audio_state.output.player.is_paused() {
             audio_state.output.player.play();
             emit_debug(app, "audio_resume", "audio player resumed from paused state");
         }
-        if let Some(seconds) = decoded
-            .timestamp()
-            .or_else(|| decoded.pts())
-            .map(|ts| ts as f64 * f64::from(audio_state.time_base))
+        if let Some(seconds) = timestamp_to_seconds(decoded.timestamp(), decoded.pts(), audio_state.time_base)
             .filter(|value| value.is_finite() && *value >= 0.0)
         {
             if let Some(target) = *active_seek_target_seconds {
@@ -950,35 +869,3 @@ fn drain_audio_frames(
     Ok(())
 }
 
-fn update_playback_progress(
-    app: &AppHandle,
-    position_seconds: f64,
-    duration_seconds: f64,
-    finalize: bool,
-) -> Result<(), String> {
-    let state = app.state::<MediaState>();
-    let snapshot = {
-        let library = state
-            .library
-            .lock()
-            .map_err(|_| "media library state poisoned".to_string())?
-            .state();
-        let mut playback = state
-            .playback
-            .lock()
-            .map_err(|_| "playback state poisoned".to_string())?;
-        if finalize {
-            playback.stop();
-        } else {
-            playback.sync_position(position_seconds, duration_seconds);
-        }
-        let playback_state = playback.state();
-        MediaSnapshot {
-            playback: playback_state,
-            library,
-        }
-    };
-    app.emit(MEDIA_STATE_EVENT, &snapshot)
-        .map_err(|err| format!("emit media state failed: {err}"))?;
-    Ok(())
-}

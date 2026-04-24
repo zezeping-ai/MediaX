@@ -1,66 +1,49 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { usePreferences } from "@/modules/preferences";
-import {
-  getMediaSnapshot,
-  openMedia,
-  pauseMedia,
-  playMedia,
-  previewMediaFrame,
-  seekMedia,
-  setMediaMuted,
-  setMediaHwDecodeMode,
-  setMediaRate,
-  setMediaVolume,
-  stopMedia,
-  syncMediaPosition,
-} from "@/modules/media-player";
-import type { MediaSnapshot, PreviewFrame } from "@/modules/media-types";
-
-const MEDIA_STATE_EVENT = "media://state";
-const MEDIA_MENU_EVENT = "media://menu-action";
+import { getMediaSnapshot } from "@/modules/media-player";
+import type { MediaSnapshot } from "@/modules/media-types";
+import { useMediaCommands } from "./useMediaCommands";
+import { useMediaErrorMap } from "./useMediaErrorMap";
+import { useMediaSession } from "./useMediaSession";
 const DEV_SEEK_LOG = import.meta.env.DEV;
-const MEDIA_ERROR_TEXT: Record<string, string> = {
-  INVALID_URL: "媒体地址无效，请检查 URL 或文件路径。",
-  OPEN_FAILED: "媒体打开失败，请确认文件存在且格式受支持。",
-  STREAM_START_FAILED: "媒体流启动失败，请重试或切换解码源。",
-  DECODE_FAILED: "媒体解码失败，请检查媒体格式或尝试转码后播放。",
-  UNSUPPORTED_FORMAT: "当前媒体格式暂不支持，请尝试转码后再播放。",
-  NETWORK_ERROR: "网络连接异常，请检查网络状态后重试。",
-  DECODE_ERROR: "媒体解码失败，可能是编码参数不兼容。",
-  INTERNAL_ERROR: "播放器内部错误，请稍后重试。",
-};
 
 export function useMediaCenter() {
   const { playerHwDecodeEnabled } = usePreferences();
-  const snapshot = ref<MediaSnapshot | null>(null);
-  const currentSource = ref("");
+  const {
+    snapshot,
+    currentSource,
+    debugSnapshot,
+    metadataDurationSeconds,
+    playbackErrorMessage,
+    mount,
+    unmount,
+    updateSnapshot,
+  } = useMediaSession();
+  const commands = useMediaCommands();
+  const { toUserErrorMessage } = useMediaErrorMap();
   const isBusy = ref(false);
   const errorMessage = ref("");
   const lastSyncedSecond = ref(-1);
   const urlInputValue = ref("");
   const urlDialogVisible = ref(false);
 
-  let unlistenMediaEvent: UnlistenFn | null = null;
-  let unlistenMenuEvent: UnlistenFn | null = null;
-  let snapshotPollingTimer: number | null = null;
-
   const playback = computed(() => snapshot.value?.playback ?? null);
 
   async function runPlaybackCommand(command: () => Promise<MediaSnapshot>) {
-    snapshot.value = await command();
-    return snapshot.value;
+    const next = await command();
+    updateSnapshot(next);
+    return next;
   }
 
   async function refreshSnapshot() {
-    snapshot.value = await getMediaSnapshot();
+    updateSnapshot(await getMediaSnapshot());
   }
 
   async function applyHwDecodePreference(enabled: boolean) {
     const mode = enabled ? "auto" : "off";
     try {
-      snapshot.value = await setMediaHwDecodeMode(mode);
+      updateSnapshot(await commands.setHwMode(mode));
     } catch {
       // Keep silent here; player surface already emits error events.
     }
@@ -84,8 +67,8 @@ export function useMediaCenter() {
   }
 
   async function openPath(path: string) {
-    await runPlaybackCommand(() => openMedia(path));
-    await runPlaybackCommand(playMedia);
+    await runPlaybackCommand(() => commands.openPath(path));
+    await runPlaybackCommand(commands.play);
     errorMessage.value = "";
   }
 
@@ -111,22 +94,22 @@ export function useMediaCenter() {
   }
 
   async function play() {
-    await runPlaybackCommand(playMedia);
+    await runPlaybackCommand(commands.play);
   }
 
   async function pause() {
-    await runPlaybackCommand(pauseMedia);
+    await runPlaybackCommand(commands.pause);
   }
 
   async function stop() {
-    await runPlaybackCommand(stopMedia);
+    await runPlaybackCommand(commands.stop);
   }
 
   async function seek(positionSeconds: number) {
     const status = playback.value?.status ?? "unknown";
     const forceRender = status === "paused";
     logSeekDecision("seek", positionSeconds, forceRender, status);
-    await runPlaybackCommand(() => seekMedia(positionSeconds, { forceRender }));
+    await runPlaybackCommand(() => commands.seek(positionSeconds, forceRender));
   }
 
   async function seekPreview(positionSeconds: number) {
@@ -134,29 +117,29 @@ export function useMediaCenter() {
     try {
       const status = playback.value?.status ?? "unknown";
       logSeekDecision("seekPreview", positionSeconds, false, status);
-      await runPlaybackCommand(() => seekMedia(positionSeconds, { forceRender: false }));
+      await runPlaybackCommand(() => commands.seek(positionSeconds, false));
     } catch (error) {
       errorMessage.value = toUserErrorMessage(error);
     }
   }
 
   async function setRate(playbackRate: number) {
-    await runPlaybackCommand(() => setMediaRate(playbackRate));
+    await runPlaybackCommand(() => commands.setRate(playbackRate));
   }
 
   async function setVolume(volume: number) {
-    await runPlaybackCommand(() => setMediaVolume(volume));
+    await runPlaybackCommand(() => commands.setVolume(volume));
   }
 
   async function setMuted(muted: boolean) {
-    await runPlaybackCommand(() => setMediaMuted(muted));
+    await runPlaybackCommand(() => commands.setMuted(muted));
   }
 
   async function requestPreviewFrame(positionSeconds: number, maxWidth = 160, maxHeight = 90) {
     try {
-      return await previewMediaFrame(positionSeconds, maxWidth, maxHeight);
+      return await commands.requestPreviewFrame(positionSeconds, maxWidth, maxHeight);
     } catch {
-      return null as PreviewFrame | null;
+      return null;
     }
   }
 
@@ -166,7 +149,7 @@ export function useMediaCenter() {
       return;
     }
     lastSyncedSecond.value = second;
-    await runPlaybackCommand(() => syncMediaPosition(positionSeconds, durationSeconds));
+    await runPlaybackCommand(() => commands.syncPosition(positionSeconds, durationSeconds));
   }
 
   async function withBusyState(action: () => Promise<void>) {
@@ -184,38 +167,18 @@ export function useMediaCenter() {
     await withBusyState(refreshSnapshot);
     // Ensure backend matches persisted preference.
     await applyHwDecodePreference(playerHwDecodeEnabled.value);
-    unlistenMediaEvent = await listen<MediaSnapshot>(MEDIA_STATE_EVENT, (event) => {
-      snapshot.value = event.payload;
-    });
-    unlistenMenuEvent = await listen<string>(MEDIA_MENU_EVENT, (event) => {
-      if (event.payload === "open_local") {
+    await mount((action) => {
+      if (action === "open_local") {
         void withBusyState(openLocalFileByDialog);
       }
-      if (event.payload === "open_url") {
+      if (action === "open_url") {
         requestOpenUrlInput();
       }
-    });
-    snapshotPollingTimer = window.setInterval(() => {
-      void refreshSnapshot();
-    }, 1000);
+    }, getMediaSnapshot);
   });
 
   onBeforeUnmount(() => {
-    unlistenMediaEvent?.();
-    unlistenMenuEvent?.();
-    if (snapshotPollingTimer !== null) {
-      window.clearInterval(snapshotPollingTimer);
-      snapshotPollingTimer = null;
-    }
-  });
-
-  watch(playback, (value) => {
-    const currentPath = value?.current_path ?? "";
-    if (!currentPath) {
-      currentSource.value = "";
-      return;
-    }
-    currentSource.value = currentPath;
+    unmount();
   });
 
   watch(
@@ -226,6 +189,18 @@ export function useMediaCenter() {
     { immediate: false },
   );
 
+  watch(metadataDurationSeconds, (duration) => {
+    if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) {
+      void syncPosition(0, duration);
+    }
+  });
+
+  watch(playbackErrorMessage, (message) => {
+    if (message) {
+      errorMessage.value = message;
+    }
+  });
+
   return {
     playback,
     currentSource,
@@ -233,6 +208,7 @@ export function useMediaCenter() {
     urlDialogVisible,
     isBusy,
     errorMessage,
+    debugSnapshot,
     openLocalFileByDialog: () => withBusyState(openLocalFileByDialog),
     openUrl: (url: string) => withBusyState(() => openUrl(url)),
     requestOpenUrlInput,
@@ -288,26 +264,5 @@ function normalizePlayableUrl(raw: string) {
     return "";
   }
   return parsed.toString();
-}
-
-function toUserErrorMessage(error: unknown) {
-  const rawMessage = error instanceof Error ? error.message : String(error);
-  const normalized = rawMessage.trim();
-  const [codeCandidate, detailCandidate] = normalized.split(":");
-  const code = codeCandidate?.trim().toUpperCase();
-  if (code && MEDIA_ERROR_TEXT[code]) {
-    const detail = detailCandidate?.trim();
-    return detail ? `${MEDIA_ERROR_TEXT[code]}（${detail}）` : MEDIA_ERROR_TEXT[code];
-  }
-  if (/url|uri|协议|protocol/i.test(normalized)) {
-    return MEDIA_ERROR_TEXT.INVALID_URL;
-  }
-  if (/network|timeout|连接|dns|socket/i.test(normalized)) {
-    return MEDIA_ERROR_TEXT.NETWORK_ERROR;
-  }
-  if (/decode|codec|demux|parse/i.test(normalized)) {
-    return MEDIA_ERROR_TEXT.DECODE_ERROR;
-  }
-  return normalized || MEDIA_ERROR_TEXT.INTERNAL_ERROR;
 }
 

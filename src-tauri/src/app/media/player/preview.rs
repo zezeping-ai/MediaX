@@ -6,6 +6,7 @@ use crate::app::media::player::preview_config::{
     PREVIEW_QUALITY_STEP, PREVIEW_RENDER_TIMEOUT_MS, PREVIEW_TARGET_HEIGHT, PREVIEW_TARGET_WIDTH,
     PREVIEW_TIMEOUT_MS,
 };
+use crate::app::media::player::pts::timestamp_to_seconds;
 use crate::app::media::player::renderer::RendererState;
 use crate::app::media::player::video_frame::{
     ensure_scaler, transfer_hw_frame_if_needed, video_frame_to_nv12_planes,
@@ -232,10 +233,8 @@ where
             return Ok(true);
         }
 
-        let hinted_seconds = decoded
-            .timestamp()
-            .or_else(|| decoded.pts())
-            .map(|ts| ts as f64 * f64::from(video_time_base));
+        let hinted_seconds =
+            timestamp_to_seconds(decoded.timestamp(), decoded.pts(), video_time_base);
 
         if let Some(seconds) = hinted_seconds {
             if seconds + 0.04 >= target_seconds {
@@ -274,10 +273,8 @@ where
         if should_abort() || Instant::now() >= deadline {
             return Ok(None);
         }
-        let hinted_seconds = decoded
-            .timestamp()
-            .or_else(|| decoded.pts())
-            .map(|ts| ts as f64 * f64::from(video_time_base));
+        let hinted_seconds =
+            timestamp_to_seconds(decoded.timestamp(), decoded.pts(), video_time_base);
         if !seek_applied {
             if let Some(seconds) = hinted_seconds {
                 if seconds + 0.04 < target_seconds && Instant::now() < deadline {

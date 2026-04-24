@@ -1,48 +1,22 @@
 <script setup lang="ts">
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import type { PlaybackState } from "@/modules/media-types";
+import { computed, ref, watch } from "vue";
+import { type PlaybackState } from "@/modules/media-types";
 import { usePreferences } from "@/modules/preferences";
 
 const props = defineProps<{
   source: string;
   loading: boolean;
   playback: PlaybackState | null;
+  debugSnapshot: Record<string, string>;
 }>();
 
 const emit = defineEmits<{
-  metadata: [duration: number];
   ended: [];
   "quick-open-local": [];
   "quick-open-url": [];
-  "playback-error": [string];
 }>();
 
-type MediaMetadataPayload = {
-  width: number;
-  height: number;
-  fps: number;
-  duration_seconds: number;
-};
-
-type MediaErrorPayload = { code: string; message: string };
-
-const METADATA_EVENT = "media://metadata";
-const ERROR_EVENT = "media://error";
-const DEBUG_EVENT = "media://debug";
-
-type MediaDebugPayload = {
-  stage: string;
-  message: string;
-  at_ms: number;
-};
-
-let unlistenMetadataEvent: UnlistenFn | null = null;
-let unlistenErrorEvent: UnlistenFn | null = null;
-let unlistenDebugEvent: UnlistenFn | null = null;
-
 const { playerParseDebugEnabled } = usePreferences();
-const debugSnapshot = ref<Record<string, string>>({});
 const debugDismissedSource = ref("");
 
 const canShowDebugOverlay = computed(
@@ -79,6 +53,7 @@ const debugRows = computed(() => {
     "audio",
     "running",
     "video_pipeline",
+    "telemetry",
     "video_fps",
     "audio_stats",
     "video_gap",
@@ -88,11 +63,11 @@ const debugRows = computed(() => {
   ];
   const rows: Array<{ key: string; label: string; value: string }> = [];
   for (const key of preferredOrder) {
-    const value = debugSnapshot.value[key];
+    const value = props.debugSnapshot[key];
     if (!value) continue;
     rows.push({ key, label: formatDebugLabel(key), value });
   }
-  for (const [key, value] of Object.entries(debugSnapshot.value)) {
+  for (const [key, value] of Object.entries(props.debugSnapshot)) {
     if (!value || preferredOrder.includes(key)) continue;
     rows.push({ key, label: formatDebugLabel(key), value });
   }
@@ -110,6 +85,7 @@ function formatDebugLabel(key: string): string {
     audio: "音频流",
     running: "运行状态",
     video_pipeline: "视频管线",
+    telemetry: "时序指标",
     video_fps: "视频帧率",
     audio_stats: "音频统计",
     video_gap: "帧间间隔",
@@ -121,36 +97,6 @@ function formatDebugLabel(key: string): string {
   return labels[key] || key;
 }
 
-onMounted(async () => {
-  // 原生渲染器负责逐帧绘制，前端仅消费元数据与异常事件。
-  unlistenMetadataEvent = await listen<MediaMetadataPayload>(METADATA_EVENT, (event) => {
-    emit("metadata", event.payload.duration_seconds);
-  });
-  unlistenErrorEvent = await listen<MediaErrorPayload>(ERROR_EVENT, (event) => {
-    emit("playback-error", `${event.payload.code}: ${event.payload.message}`);
-  });
-  unlistenDebugEvent = await listen<MediaDebugPayload>(DEBUG_EVENT, (event) => {
-    if (!playerParseDebugEnabled.value) {
-      return;
-    }
-    const stage = event.payload.stage?.trim() || "debug";
-    const msg = event.payload.message?.trim() || "";
-    debugSnapshot.value = {
-      ...debugSnapshot.value,
-      [stage]: msg || "-",
-    };
-  });
-});
-
-onBeforeUnmount(() => {
-  unlistenMetadataEvent?.();
-  unlistenMetadataEvent = null;
-  unlistenErrorEvent?.();
-  unlistenErrorEvent = null;
-  unlistenDebugEvent?.();
-  unlistenDebugEvent = null;
-});
-
 watch(
   () => props.source,
   (nextSource) => {
@@ -158,18 +104,7 @@ watch(
       emit("ended");
       debugDismissedSource.value = "";
     }
-    debugSnapshot.value = {};
   },
-);
-
-watch(
-  playerParseDebugEnabled,
-  (enabled) => {
-    if (!enabled) {
-      debugSnapshot.value = {};
-    }
-  },
-  { immediate: true },
 );
 </script>
 

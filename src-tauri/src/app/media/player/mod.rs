@@ -1,9 +1,11 @@
 pub mod commands;
+pub mod coordinator;
 pub mod decode_context;
 pub mod events;
 pub mod playback;
 pub mod preview;
 pub mod preview_config;
+pub mod pts;
 pub mod renderer;
 pub mod runtime;
 pub mod state;

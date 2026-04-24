@@ -12,13 +12,13 @@ const {
   currentSource,
   isBusy,
   errorMessage,
+  debugSnapshot,
   openLocalFileByDialog,
   requestOpenUrlInput,
   cancelOpenUrlInput,
   confirmOpenUrlInput,
   urlDialogVisible,
   urlInputValue,
-  syncPosition,
   play,
   pause,
   stop,
@@ -109,10 +109,6 @@ async function handleVideoEnded() {
   await handleStop();
 }
 
-function handlePlaybackError(message: string) {
-  playerErrorMessage.value = message;
-}
-
 watch(currentSource, () => {
   playerErrorMessage.value = "";
 });
@@ -141,11 +137,10 @@ watch(playback, (value) => {
         :source="currentSource"
         :playback="playback"
         :loading="isBusy"
-        @metadata="(duration) => syncPosition(0, duration)"
+        :debug-snapshot="debugSnapshot"
         @ended="handleVideoEnded"
         @quick-open-local="openLocalFileByDialog"
         @quick-open-url="requestOpenUrlInput"
-        @playback-error="handlePlaybackError"
       />
       <PlaybackControls
         v-if="hasSource"

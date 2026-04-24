@@ -1,5 +1,13 @@
 export type PlaybackStatus = "idle" | "playing" | "paused" | "stopped";
 export type HardwareDecodeMode = "auto" | "on" | "off";
+export const MEDIA_STATE_EVENT = "media://state";
+export const MEDIA_STATE_EVENT_V2 = "media://state/v2";
+export const MEDIA_MENU_EVENT = "media://menu-action";
+export const MEDIA_DEBUG_EVENT = "media://debug";
+export const MEDIA_DEBUG_EVENT_V2 = "media://debug/v2";
+export const MEDIA_TELEMETRY_EVENT_V2 = "media://telemetry/v2";
+export const MEDIA_METADATA_EVENT = "media://metadata";
+export const MEDIA_ERROR_EVENT = "media://error";
 
 export interface PlaybackState {
   engine: string;
@@ -41,4 +49,40 @@ export interface PreviewFrame {
   width: number;
   height: number;
   position_seconds: number;
+}
+
+export interface MediaEventEnvelope<T> {
+  protocol_version: number;
+  event_type: string;
+  request_id: string | null;
+  emitted_at_ms: number;
+  payload: T;
+}
+
+export interface MediaTelemetryPayload {
+  source_fps: number;
+  render_fps: number;
+  queue_depth: number;
+  clock_seconds: number;
+  audio_drift_seconds: number | null;
+  video_pts_gap_seconds: number | null;
+  seek_settle_ms: number | null;
+}
+
+export interface MediaMetadataPayload {
+  width: number;
+  height: number;
+  fps: number;
+  duration_seconds: number;
+}
+
+export interface MediaErrorPayload {
+  code: string;
+  message: string;
+}
+
+export interface MediaDebugPayload {
+  stage: string;
+  message: string;
+  at_ms: number;
 }
