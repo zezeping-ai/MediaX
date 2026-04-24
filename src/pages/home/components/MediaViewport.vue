@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, toRef, watch } from "vue";
 import { type PlaybackState } from "@/modules/media-types";
 import { usePreferences } from "@/modules/preferences";
+import { usePlayerDebugOverlay } from "../composables/usePlayerDebugOverlay";
 
 const props = defineProps<{
   source: string;
@@ -33,69 +34,10 @@ function closeCurrentDebugOverlay() {
   debugDismissedSource.value = props.source;
 }
 
-const hwDecodeLabel = computed(() => {
-  const p = props.playback;
-  if (!p) {
-    return "";
-  }
-  const active = p.hw_decode_active ? "on" : "off";
-  const backend = p.hw_decode_backend || "<none>";
-  const mode = p.hw_decode_mode || "auto";
-  const err = p.hw_decode_error ? ` | err=${p.hw_decode_error}` : "";
-  return `hw_decode mode=${mode} active=${active} backend=${backend}${err}`;
-});
-
-const debugRows = computed(() => {
-  const preferredOrder = [
-    "open",
-    "decoder_ready",
-    "video_stream",
-    "audio",
-    "running",
-    "video_pipeline",
-    "telemetry",
-    "video_fps",
-    "audio_stats",
-    "video_gap",
-    "seek",
-    "audio_resume",
-    "decode_error",
-  ];
-  const rows: Array<{ key: string; label: string; value: string }> = [];
-  for (const key of preferredOrder) {
-    const value = props.debugSnapshot[key];
-    if (!value) continue;
-    rows.push({ key, label: formatDebugLabel(key), value });
-  }
-  for (const [key, value] of Object.entries(props.debugSnapshot)) {
-    if (!value || preferredOrder.includes(key)) continue;
-    rows.push({ key, label: formatDebugLabel(key), value });
-  }
-  if (!rows.length) {
-    return [{ key: "empty", label: "status", value: "等待解析信息..." }];
-  }
-  return rows;
-});
-
-function formatDebugLabel(key: string): string {
-  const labels: Record<string, string> = {
-    open: "打开源",
-    decoder_ready: "解码器",
-    video_stream: "视频流",
-    audio: "音频流",
-    running: "运行状态",
-    video_pipeline: "视频管线",
-    telemetry: "时序指标",
-    video_fps: "视频帧率",
-    audio_stats: "音频统计",
-    video_gap: "帧间间隔",
-    seek: "跳转",
-    audio_resume: "音频恢复",
-    decode_error: "解码错误",
-    stop: "停止",
-  };
-  return labels[key] || key;
-}
+const { hwDecodeLabel, debugRows } = usePlayerDebugOverlay(
+  toRef(props, "playback"),
+  toRef(props, "debugSnapshot"),
+);
 
 watch(
   () => props.source,

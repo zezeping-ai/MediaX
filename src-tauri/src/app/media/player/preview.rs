@@ -9,7 +9,8 @@ use crate::app::media::player::preview_config::{
 use crate::app::media::player::pts::timestamp_to_seconds;
 use crate::app::media::player::renderer::RendererState;
 use crate::app::media::player::video_frame::{
-    ensure_scaler, transfer_hw_frame_if_needed, video_frame_to_nv12_planes,
+    detect_color_profile, ensure_scaler, transfer_hw_frame_if_needed,
+    video_frame_to_nv12_planes_from_yuv420p,
 };
 use crate::app::media::types::HardwareDecodeMode;
 use crate::app::media::types::PreviewFrame;
@@ -208,14 +209,16 @@ where
         if should_abort() {
             return Ok(true);
         }
-        let frame_for_scale =
-            transfer_hw_frame_if_needed(&decoded).unwrap_or_else(|_| decoded.clone());
+        let frame_for_scale = match transfer_hw_frame_if_needed(&decoded) {
+            Ok(frame) => frame,
+            Err(_) => continue,
+        };
         ensure_scaler(
             scaler,
             frame_for_scale.format(),
             frame_for_scale.width(),
             frame_for_scale.height(),
-            format::pixel::Pixel::NV12,
+            format::pixel::Pixel::YUV420P,
             output_width,
             output_height,
             Flags::BILINEAR,
@@ -226,7 +229,14 @@ where
                 .run(&frame_for_scale, &mut nv12_frame)
                 .map_err(|err| format!("scale frame failed: {err}"))?;
         }
-        let frame = video_frame_to_nv12_planes(&nv12_frame, None);
+        let frame = match video_frame_to_nv12_planes_from_yuv420p(
+            &nv12_frame,
+            None,
+            Some(detect_color_profile(&nv12_frame)),
+        ) {
+            Ok(frame) => frame,
+            Err(_) => continue,
+        };
 
         if seek_applied {
             renderer.submit_frame(frame);
@@ -282,8 +292,10 @@ where
                 }
             }
         }
-        let frame_for_scale =
-            transfer_hw_frame_if_needed(&decoded).unwrap_or_else(|_| decoded.clone());
+        let frame_for_scale = match transfer_hw_frame_if_needed(&decoded) {
+            Ok(frame) => frame,
+            Err(_) => continue,
+        };
         ensure_scaler(
             scaler,
             frame_for_scale.format(),

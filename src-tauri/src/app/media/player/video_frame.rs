@@ -5,6 +5,15 @@ use ffmpeg_next::frame;
 use ffmpeg_next::software::scaling::context::Context as ScalingContext;
 use ffmpeg_next::software::scaling::flag::Flags;
 
+#[derive(Clone, Copy)]
+pub struct ColorProfile {
+    pub color_matrix: [[f32; 3]; 3],
+    pub y_offset: f32,
+    pub y_scale: f32,
+    pub uv_offset: f32,
+    pub uv_scale: f32,
+}
+
 pub fn ensure_scaler(
     scaler: &mut Option<ScalingContext>,
     src_format: format::pixel::Pixel,
@@ -40,7 +49,9 @@ pub fn ensure_scaler(
 
 pub fn transfer_hw_frame_if_needed(decoded: &frame::Video) -> Result<frame::Video, String> {
     if !is_hardware_frame(decoded)? {
-        return Ok(decoded.clone());
+        let mut software_frame = decoded.clone();
+        apply_visible_cropping(&mut software_frame)?;
+        return Ok(software_frame);
     }
     let mut sw_frame = frame::Video::empty();
     // SAFETY: Both frame pointers are owned AVFrame instances. `sw_frame` is empty output
@@ -49,6 +60,12 @@ pub fn transfer_hw_frame_if_needed(decoded: &frame::Video) -> Result<frame::Vide
     if ret < 0 {
         return Err(format!("hwframe transfer failed: {ret}"));
     }
+    // Keep timing/color metadata stable across hw->sw transfer for scaler + renderer decisions.
+    let props_ret = unsafe { ffi::av_frame_copy_props(sw_frame.as_mut_ptr(), decoded.as_ptr()) };
+    if props_ret < 0 {
+        return Err(format!("frame property copy failed: {props_ret}"));
+    }
+    apply_visible_cropping(&mut sw_frame)?;
     Ok(sw_frame)
 }
 
@@ -64,12 +81,51 @@ fn is_hardware_frame(frame: &frame::Video) -> Result<bool, String> {
     Ok((flags & ffi::AV_PIX_FMT_FLAG_HWACCEL as u64) != 0)
 }
 
-pub fn video_frame_to_nv12_planes(frame: &frame::Video, pts_seconds: Option<f64>) -> VideoFrame {
+fn apply_visible_cropping(frame: &mut frame::Video) -> Result<(), String> {
+    // Some hardware decoders expose coded-size padding with crop metadata.
+    // If not applied, top padding rows can appear as green/magenta flicker.
+    let ret = unsafe { ffi::av_frame_apply_cropping(frame.as_mut_ptr(), 0) };
+    if ret < 0 {
+        return Err(format!("frame cropping failed: {ret}"));
+    }
+    Ok(())
+}
+
+pub fn detect_color_profile(frame: &frame::Video) -> ColorProfile {
+    let (color_matrix, y_offset, y_scale, uv_offset, uv_scale) = color_conversion_params(frame);
+    ColorProfile {
+        color_matrix,
+        y_offset,
+        y_scale,
+        uv_offset,
+        uv_scale,
+    }
+}
+
+pub fn video_frame_to_nv12_planes_from_yuv420p(
+    frame: &frame::Video,
+    pts_seconds: Option<f64>,
+    color_profile: Option<ColorProfile>,
+) -> Result<VideoFrame, String> {
     let width = frame.width() as usize;
     let height = frame.height() as usize;
+    if width == 0 || height == 0 {
+        return Err("invalid frame dimension for nv12 extraction".to_string());
+    }
 
     let y_stride = frame.stride(0);
     let y_data = frame.data(0);
+    if y_stride < width {
+        return Err(format!("invalid y stride: stride={y_stride} width={width}"));
+    }
+    let y_required = y_stride.saturating_mul(height);
+    if y_data.len() < y_required {
+        return Err(format!(
+            "insufficient y plane bytes: have={} need={}",
+            y_data.len(),
+            y_required
+        ));
+    }
     let mut y_plane = Vec::with_capacity(width * height);
     for y in 0..height {
         let start = y * y_stride;
@@ -78,29 +134,52 @@ pub fn video_frame_to_nv12_planes(frame: &frame::Video, pts_seconds: Option<f64>
     }
 
     let uv_height = height / 2;
-    let uv_row_bytes = width;
-    let uv_stride = frame.stride(1);
-    let uv_data = frame.data(1);
-    let mut uv_plane = Vec::with_capacity(uv_row_bytes * uv_height);
+    let uv_row_bytes = width / 2;
+    let u_stride = frame.stride(1);
+    let u_data = frame.data(1);
+    let v_stride = frame.stride(2);
+    let v_data = frame.data(2);
+    if uv_height > 0 {
+        if u_stride < uv_row_bytes || v_stride < uv_row_bytes {
+            return Err(format!(
+                "invalid u/v stride: u_stride={u_stride} v_stride={v_stride} row_bytes={uv_row_bytes}"
+            ));
+        }
+        let u_required = u_stride.saturating_mul(uv_height);
+        let v_required = v_stride.saturating_mul(uv_height);
+        if u_data.len() < u_required || v_data.len() < v_required {
+            return Err(format!(
+                "insufficient u/v plane bytes: u_have={} u_need={} v_have={} v_need={}",
+                u_data.len(),
+                u_required,
+                v_data.len(),
+                v_required
+            ));
+        }
+    }
+    let mut uv_plane = Vec::with_capacity(width * uv_height);
     for y in 0..uv_height {
-        let start = y * uv_stride;
-        let end = start + uv_row_bytes;
-        uv_plane.extend_from_slice(&uv_data[start..end]);
+        let u_row_start = y * u_stride;
+        let v_row_start = y * v_stride;
+        for x in 0..uv_row_bytes {
+            uv_plane.push(u_data[u_row_start + x]);
+            uv_plane.push(v_data[v_row_start + x]);
+        }
     }
 
-    let (color_matrix, y_offset, y_scale, uv_offset, uv_scale) = color_conversion_params(frame);
-    VideoFrame {
+    let profile = color_profile.unwrap_or_else(|| detect_color_profile(frame));
+    Ok(VideoFrame {
         pts_seconds: pts_seconds.unwrap_or(0.0),
         width: frame.width(),
         height: frame.height(),
         y_plane,
         uv_plane,
-        color_matrix,
-        y_offset,
-        y_scale,
-        uv_offset,
-        uv_scale,
-    }
+        color_matrix: profile.color_matrix,
+        y_offset: profile.y_offset,
+        y_scale: profile.y_scale,
+        uv_offset: profile.uv_offset,
+        uv_scale: profile.uv_scale,
+    })
 }
 
 fn color_conversion_params(frame: &frame::Video) -> ([[f32; 3]; 3], f32, f32, f32, f32) {

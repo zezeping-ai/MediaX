@@ -36,6 +36,15 @@ export function useMediaSession() {
   function updateSnapshot(next: MediaSnapshot) {
     snapshot.value = next;
     currentSource.value = next.playback.current_path ?? "";
+    const playback = next.playback;
+    const mode = playback.hw_decode_mode || "auto";
+    const status = playback.hw_decode_active ? "hard" : "soft";
+    const backend = playback.hw_decode_backend || "<none>";
+    const err = playback.hw_decode_error ? ` err=${playback.hw_decode_error}` : "";
+    debugSnapshot.value = {
+      ...debugSnapshot.value,
+      hw_decode: `${status} (mode=${mode}, backend=${backend})${err}`,
+    };
   }
 
   async function mount(

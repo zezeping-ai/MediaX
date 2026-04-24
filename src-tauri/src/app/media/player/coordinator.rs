@@ -20,6 +20,9 @@ pub fn open(
     path: String,
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, String> {
+    // Switching source must stop any active decode stream first, otherwise the old
+    // stream can keep emitting progress and consume resources.
+    stop_decode_stream(&state)?;
     {
         let mut playback = state
             .playback

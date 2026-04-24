@@ -11,7 +11,8 @@ use crate::app::media::player::runtime::progress::update_playback_progress;
 use crate::app::media::player::renderer::RendererState;
 use crate::app::media::player::state::{AudioControls, MediaState, TimingControls};
 use crate::app::media::player::video_frame::{
-    ensure_scaler, transfer_hw_frame_if_needed, video_frame_to_nv12_planes,
+    detect_color_profile, ensure_scaler, transfer_hw_frame_if_needed,
+    video_frame_to_nv12_planes_from_yuv420p, ColorProfile,
 };
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::channel_layout::ChannelLayout;
@@ -280,6 +281,7 @@ fn decode_and_emit_stream(
     let mut active_seek_target_seconds: Option<f64> = None;
     let mut last_video_pts_seconds: Option<f64> = None;
     let mut fps_window = FpsWindow::default();
+    let mut frame_pipeline = VideoFramePipeline::default();
     renderer.reset_timeline(0.0, timing_controls.playback_rate() as f64);
     emit_debug(app, "running", "decode loop running");
     loop {
@@ -346,6 +348,7 @@ fn decode_and_emit_stream(
                         &mut active_seek_target_seconds,
                         &mut last_video_pts_seconds,
                         &mut fps_window,
+                        &mut frame_pipeline,
                     )?;
                     continue;
                 }
@@ -394,6 +397,7 @@ fn decode_and_emit_stream(
         &mut active_seek_target_seconds,
         &mut last_video_pts_seconds,
         &mut fps_window,
+        &mut frame_pipeline,
     )?;
     if let Some(audio_state) = audio_pipeline.as_mut() {
         audio_state
@@ -480,6 +484,7 @@ fn drain_frames(
     active_seek_target_seconds: &mut Option<f64>,
     last_video_pts_seconds: &mut Option<f64>,
     fps_window: &mut FpsWindow,
+    frame_pipeline: &mut VideoFramePipeline,
 ) -> Result<(), String> {
     let mut decoded = frame::Video::empty();
     while decoder.receive_frame(&mut decoded).is_ok() {
@@ -509,14 +514,19 @@ fn drain_frames(
             std::thread::sleep(Duration::from_millis(2));
         }
 
-        let frame_for_scale =
-            transfer_hw_frame_if_needed(&decoded).unwrap_or_else(|_| decoded.clone());
+        let frame_for_scale = match transfer_hw_frame_if_needed(&decoded) {
+            Ok(frame) => frame,
+            Err(err) => {
+                frame_pipeline.on_hw_transfer_failed(app, &err);
+                continue;
+            }
+        };
         ensure_scaler(
             scaler,
             frame_for_scale.format(),
             frame_for_scale.width(),
             frame_for_scale.height(),
-            format::pixel::Pixel::NV12,
+            format::pixel::Pixel::YUV420P,
             output_width,
             output_height,
             Flags::BILINEAR,
@@ -527,6 +537,7 @@ fn drain_frames(
                 .run(&frame_for_scale, &mut nv12_frame)
                 .map_err(|err| format!("scale frame failed: {err}"))?;
         }
+        let _ = frame_pipeline.resolve_color_profile(app, &nv12_frame);
         let audio_now_seconds = audio_clock.map(|clock| clock.now_seconds(playback_clock.playback_rate()));
         let position_seconds = playback_clock.tick(
             hinted_seconds,
@@ -561,7 +572,10 @@ fn drain_frames(
         };
         write_latest_stream_position(&app.state::<MediaState>(), *current_position_seconds)?;
         renderer.update_clock(*current_position_seconds, playback_clock.playback_rate());
-        renderer.submit_frame(video_frame_to_nv12_planes(&nv12_frame, Some(estimated_pts)));
+        let Some(render_frame) = frame_pipeline.frame_to_renderer(app, &nv12_frame, estimated_pts) else {
+            continue;
+        };
+        renderer.submit_frame(render_frame);
         if let Some(render_fps) = fps_window.record_frame_and_compute() {
             emit_debug(app, "video_fps", format!("render_fps={render_fps:.2}"));
             let audio_now = audio_clock.map(|clock| clock.now_seconds(playback_clock.playback_rate()));
@@ -667,6 +681,103 @@ struct AudioStats {
     decoded_frames: u64,
     queued_samples: u64,
     last_debug_instant: Option<Instant>,
+}
+
+#[derive(Default)]
+struct VideoIntegrityStats {
+    dropped_hw_transfer: u64,
+    dropped_nv12_extract: u64,
+    color_profile_drift: u64,
+    last_emit_instant: Option<Instant>,
+    last_drift_log_instant: Option<Instant>,
+}
+
+#[derive(Default)]
+struct VideoFramePipeline {
+    locked_color_profile: Option<ColorProfile>,
+    integrity: VideoIntegrityStats,
+}
+
+impl VideoFramePipeline {
+    fn on_hw_transfer_failed(&mut self, app: &AppHandle, err: &str) {
+        self.integrity.dropped_hw_transfer = self.integrity.dropped_hw_transfer.saturating_add(1);
+        emit_debug(app, "hw_frame_transfer", format!("drop frame: {err}"));
+        self.emit_integrity_if_needed(app);
+    }
+
+    fn on_nv12_extract_failed(&mut self, app: &AppHandle, err: &str) {
+        self.integrity.dropped_nv12_extract = self.integrity.dropped_nv12_extract.saturating_add(1);
+        emit_debug(app, "nv12_extract", format!("drop frame: {err}"));
+        self.emit_integrity_if_needed(app);
+    }
+
+    fn resolve_color_profile(&mut self, app: &AppHandle, frame: &frame::Video) -> ColorProfile {
+        let current_profile = detect_color_profile(frame);
+        if let Some(locked) = self.locked_color_profile {
+            if current_profile.color_matrix != locked.color_matrix {
+                self.integrity.color_profile_drift = self.integrity.color_profile_drift.saturating_add(1);
+                let should_log_drift = self
+                    .integrity
+                    .last_drift_log_instant
+                    .map(|last| last.elapsed() >= Duration::from_millis(1000))
+                    .unwrap_or(true);
+                if should_log_drift {
+                    self.integrity.last_drift_log_instant = Some(Instant::now());
+                    emit_debug(
+                        app,
+                        "color_profile_drift",
+                        "frame color matrix changed; keep locked profile".to_string(),
+                    );
+                }
+            }
+            locked
+        } else {
+            self.locked_color_profile = Some(current_profile);
+            emit_debug(app, "color_profile", "lock color profile from first frame".to_string());
+            current_profile
+        }
+    }
+
+    fn frame_to_renderer(
+        &mut self,
+        app: &AppHandle,
+        frame: &frame::Video,
+        pts: f64,
+    ) -> Option<crate::app::media::player::renderer::VideoFrame> {
+        let profile = self.resolve_color_profile(app, frame);
+        let render_frame = match video_frame_to_nv12_planes_from_yuv420p(frame, Some(pts), Some(profile)) {
+            Ok(frame) => frame,
+            Err(err) => {
+                self.on_nv12_extract_failed(app, &err);
+                return None;
+            }
+        };
+        self.emit_integrity_if_needed(app);
+        Some(render_frame)
+    }
+
+    fn emit_integrity_if_needed(&mut self, app: &AppHandle) {
+        let now = Instant::now();
+        let should_emit = self
+            .integrity
+            .last_emit_instant
+            .map(|last| now.saturating_duration_since(last) >= Duration::from_millis(1000))
+            .unwrap_or(true);
+        if !should_emit {
+            return;
+        }
+        self.integrity.last_emit_instant = Some(now);
+        emit_debug(
+            app,
+            "video_integrity",
+            format!(
+                "drops(hw_transfer={}, nv12_extract={}) color_profile_drift={}",
+                self.integrity.dropped_hw_transfer,
+                self.integrity.dropped_nv12_extract,
+                self.integrity.color_profile_drift
+            ),
+        );
+    }
 }
 
 impl AudioOutput {

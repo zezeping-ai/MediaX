@@ -22,6 +22,16 @@ pub fn update_playback_progress(
             .map_err(|_| "playback state poisoned".to_string())?;
         if finalize {
             playback.stop();
+            let mut latest_position = state
+                .latest_stream_position_seconds
+                .lock()
+                .map_err(|_| "latest position state poisoned".to_string())?;
+            *latest_position = 0.0;
+            let mut pending_seek = state
+                .pending_seek_seconds
+                .lock()
+                .map_err(|_| "pending seek state poisoned".to_string())?;
+            *pending_seek = Some(0.0);
         } else {
             playback.sync_position(position_seconds, duration_seconds);
         }
