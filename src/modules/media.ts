@@ -71,3 +71,11 @@ export function setMediaRate(playbackRate: number) {
 export function syncMediaPosition(positionSeconds: number, durationSeconds: number) {
   return invoke<MediaSnapshot>("media_sync_position", { positionSeconds, durationSeconds });
 }
+
+export function startMediaStream(source: string) {
+  return invoke<void>("media_start_stream", { source });
+}
+
+export function stopMediaStream() {
+  return invoke<void>("media_stop_stream");
+}

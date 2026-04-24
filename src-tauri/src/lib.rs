@@ -13,6 +13,7 @@ pub fn run() {
         .on_menu_event(app::menu::handle_menu_event)
         .on_window_event(app::windows::handle_close_requested)
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
@@ -25,7 +26,9 @@ pub fn run() {
             app::commands::media_stop,
             app::commands::media_seek,
             app::commands::media_set_rate,
-            app::commands::media_sync_position
+            app::commands::media_sync_position,
+            app::commands::media_start_stream,
+            app::commands::media_stop_stream
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

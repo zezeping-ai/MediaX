@@ -14,7 +14,9 @@
       {
         "title": "mediax",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "decorations": true,
+        "transparent": false
       }
     ],
     "security": {
@@ -35,7 +37,7 @@
   "plugins": {
     "updater": {
       "active": true,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3NEYxNzc4NDZFQTJFQTgKUldTb0x1cEdlQmRQdDE1TWxjUzJzbEQ2bFJUZ2NWVGRoTkMvYnYyMzJTR2FsdFBkZUVqeGtta0UK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI2MDA1NEY4RTkzNzc1MjAKUldRZ2RUZnArRlFBdHM5RTVodllvWncxemtqK2huQUo4ZHU4Rk5hTkxrWDA5WmxZc0x4TkhJY2cK",
       "endpoints": [
         "https://github.com/zezeping-ai/MediaX/releases/latest/download/latest.json"
       ]

@@ -1,5 +1,4 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -59,7 +58,7 @@ export function useMediaCenter() {
   }
 
   async function openUrl(url: string) {
-    const normalized = url.trim();
+    const normalized = normalizePlayableUrl(url);
     if (!normalized) {
       throw new Error("请输入有效的播放 URL");
     }
@@ -152,7 +151,7 @@ export function useMediaCenter() {
       currentSource.value = "";
       return;
     }
-    currentSource.value = isRemoteSource(currentPath) ? currentPath : convertFileSrc(currentPath);
+    currentSource.value = currentPath;
   });
 
   return {
@@ -177,7 +176,25 @@ export function useMediaCenter() {
   };
 }
 
-function isRemoteSource(source: string) {
-  return source.startsWith("http://") || source.startsWith("https://");
+function normalizePlayableUrl(raw: string) {
+  const value = raw.trim();
+  if (!value) {
+    return "";
+  }
+
+  // Accept URLs without explicit scheme, default to https.
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `https://${value}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(withScheme);
+  } catch {
+    return "";
+  }
+
+  // Keep supported streaming protocols explicit to avoid treating local paths as URLs.
+  if (!/^(https?|rtsp|rtmp|mms):$/i.test(parsed.protocol)) {
+    return "";
+  }
+  return parsed.toString();
 }
 
