@@ -6,14 +6,23 @@ use std::time::{Duration, Instant};
 pub struct AudioClock {
     pub anchor_instant: Instant,
     pub anchor_media_seconds: f64,
+    pub anchor_rate: f64,
 }
 
 impl AudioClock {
-    pub fn now_seconds(&self, rate: f64) -> f64 {
+    pub fn now_seconds(&self) -> f64 {
         let elapsed = Instant::now()
             .saturating_duration_since(self.anchor_instant)
             .as_secs_f64();
-        (self.anchor_media_seconds + elapsed * rate.max(0.25)).max(0.0)
+        (self.anchor_media_seconds + elapsed * self.anchor_rate.max(0.25))
+            .max(0.0)
+    }
+
+    pub fn rebase_rate(&mut self, next_rate: f64) {
+        let now_media_seconds = self.now_seconds();
+        self.anchor_instant = Instant::now();
+        self.anchor_media_seconds = now_media_seconds.max(0.0);
+        self.anchor_rate = next_rate.max(0.25);
     }
 }
 
@@ -85,6 +94,7 @@ impl PlaybackClock {
         hinted_seconds: Option<f64>,
         audio_position_seconds: Option<f64>,
         audio_queue_depth_sources: Option<usize>,
+        audio_allowed_lead_seconds: f64,
     ) -> f64 {
         let rate = self.playback_rate().max(0.25);
         let low_audio_buffer = audio_queue_depth_sources
@@ -103,7 +113,7 @@ impl PlaybackClock {
         if !low_audio_buffer {
             if let Some(audio_seconds) = audio_position_seconds.filter(|v| v.is_finite() && *v >= 0.0)
             {
-                let allowed_lead_seconds = 0.02;
+                let allowed_lead_seconds = audio_allowed_lead_seconds.max(0.0);
                 self.media_seconds = (audio_seconds + allowed_lead_seconds).max(0.0);
                 return self.media_seconds;
             }

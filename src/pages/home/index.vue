@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useLocalStorage } from "@vueuse/core";
 import { clamp } from "lodash-es";
 import type { PlaybackQualityMode } from "@/modules/media-types";
 import MediaViewport from "./components/MediaViewport/index.vue";
@@ -9,6 +10,32 @@ import { usePlayerOverlayControls } from "./composables/usePlayerOverlayControls
 import { usePlaybackShortcuts } from "./composables/usePlaybackShortcuts";
 import { QUALITY_DOWNGRADE_LEVELS } from "./components/playbackControls.constants";
 import { buildPlaybackQualityOptions } from "./components/playbackControls.utils";
+
+const QUALITY_BASELINE_STORAGE_KEY = "mediax:quality-baseline-by-source";
+const sourceHeightBaselineByPath = useLocalStorage<Record<string, number>>(
+  QUALITY_BASELINE_STORAGE_KEY,
+  {},
+);
+
+function readCachedSourceHeightBaseline(path: string): number | null {
+  if (!path) {
+    return null;
+  }
+  const value = sourceHeightBaselineByPath.value[path];
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function writeCachedSourceHeightBaseline(path: string, height: number) {
+  if (!path || !Number.isFinite(height) || height <= 0) {
+    return;
+  }
+  const nextHeight = Math.round(height);
+  const prevHeight = sourceHeightBaselineByPath.value[path];
+  sourceHeightBaselineByPath.value[path] =
+    typeof prevHeight === "number" && Number.isFinite(prevHeight) && prevHeight > 0
+      ? Math.max(prevHeight, nextHeight)
+      : nextHeight;
+}
 
 const {
   playback,
@@ -137,7 +164,8 @@ async function handleVideoEnded() {
 watch(currentSource, () => {
   playerErrorMessage.value = "";
   selectedQuality.value = "source";
-  sourceVideoHeightBaseline.value = null;
+  const path = currentSource.value;
+  sourceVideoHeightBaseline.value = path ? readCachedSourceHeightBaseline(path) : null;
 });
 
 watch(playback, (value) => {
@@ -154,9 +182,12 @@ watch(metadataVideoHeight, (nextHeight) => {
   }
   if (sourceVideoHeightBaseline.value === null) {
     sourceVideoHeightBaseline.value = nextHeight;
-    return;
+  } else {
+    sourceVideoHeightBaseline.value = Math.max(sourceVideoHeightBaseline.value, nextHeight);
   }
-  sourceVideoHeightBaseline.value = Math.max(sourceVideoHeightBaseline.value, nextHeight);
+  if (currentSource.value && sourceVideoHeightBaseline.value !== null) {
+    writeCachedSourceHeightBaseline(currentSource.value, sourceVideoHeightBaseline.value);
+  }
 });
 
 usePlaybackShortcuts({

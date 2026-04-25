@@ -38,13 +38,11 @@ export function buildPlaybackQualityOptions(
     options.push({ key: "auto", label: "自动" });
   }
 
-  if (normalizedHeight === null) {
-    return options;
-  }
-
-  for (const level of downgradeLevels) {
-    if (level < normalizedHeight) {
-      options.push({ key: `${level}p`, label: `${level}P` });
+  if (normalizedHeight !== null) {
+    for (const level of downgradeLevels) {
+      if (level < normalizedHeight) {
+        options.push({ key: `${level}p`, label: `${level}P` });
+      }
     }
   }
 

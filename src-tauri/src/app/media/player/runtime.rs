@@ -38,6 +38,11 @@ use tauri::{AppHandle, Emitter};
 
 const MAX_EMIT_FPS: u32 = 60;
 const METRICS_EMIT_INTERVAL_MS: u64 = 1000;
+const RATE_SWITCH_SETTLE_WINDOW_MS: u64 = 320;
+const AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT: f64 = 0.02;
+const AUDIO_ALLOWED_LEAD_SECONDS_DURING_SETTLE: f64 = 0.06;
+const MAX_DECODE_LEAD_SECONDS_DEFAULT: f64 = 0.25;
+const MAX_DECODE_LEAD_SECONDS_DURING_SETTLE: f64 = 0.45;
 
 mod audio;
 mod audio_pipeline;
@@ -261,6 +266,7 @@ pub(super) fn decode_and_emit_stream(
     let mut audio_queue_depth_sources: Option<usize> = None;
     let mut active_seek_target_seconds: Option<f64> = None;
     let mut last_video_pts_seconds: Option<f64> = None;
+    let mut rate_switch_settle_until: Option<Instant> = None;
     let mut fps_window = FpsWindow::default();
     let mut frame_pipeline = VideoFramePipeline::default();
     let mut process_metrics = ProcessMetricsSampler::new();
@@ -277,6 +283,13 @@ pub(super) fn decode_and_emit_stream(
         if let Some(audio_state) = audio_pipeline.as_mut() {
             let next_rate = clamp_playback_rate(timing_controls.playback_rate());
             if (next_rate - last_applied_audio_rate).abs() > 1e-3 {
+                rate_switch_settle_until =
+                    Some(Instant::now() + Duration::from_millis(RATE_SWITCH_SETTLE_WINDOW_MS));
+                if let Some(clock) = audio_clock.as_mut() {
+                    // Preserve audio timeline continuity across rate changes; otherwise
+                    // switching rate can make the clock jump backward/forward.
+                    clock.rebase_rate(next_rate as f64);
+                }
                 audio_state.output.player.set_speed(next_rate);
                 // If a lot of audio is already queued, changing speed can appear to "lag"
                 // because the queued audio keeps playing at the old rate for a while.
@@ -297,9 +310,20 @@ pub(super) fn decode_and_emit_stream(
 
         // Keep decode near real-time. If we run far ahead (especially with a tiny video queue),
         // we can reach EOF quickly and the video will appear to "end" while audio is still draining.
-        let max_lead_seconds = 0.25;
-        let rate = timing_controls.playback_rate().max(0.25) as f64;
-        let audio_now_seconds = audio_clock.as_ref().map(|clock| clock.now_seconds(rate));
+        let in_rate_switch_settle = rate_switch_settle_until
+            .map(|deadline| Instant::now() < deadline)
+            .unwrap_or(false);
+        let max_lead_seconds = if in_rate_switch_settle {
+            MAX_DECODE_LEAD_SECONDS_DURING_SETTLE
+        } else {
+            MAX_DECODE_LEAD_SECONDS_DEFAULT
+        };
+        let audio_allowed_lead_seconds = if in_rate_switch_settle {
+            AUDIO_ALLOWED_LEAD_SECONDS_DURING_SETTLE
+        } else {
+            AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT
+        };
+        let audio_now_seconds = audio_clock.as_ref().map(|clock| clock.now_seconds());
         if let (Some(video_pts), Some(audio_pts)) = (last_video_pts_seconds, audio_now_seconds)
         {
             let lead = video_pts - audio_pts;
@@ -356,6 +380,7 @@ pub(super) fn decode_and_emit_stream(
                         &mut fps_window,
                         &mut frame_pipeline,
                         &mut process_metrics,
+                        audio_allowed_lead_seconds,
                     )?;
                     continue;
                 }
@@ -406,6 +431,7 @@ pub(super) fn decode_and_emit_stream(
         &mut fps_window,
         &mut frame_pipeline,
         &mut process_metrics,
+        AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT,
     )?;
     if let Some(audio_state) = audio_pipeline.as_mut() {
         audio_state
@@ -446,6 +472,10 @@ pub(super) fn decode_and_emit_stream(
         if let Some(audio_state) = audio_pipeline.as_mut() {
             let next_rate = clamp_playback_rate(timing_controls.playback_rate());
             if (next_rate - last_applied_audio_rate).abs() > 1e-3 {
+                if let Some(clock) = audio_clock.as_mut() {
+                    // Keep EOF tail pacing in sync with runtime rate changes.
+                    clock.rebase_rate(next_rate as f64);
+                }
                 audio_state.output.player.set_speed(next_rate);
                 let queued_sources = audio_state.output.player.len();
                 if queued_sources >= audio_pipeline::DEEP_AUDIO_QUEUE_SOURCE_THRESHOLD && next_rate < 1.0 {
@@ -508,6 +538,7 @@ fn drain_frames(
     fps_window: &mut FpsWindow,
     frame_pipeline: &mut VideoFramePipeline,
     process_metrics: &mut ProcessMetricsSampler,
+    audio_allowed_lead_seconds: f64,
 ) -> Result<(), String> {
     let mut decoded = frame::Video::empty();
     while decoder.receive_frame(&mut decoded).is_ok() {
@@ -562,11 +593,12 @@ fn drain_frames(
                 .map_err(|err| format!("scale frame failed: {err}"))?;
         }
         let _ = frame_pipeline.resolve_color_profile(app, &nv12_frame);
-        let audio_now_seconds = audio_clock.map(|clock| clock.now_seconds(playback_clock.playback_rate()));
+        let audio_now_seconds = audio_clock.map(|clock| clock.now_seconds());
         let position_seconds = playback_clock.tick(
             hinted_seconds,
             audio_now_seconds,
             audio_queue_depth_sources,
+            audio_allowed_lead_seconds,
         );
         // Use stream PTS when available; otherwise estimate a monotonic PTS so we don't
         // mislabel far-ahead decoded frames as "due now" (which looks like fast-forward).
@@ -606,7 +638,7 @@ fn drain_frames(
             let process_snapshot = process_metrics.sample();
             let renderer_metrics = renderer.metrics_snapshot();
             emit_debug(app, "video_fps", format!("render_fps={render_fps:.2}"));
-            let audio_now = audio_clock.map(|clock| clock.now_seconds(playback_clock.playback_rate()));
+            let audio_now = audio_clock.map(|clock| clock.now_seconds());
             let audio_drift = audio_now.map(|a| estimated_pts - a);
             emit_debug(
                 app,
@@ -1018,6 +1050,7 @@ fn drain_audio_frames(
                 *audio_clock = Some(AudioClock {
                     anchor_instant: Instant::now(),
                     anchor_media_seconds: seconds,
+                    anchor_rate: timing_controls.playback_rate().max(0.25) as f64,
                 });
             }
         }
@@ -1057,7 +1090,7 @@ fn drain_audio_frames(
                     clamped_bytes,
                     audio_clock
                         .as_ref()
-                        .map(|clock| clock.now_seconds(timing_controls.playback_rate().max(0.25) as f64))
+                        .map(|clock| clock.now_seconds())
                         .map(|v| format!("{v:.3}s"))
                         .unwrap_or_else(|| "n/a".to_string()),
                 ),

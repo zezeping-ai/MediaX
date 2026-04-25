@@ -89,10 +89,12 @@ function emitPause() {
 }
 
 function handleSpeedMenuClick({ key }: { key: string | number }) {
+  speedDropdownOpen.value = false;
   emit("change-rate", Number(key));
 }
 
 function handleQualityMenuClick({ key }: { key: string | number }) {
+  qualityDropdownOpen.value = false;
   emit("change-quality", String(key));
 }
 
