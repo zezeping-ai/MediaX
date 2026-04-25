@@ -28,12 +28,7 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         name: Some(pkg.name.clone()),
         version: Some(pkg.version.to_string()),
         copyright: app.config().bundle.copyright.clone(),
-        authors: app
-            .config()
-            .bundle
-            .publisher
-            .clone()
-            .map(|p| vec![p]),
+        authors: app.config().bundle.publisher.clone().map(|p| vec![p]),
         ..Default::default()
     };
     let about_text = format!("关于 {}", app_menu_title(app));
@@ -117,13 +112,8 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
-    let help_submenu = Submenu::with_id_and_items(
-        app,
-        HELP_SUBMENU_ID,
-        "Help",
-        true,
-        &[&check_update],
-    )?;
+    let help_submenu =
+        Submenu::with_id_and_items(app, HELP_SUBMENU_ID, "Help", true, &[&check_update])?;
 
     let menu = Menu::with_items(
         app,
@@ -137,26 +127,21 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: MenuEvent) {
     match event.id().as_ref() {
         MENU_APP_QUIT_ID => {
             app.exit(0);
-            return;
         }
         MENU_APP_SETTINGS_ID => {
             let _ = show_preferences_window(app);
-            return;
         }
         MENU_HELP_CHECK_UPDATE_ID => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 check_and_install_update(app).await;
             });
-            return;
         }
         MENU_FILE_OPEN_LOCAL_ID => {
             let _ = app.emit(APP_MENU_EVENT, "open_local");
-            return;
         }
         MENU_FILE_OPEN_URL_ID => {
             let _ = app.emit(APP_MENU_EVENT, "open_url");
-            return;
         }
         _ => {}
     }

@@ -14,8 +14,7 @@ impl AudioClock {
         let elapsed = Instant::now()
             .saturating_duration_since(self.anchor_instant)
             .as_secs_f64();
-        (self.anchor_media_seconds + elapsed * self.anchor_rate.max(0.25))
-            .max(0.0)
+        (self.anchor_media_seconds + elapsed * self.anchor_rate.max(0.25)).max(0.0)
     }
 
     pub fn rebase_rate(&mut self, next_rate: f64) {
@@ -111,7 +110,8 @@ impl PlaybackClock {
         self.last_emit_instant = Some(now);
 
         if !low_audio_buffer {
-            if let Some(audio_seconds) = audio_position_seconds.filter(|v| v.is_finite() && *v >= 0.0)
+            if let Some(audio_seconds) =
+                audio_position_seconds.filter(|v| v.is_finite() && *v >= 0.0)
             {
                 let allowed_lead_seconds = audio_allowed_lead_seconds.max(0.0);
                 self.media_seconds = (audio_seconds + allowed_lead_seconds).max(0.0);

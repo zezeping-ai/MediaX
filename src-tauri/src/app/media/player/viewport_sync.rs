@@ -27,10 +27,7 @@ pub fn sync_main_viewport_to(
     source: &str,
     position_seconds: f64,
 ) -> Result<(), String> {
-    let epoch = media
-        .paused_seek_epoch
-        .fetch_add(1, Ordering::Relaxed)
-        + 1;
+    let epoch = media.paused_seek_epoch.fetch_add(1, Ordering::Relaxed) + 1;
     let clamped = position_seconds.max(0.0);
     let rate = media.timing_controls.playback_rate() as f64;
     renderer.reset_timeline(clamped, rate);

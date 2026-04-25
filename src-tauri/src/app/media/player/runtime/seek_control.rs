@@ -1,19 +1,17 @@
-use crate::app::media::error::MediaError;
 use crate::app::media::player::state::MediaState;
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::format;
 use tauri::{AppHandle, Manager};
 
-use super::AudioPipeline;
 use super::clock::PlaybackClock;
+use super::AudioPipeline;
 
 pub fn take_pending_seek_seconds(app: &AppHandle) -> Result<Option<f64>, String> {
     let media_state = app.state::<MediaState>();
-    let mut guard = media_state
-        .pending_seek_seconds
-        .lock()
-        .map_err(|_| MediaError::state_poisoned_lock("pending seek state").to_string())?;
-    Ok(guard.take())
+    media_state
+        .stream
+        .take_pending_seek_seconds()
+        .map_err(|err| err.to_string())
 }
 
 pub fn apply_seek_to_stream(

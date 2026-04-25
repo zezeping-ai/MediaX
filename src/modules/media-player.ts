@@ -13,45 +13,19 @@ import {
   type PreviewFrame,
 } from "./media-types";
 import type { PlayerVideoScaleMode } from "./preferences";
+import {
+  normalizeNonNegative,
+  normalizePlaybackRate,
+  normalizePreviewEdge,
+  normalizeUnitInterval,
+} from "./player-constraints";
 
 export const DEFAULT_PREVIEW_FRAME_MAX_WIDTH = 160;
 export const DEFAULT_PREVIEW_FRAME_MAX_HEIGHT = 90;
-const MIN_PLAYBACK_RATE = 0.25;
-const MAX_PLAYBACK_RATE = 4;
-const MIN_PREVIEW_EDGE = 32;
-const MAX_PREVIEW_EDGE = 4096;
 
 export interface SeekMediaOptions {
   forceRender?: boolean;
   requestId?: string;
-}
-
-function normalizeNonNegative(value: number, field: string) {
-  if (!Number.isFinite(value)) {
-    throw new Error(`${field} must be a finite number`);
-  }
-  return Math.max(value, 0);
-}
-
-function normalizePlaybackRate(playbackRate: number) {
-  if (!Number.isFinite(playbackRate)) {
-    throw new Error("playbackRate must be a finite number");
-  }
-  return Math.min(MAX_PLAYBACK_RATE, Math.max(MIN_PLAYBACK_RATE, playbackRate));
-}
-
-function normalizeUnitInterval(value: number, field: string) {
-  if (!Number.isFinite(value)) {
-    throw new Error(`${field} must be a finite number`);
-  }
-  return Math.min(1, Math.max(0, value));
-}
-
-function normalizePreviewEdge(value: number) {
-  if (!Number.isFinite(value)) {
-    throw new Error("preview edge must be a finite number");
-  }
-  return Math.min(MAX_PREVIEW_EDGE, Math.max(MIN_PREVIEW_EDGE, Math.round(value)));
 }
 
 export function getPlaybackSnapshot() {
@@ -152,21 +126,6 @@ export function playbackStartCacheRecording(outputDir?: string) {
 export function playbackStopCacheRecording() {
   return invokeMediaCommand<CacheRecordingStatus>("playback_stop_cache_recording");
 }
-
-// Legacy aliases kept to avoid breaking existing imports while migration is ongoing.
-export const getMediaSnapshot = getPlaybackSnapshot;
-export const openMedia = playbackOpenSource;
-export const playMedia = playbackResume;
-export const pauseMedia = playbackPause;
-export const stopMedia = playbackStopSession;
-export const seekMedia = playbackSeekTo;
-export const setMediaRate = playbackSetRate;
-export const setMediaVolume = playbackSetVolume;
-export const setMediaMuted = playbackSetMuted;
-export const setMediaHwDecodeMode = playbackConfigureDecoderMode;
-export const syncMediaPosition = playbackSyncPosition;
-export const setMediaQuality = playbackSetQuality;
-export const previewMediaFrame = playbackPreviewFrame;
 
 export function setMainWindowAlwaysOnTop(enabled: boolean) {
   return invokeMediaCommand<void>("window_set_main_always_on_top", { enabled });

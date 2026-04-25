@@ -1,8 +1,7 @@
-use crate::app::media::player::events::{
-    MediaEventEnvelope, MEDIA_PLAYBACK_STATE_EVENT, MEDIA_PROTOCOL_VERSION, MEDIA_STATE_EVENT,
-    MEDIA_STATE_EVENT_V2,
-};
 use crate::app::media::error::MediaError;
+use crate::app::media::player::events::{
+    MediaEventEnvelope, MEDIA_PLAYBACK_STATE_EVENT, MEDIA_PROTOCOL_VERSION,
+};
 use crate::app::media::player::state::MediaState;
 use crate::app::media::types::MediaSnapshot;
 use tauri::{AppHandle, Emitter, State};
@@ -32,14 +31,6 @@ pub fn emit_snapshot_with_request_id(
     };
     app.emit(MEDIA_PLAYBACK_STATE_EVENT, &envelope)
         .map_err(|err| format!("emit playback state failed: {err}"))?;
-    app.emit(MEDIA_STATE_EVENT, &snapshot)
-        .map_err(|err| format!("emit media state failed: {err}"))?;
-    let legacy_v2_envelope = MediaEventEnvelope {
-        event_type: "state",
-        ..envelope
-    };
-    app.emit(MEDIA_STATE_EVENT_V2, &legacy_v2_envelope)
-        .map_err(|err| format!("emit media state v2 failed: {err}"))?;
     Ok(snapshot)
 }
 

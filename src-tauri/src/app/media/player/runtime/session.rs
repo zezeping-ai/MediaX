@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 #[allow(dead_code)]
 pub struct DecodeSession<'a> {

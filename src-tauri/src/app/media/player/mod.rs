@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod constraints;
 pub mod coordinator;
 pub mod decode_context;
 pub mod events;

@@ -68,18 +68,18 @@ where
                 decoder
                     .send_packet(&packet)
                     .map_err(|err| format!("send packet failed: {err}"))?;
-                if submit_preview_frame(
+                let mut ctx = PreviewFrameContext {
                     renderer,
                     decoder,
-                    &mut scaler,
-                    video_ctx.output_width,
-                    video_ctx.output_height,
+                    scaler: &mut scaler,
+                    output_width: video_ctx.output_width,
+                    output_height: video_ctx.output_height,
                     video_time_base,
-                    clamped,
+                    target_seconds: clamped,
                     seek_applied,
                     deadline,
-                    &should_abort,
-                )? {
+                };
+                if submit_preview_frame(&mut ctx, &should_abort)? {
                     return Ok(());
                 }
             }
@@ -87,18 +87,18 @@ where
                 decoder
                     .send_eof()
                     .map_err(|err| format!("send eof failed: {err}"))?;
-                if submit_preview_frame(
+                let mut ctx = PreviewFrameContext {
                     renderer,
                     decoder,
-                    &mut scaler,
-                    video_ctx.output_width,
-                    video_ctx.output_height,
+                    scaler: &mut scaler,
+                    output_width: video_ctx.output_width,
+                    output_height: video_ctx.output_height,
                     video_time_base,
-                    clamped,
+                    target_seconds: clamped,
                     seek_applied,
                     deadline,
-                    &should_abort,
-                )? {
+                };
+                if submit_preview_frame(&mut ctx, &should_abort)? {
                     return Ok(());
                 }
                 break;
@@ -158,17 +158,17 @@ where
                 decoder
                     .send_packet(&packet)
                     .map_err(|err| format!("preview send packet failed: {err}"))?;
-                if let Some(frame) = decode_preview_frame_until(
+                let mut ctx = DecodePreviewFrameContext {
                     decoder,
-                    &mut rgb_scaler,
-                    target_w,
-                    target_h,
+                    scaler: &mut rgb_scaler,
+                    output_width: target_w,
+                    output_height: target_h,
                     video_time_base,
-                    clamped,
+                    target_seconds: clamped,
                     seek_applied,
                     deadline,
-                    &should_abort,
-                )? {
+                };
+                if let Some(frame) = decode_preview_frame_until(&mut ctx, &should_abort)? {
                     return Ok(Some(frame));
                 }
             }
@@ -176,17 +176,17 @@ where
                 decoder
                     .send_eof()
                     .map_err(|err| format!("preview send eof failed: {err}"))?;
-                if let Some(frame) = decode_preview_frame_until(
+                let mut ctx = DecodePreviewFrameContext {
                     decoder,
-                    &mut rgb_scaler,
-                    target_w,
-                    target_h,
+                    scaler: &mut rgb_scaler,
+                    output_width: target_w,
+                    output_height: target_h,
                     video_time_base,
-                    clamped,
+                    target_seconds: clamped,
                     seek_applied,
                     deadline,
-                    &should_abort,
-                )? {
+                };
+                if let Some(frame) = decode_preview_frame_until(&mut ctx, &should_abort)? {
                     return Ok(Some(frame));
                 }
                 return Ok(None);
@@ -197,22 +197,14 @@ where
 }
 
 fn submit_preview_frame<F>(
-    renderer: &RendererState,
-    decoder: &mut ffmpeg::decoder::Video,
-    scaler: &mut Option<ScalingContext>,
-    output_width: u32,
-    output_height: u32,
-    video_time_base: ffmpeg::Rational,
-    target_seconds: f64,
-    seek_applied: bool,
-    deadline: Instant,
+    ctx: &mut PreviewFrameContext<'_>,
     should_abort: &F,
 ) -> Result<bool, String>
 where
     F: Fn() -> bool,
 {
     let mut decoded = frame::Video::empty();
-    while decoder.receive_frame(&mut decoded).is_ok() {
+    while ctx.decoder.receive_frame(&mut decoded).is_ok() {
         if should_abort() {
             return Ok(true);
         }
@@ -221,17 +213,19 @@ where
             Err(_) => continue,
         };
         ensure_scaler(
-            scaler,
-            frame_for_scale.format(),
-            frame_for_scale.width(),
-            frame_for_scale.height(),
-            format::pixel::Pixel::YUV420P,
-            output_width,
-            output_height,
-            Flags::BILINEAR,
+            ctx.scaler,
+            crate::app::media::player::video_frame::ScalerSpec {
+                src_format: frame_for_scale.format(),
+                src_width: frame_for_scale.width(),
+                src_height: frame_for_scale.height(),
+                dst_format: format::pixel::Pixel::YUV420P,
+                dst_width: ctx.output_width,
+                dst_height: ctx.output_height,
+                flags: Flags::BILINEAR,
+            },
         )?;
         let mut nv12_frame = frame::Video::empty();
-        if let Some(scaler) = scaler.as_mut() {
+        if let Some(scaler) = ctx.scaler.as_mut() {
             scaler
                 .run(&frame_for_scale, &mut nv12_frame)
                 .map_err(|err| format!("scale frame failed: {err}"))?;
@@ -245,26 +239,26 @@ where
             Err(_) => continue,
         };
 
-        if seek_applied {
-            renderer.submit_frame(frame);
+        if ctx.seek_applied {
+            ctx.renderer.submit_frame(frame);
             return Ok(true);
         }
 
         let hinted_seconds =
-            timestamp_to_seconds(decoded.timestamp(), decoded.pts(), video_time_base);
+            timestamp_to_seconds(decoded.timestamp(), decoded.pts(), ctx.video_time_base);
 
         if let Some(seconds) = hinted_seconds {
-            if seconds + 0.04 >= target_seconds {
-                renderer.submit_frame(frame);
+            if seconds + 0.04 >= ctx.target_seconds {
+                ctx.renderer.submit_frame(frame);
                 return Ok(true);
             }
         } else {
-            renderer.submit_frame(frame);
+            ctx.renderer.submit_frame(frame);
             return Ok(true);
         }
 
-        if Instant::now() >= deadline {
-            renderer.submit_frame(frame);
+        if Instant::now() >= ctx.deadline {
+            ctx.renderer.submit_frame(frame);
             return Ok(true);
         }
     }
@@ -272,29 +266,22 @@ where
 }
 
 fn decode_preview_frame_until<F>(
-    decoder: &mut ffmpeg::decoder::Video,
-    scaler: &mut Option<ScalingContext>,
-    target_width: u32,
-    target_height: u32,
-    video_time_base: ffmpeg::Rational,
-    target_seconds: f64,
-    seek_applied: bool,
-    deadline: Instant,
+    ctx: &mut DecodePreviewFrameContext<'_>,
     should_abort: &F,
 ) -> Result<Option<PreviewFrame>, String>
 where
     F: Fn() -> bool,
 {
     let mut decoded = frame::Video::empty();
-    while decoder.receive_frame(&mut decoded).is_ok() {
-        if should_abort() || Instant::now() >= deadline {
+    while ctx.decoder.receive_frame(&mut decoded).is_ok() {
+        if should_abort() || Instant::now() >= ctx.deadline {
             return Ok(None);
         }
         let hinted_seconds =
-            timestamp_to_seconds(decoded.timestamp(), decoded.pts(), video_time_base);
-        if !seek_applied {
+            timestamp_to_seconds(decoded.timestamp(), decoded.pts(), ctx.video_time_base);
+        if !ctx.seek_applied {
             if let Some(seconds) = hinted_seconds {
-                if seconds + 0.04 < target_seconds && Instant::now() < deadline {
+                if seconds + 0.04 < ctx.target_seconds && Instant::now() < ctx.deadline {
                     continue;
                 }
             }
@@ -304,17 +291,19 @@ where
             Err(_) => continue,
         };
         ensure_scaler(
-            scaler,
-            frame_for_scale.format(),
-            frame_for_scale.width(),
-            frame_for_scale.height(),
-            format::pixel::Pixel::RGB24,
-            target_width,
-            target_height,
-            Flags::BILINEAR,
+            ctx.scaler,
+            crate::app::media::player::video_frame::ScalerSpec {
+                src_format: frame_for_scale.format(),
+                src_width: frame_for_scale.width(),
+                src_height: frame_for_scale.height(),
+                dst_format: format::pixel::Pixel::RGB24,
+                dst_width: ctx.output_width,
+                dst_height: ctx.output_height,
+                flags: Flags::BILINEAR,
+            },
         )?;
         let mut rgb_frame = frame::Video::empty();
-        if let Some(scaler) = scaler.as_mut() {
+        if let Some(scaler) = ctx.scaler.as_mut() {
             scaler
                 .run(&frame_for_scale, &mut rgb_frame)
                 .map_err(|err| format!("preview scale rgb frame failed: {err}"))?;
@@ -325,10 +314,33 @@ where
             data_base64: BASE64_STANDARD.encode(encoded.bytes),
             width: encoded.width,
             height: encoded.height,
-            position_seconds: hinted_seconds.unwrap_or(target_seconds).max(0.0),
+            position_seconds: hinted_seconds.unwrap_or(ctx.target_seconds).max(0.0),
         }));
     }
     Ok(None)
+}
+
+struct PreviewFrameContext<'a> {
+    renderer: &'a RendererState,
+    decoder: &'a mut ffmpeg::decoder::Video,
+    scaler: &'a mut Option<ScalingContext>,
+    output_width: u32,
+    output_height: u32,
+    video_time_base: ffmpeg::Rational,
+    target_seconds: f64,
+    seek_applied: bool,
+    deadline: Instant,
+}
+
+struct DecodePreviewFrameContext<'a> {
+    decoder: &'a mut ffmpeg::decoder::Video,
+    scaler: &'a mut Option<ScalingContext>,
+    output_width: u32,
+    output_height: u32,
+    video_time_base: ffmpeg::Rational,
+    target_seconds: f64,
+    seek_applied: bool,
+    deadline: Instant,
 }
 
 struct EncodedPreview {
@@ -340,8 +352,8 @@ struct EncodedPreview {
 fn encode_rgb_frame_to_small_jpeg(frame: &frame::Video) -> Result<EncodedPreview, String> {
     let src_width = frame.width().max(1);
     let src_height = frame.height().max(1);
-    let target_width = src_width.min(PREVIEW_TARGET_WIDTH).max(1);
-    let target_height = src_height.min(PREVIEW_TARGET_HEIGHT).max(1);
+    let target_width = src_width.clamp(1, PREVIEW_TARGET_WIDTH);
+    let target_height = src_height.clamp(1, PREVIEW_TARGET_HEIGHT);
 
     let mut working = frame_to_packed_rgb(frame)?;
     let mut width = src_width;

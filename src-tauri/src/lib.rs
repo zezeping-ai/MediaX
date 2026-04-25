@@ -13,9 +13,8 @@ pub fn run() {
             app::tray::setup(app)?;
             // Milestone 0: start wgpu underlay test rendering.
             let renderer = app.state::<RendererState>();
-            renderer.start_render_loop(&app.handle()).map_err(|err| {
-                let boxed: Box<dyn std::error::Error> =
-                    Box::new(std::io::Error::new(std::io::ErrorKind::Other, err));
+            renderer.start_render_loop(app.handle()).map_err(|err| {
+                let boxed: Box<dyn std::error::Error> = Box::new(std::io::Error::other(err));
                 tauri::Error::Setup(boxed.into())
             })?;
             Ok(())
@@ -45,19 +44,6 @@ pub fn run() {
             app::media::player::commands::playback_get_cache_recording_status,
             app::media::player::commands::playback_start_cache_recording,
             app::media::player::commands::playback_stop_cache_recording,
-            app::media::player::commands::media_get_snapshot,
-            app::media::player::commands::media_open,
-            app::media::player::commands::media_play,
-            app::media::player::commands::media_pause,
-            app::media::player::commands::media_stop,
-            app::media::player::commands::media_seek,
-            app::media::player::commands::media_set_rate,
-            app::media::player::commands::media_set_volume,
-            app::media::player::commands::media_set_muted,
-            app::media::player::commands::media_set_hw_decode_mode,
-            app::media::player::commands::media_set_quality,
-            app::media::player::commands::media_sync_position,
-            app::media::player::commands::media_preview_frame,
             app::windows::window_set_main_always_on_top,
             app::windows::window_set_main_video_scale_mode,
         ])

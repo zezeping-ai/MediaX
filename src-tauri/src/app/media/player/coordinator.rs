@@ -3,13 +3,14 @@
 //! Heavy policy lives in [`crate::app::media::player::viewport_sync`] and [`crate::app::media::player::runtime`].
 
 use crate::app::media::error::{MediaError, MediaResult};
+use crate::app::media::player::constraints;
 use crate::app::media::player::preview::generate_preview_frame;
 use crate::app::media::player::renderer::RendererState;
 use crate::app::media::player::runtime::{
     read_latest_stream_position, start_decode_stream, stop_decode_stream_blocking,
-    stop_decode_stream_non_blocking,
-    write_latest_stream_position,
+    stop_decode_stream_non_blocking, write_latest_stream_position,
 };
+use crate::app::media::player::state::CacheRecorderSession;
 use crate::app::media::player::state::MediaState;
 use crate::app::media::player::state_locks;
 use crate::app::media::player::viewport_sync;
@@ -18,16 +19,10 @@ use crate::app::media::types::{
     CacheRecordingStatus, HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode, PlaybackStatus,
     PreviewFrame,
 };
-use crate::app::media::player::state::CacheRecorderSession;
 use std::fs;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{async_runtime, AppHandle, Manager, State};
-
-const MIN_PLAYBACK_RATE: f64 = 0.25;
-const MAX_PLAYBACK_RATE: f64 = 4.0;
-const MIN_PREVIEW_EDGE: u32 = 32;
-const MAX_PREVIEW_EDGE: u32 = 4096;
 
 pub fn get_snapshot(state: State<'_, MediaState>) -> MediaResult<MediaSnapshot> {
     snapshot_from_state(&state).map_err(MediaError::from)
@@ -39,10 +34,7 @@ pub fn open(
     path: String,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
-    finalize_active_cache_recording(
-        &state,
-        "播放源已切换，录制已自动停止",
-    )?;
+    finalize_active_cache_recording(&state, "播放源已切换，录制已自动停止")?;
     // Switching source must stop any active decode stream first, otherwise the old
     // stream can keep emitting progress and consume resources.
     stop_decode_stream_non_blocking(&state)?;
@@ -50,8 +42,8 @@ pub fn open(
         let mut playback = state_locks::playback(&state)?;
         playback.open(path.clone());
     }
-    *state_locks::latest_stream_position_seconds(&state)? = 0.0;
-    *state_locks::pending_seek_seconds(&state)? = Some(0.0);
+    state.stream.set_latest_position_seconds(0.0)?;
+    state.stream.reset_pending_seek_to_zero()?;
     {
         let mut library = state_locks::library(&state)?;
         library.mark_playback_progress(&path, 0.0);
@@ -87,19 +79,16 @@ pub fn stop(
     state: State<'_, MediaState>,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
-    finalize_active_cache_recording(
-        &state,
-        "播放已停止，录制已自动停止",
-    )?;
+    finalize_active_cache_recording(&state, "播放已停止，录制已自动停止")?;
     stop_decode_stream_non_blocking(&state)?;
-    *state_locks::latest_stream_position_seconds(&state)? = 0.0;
+    state.stream.set_latest_position_seconds(0.0)?;
     let current_path = {
         let mut playback = state_locks::playback(&state)?;
         let path = playback.state().current_path;
         playback.stop();
         path
     };
-    *state_locks::pending_seek_seconds(&state)? = Some(0.0);
+    state.stream.reset_pending_seek_to_zero()?;
     if let Some(source) = current_path {
         // Do not block stop() on preview decode, especially for network streams (m3u8),
         // where opening/reading can take noticeable time and freezes the UI while the
@@ -108,7 +97,9 @@ pub fn stop(
         tauri::async_runtime::spawn_blocking(move || {
             let renderer = (*app_handle.state::<RendererState>()).clone();
             let media_state = app_handle.state::<MediaState>();
-            if let Err(err) = viewport_sync::sync_main_viewport_to(&*media_state, &renderer, &source, 0.0) {
+            if let Err(err) =
+                viewport_sync::sync_main_viewport_to(&media_state, &renderer, &source, 0.0)
+            {
                 eprintln!("stop preview failed: {err}");
             }
         });
@@ -123,7 +114,8 @@ pub fn seek(
     _force_render: Option<bool>,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
-    let position_seconds = normalize_non_negative(position_seconds, "position_seconds")?;
+    let position_seconds =
+        constraints::normalize_non_negative(position_seconds, "position_seconds")?;
     let (media_path, status) = {
         let mut playback = state_locks::playback(&state)?;
         playback.seek(position_seconds);
@@ -139,7 +131,9 @@ pub fn seek(
         if let Some(source) = media_path {
             let target = position_seconds.max(0.0);
             let renderer = (*app.state::<RendererState>()).clone();
-            if let Err(err) = viewport_sync::sync_main_viewport_to(&state, &renderer, &source, target) {
+            if let Err(err) =
+                viewport_sync::sync_main_viewport_to(&state, &renderer, &source, target)
+            {
                 eprintln!("paused seek preview failed: {err}");
             }
         }
@@ -154,12 +148,14 @@ pub fn set_rate(
     playback_rate: f64,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
-    let playback_rate = normalize_playback_rate(playback_rate)?;
+    let playback_rate = constraints::normalize_playback_rate(playback_rate)?;
     {
         let mut playback = state_locks::playback(&state)?;
         playback.set_rate(playback_rate);
     }
-    state.timing_controls.set_playback_rate(playback_rate as f32);
+    state
+        .timing_controls
+        .set_playback_rate(playback_rate as f32);
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
@@ -169,7 +165,7 @@ pub fn set_volume(
     volume: f64,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
-    let volume = normalize_unit_interval(volume, "volume")?;
+    let volume = constraints::normalize_unit_interval(volume, "volume")?;
     state.audio_controls.set_volume(volume as f32);
     if volume <= 0.0 {
         state.audio_controls.set_muted(true);
@@ -266,8 +262,10 @@ pub fn sync_position(
     duration_seconds: f64,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
-    let position_seconds = normalize_non_negative(position_seconds, "position_seconds")?;
-    let duration_seconds = normalize_non_negative(duration_seconds, "duration_seconds")?;
+    let position_seconds =
+        constraints::normalize_non_negative(position_seconds, "position_seconds")?;
+    let duration_seconds =
+        constraints::normalize_non_negative(duration_seconds, "duration_seconds")?;
     let path = {
         let mut playback = state_locks::playback(&state)?;
         playback.sync_position(position_seconds, duration_seconds);
@@ -287,7 +285,7 @@ pub async fn preview_frame(
     max_width: Option<u32>,
     max_height: Option<u32>,
 ) -> MediaResult<Option<PreviewFrame>> {
-    let target = normalize_non_negative(position_seconds, "position_seconds")?;
+    let target = constraints::normalize_non_negative(position_seconds, "position_seconds")?;
     let source = {
         let mut playback = state_locks::playback(&state)?;
         playback.state().current_path
@@ -297,8 +295,8 @@ pub async fn preview_frame(
     };
 
     let epoch = state.preview_frame_epoch.fetch_add(1, Ordering::Relaxed) + 1;
-    let width = normalize_preview_edge(max_width.unwrap_or(160));
-    let height = normalize_preview_edge(max_height.unwrap_or(90));
+    let width = constraints::normalize_preview_edge(max_width.unwrap_or(160));
+    let height = constraints::normalize_preview_edge(max_height.unwrap_or(90));
     let app_handle = app.clone();
     async_runtime::spawn_blocking(move || {
         generate_preview_frame(&source, target, width, height, || {
@@ -314,13 +312,17 @@ pub async fn preview_frame(
     .map_err(MediaError::from)
 }
 
-pub fn get_cache_recording_status(state: State<'_, MediaState>) -> MediaResult<CacheRecordingStatus> {
+pub fn get_cache_recording_status(
+    state: State<'_, MediaState>,
+) -> MediaResult<CacheRecordingStatus> {
     let guard = state
         .cache_recorder
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
     if let Some(session) = guard.as_ref() {
-        let output_size_bytes = fs::metadata(&session.output_path).ok().map(|meta| meta.len());
+        let output_size_bytes = fs::metadata(&session.output_path)
+            .ok()
+            .map(|meta| meta.len());
         Ok(CacheRecordingStatus {
             recording: session.active,
             source: Some(session.source.clone()),
@@ -439,7 +441,9 @@ pub fn stop_cache_recording(state: State<'_, MediaState>) -> MediaResult<CacheRe
             fallback_transcoding: None,
         });
     };
-    let output_size_bytes = fs::metadata(&session.output_path).ok().map(|meta| meta.len());
+    let output_size_bytes = fs::metadata(&session.output_path)
+        .ok()
+        .map(|meta| meta.len());
     Ok(CacheRecordingStatus {
         recording: false,
         source: Some(session.source),
@@ -452,10 +456,7 @@ pub fn stop_cache_recording(state: State<'_, MediaState>) -> MediaResult<CacheRe
     })
 }
 
-fn finalize_active_cache_recording(
-    state: &State<'_, MediaState>,
-    reason: &str,
-) -> MediaResult<()> {
+fn finalize_active_cache_recording(state: &State<'_, MediaState>, reason: &str) -> MediaResult<()> {
     let mut recorder_guard = state
         .cache_recorder
         .lock()
@@ -480,39 +481,8 @@ fn is_network_source(source: &str) -> bool {
 }
 
 fn set_pending_seek(state: &State<'_, MediaState>, position_seconds: f64) -> MediaResult<()> {
-    *state_locks::pending_seek_seconds(state)? = Some(position_seconds.max(0.0));
+    state.stream.set_pending_seek_seconds(position_seconds)?;
     Ok(())
-}
-
-fn normalize_non_negative(value: f64, field: &str) -> MediaResult<f64> {
-    if !value.is_finite() {
-        return Err(MediaError::invalid_input(format!(
-            "{field} must be a finite number"
-        )));
-    }
-    Ok(value.max(0.0))
-}
-
-fn normalize_unit_interval(value: f64, field: &str) -> MediaResult<f64> {
-    if !value.is_finite() {
-        return Err(MediaError::invalid_input(format!(
-            "{field} must be a finite number"
-        )));
-    }
-    Ok(value.clamp(0.0, 1.0))
-}
-
-fn normalize_playback_rate(playback_rate: f64) -> MediaResult<f64> {
-    if !playback_rate.is_finite() {
-        return Err(MediaError::invalid_input(
-            "playback_rate must be a finite number",
-        ));
-    }
-    Ok(playback_rate.clamp(MIN_PLAYBACK_RATE, MAX_PLAYBACK_RATE))
-}
-
-fn normalize_preview_edge(edge: u32) -> u32 {
-    edge.clamp(MIN_PREVIEW_EDGE, MAX_PREVIEW_EDGE)
 }
 
 fn activate_playback_and_resume_position(

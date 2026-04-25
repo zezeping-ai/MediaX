@@ -14,24 +14,15 @@ pub struct ColorProfile {
     pub uv_scale: f32,
 }
 
-pub fn ensure_scaler(
-    scaler: &mut Option<ScalingContext>,
-    src_format: format::pixel::Pixel,
-    src_width: u32,
-    src_height: u32,
-    dst_format: format::pixel::Pixel,
-    dst_width: u32,
-    dst_height: u32,
-    flags: Flags,
-) -> Result<(), String> {
+pub fn ensure_scaler(scaler: &mut Option<ScalingContext>, spec: ScalerSpec) -> Result<(), String> {
     let needs_new = match scaler {
         Some(existing) => {
-            existing.input().format != src_format
-                || existing.input().width != src_width
-                || existing.input().height != src_height
-                || existing.output().format != dst_format
-                || existing.output().width != dst_width
-                || existing.output().height != dst_height
+            existing.input().format != spec.src_format
+                || existing.input().width != spec.src_width
+                || existing.input().height != spec.src_height
+                || existing.output().format != spec.dst_format
+                || existing.output().width != spec.dst_width
+                || existing.output().height != spec.dst_height
         }
         None => true,
     };
@@ -40,11 +31,28 @@ pub fn ensure_scaler(
     }
     *scaler = Some(
         ScalingContext::get(
-            src_format, src_width, src_height, dst_format, dst_width, dst_height, flags,
+            spec.src_format,
+            spec.src_width,
+            spec.src_height,
+            spec.dst_format,
+            spec.dst_width,
+            spec.dst_height,
+            spec.flags,
         )
         .map_err(|err| format!("scaler create failed: {err}"))?,
     );
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+pub struct ScalerSpec {
+    pub src_format: format::pixel::Pixel,
+    pub src_width: u32,
+    pub src_height: u32,
+    pub dst_format: format::pixel::Pixel,
+    pub dst_width: u32,
+    pub dst_height: u32,
+    pub flags: Flags,
 }
 
 pub fn transfer_hw_frame_if_needed(decoded: &frame::Video) -> Result<frame::Video, String> {

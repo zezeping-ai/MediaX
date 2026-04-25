@@ -29,21 +29,3 @@ pub fn library<'a>(
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("media library state").to_string())
 }
-
-pub fn latest_stream_position_seconds<'a>(
-    state: &'a State<'a, MediaState>,
-) -> Result<MutexGuard<'a, f64>, String> {
-    state
-        .latest_stream_position_seconds
-        .lock()
-        .map_err(|_| MediaError::state_poisoned_lock("latest position state").to_string())
-}
-
-pub fn pending_seek_seconds<'a>(
-    state: &'a State<'a, MediaState>,
-) -> Result<MutexGuard<'a, Option<f64>>, String> {
-    state
-        .pending_seek_seconds
-        .lock()
-        .map_err(|_| MediaError::state_poisoned_lock("pending seek state").to_string())
-}

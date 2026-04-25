@@ -11,21 +11,19 @@ pub enum PlaybackStatus {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum HardwareDecodeMode {
+    #[default]
     Auto,
     On,
     Off,
 }
 
-impl Default for HardwareDecodeMode {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum PlaybackQualityMode {
+    #[default]
     Source,
     Auto,
     #[serde(rename = "1080p")]
@@ -36,12 +34,6 @@ pub enum PlaybackQualityMode {
     P480,
     #[serde(rename = "320p")]
     P320,
-}
-
-impl Default for PlaybackQualityMode {
-    fn default() -> Self {
-        Self::Source
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

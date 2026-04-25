@@ -6,14 +6,7 @@ export const MEDIA_PLAYBACK_METADATA_EVENT = "media://playback/metadata";
 export const MEDIA_PLAYBACK_ERROR_EVENT = "media://playback/error";
 export const MEDIA_PLAYBACK_DEBUG_EVENT = "media://playback/debug";
 export const MEDIA_PLAYBACK_TELEMETRY_EVENT = "media://playback/telemetry";
-export const MEDIA_STATE_EVENT = "media://state";
-export const MEDIA_STATE_EVENT_V2 = "media://state/v2";
 export const MEDIA_MENU_EVENT = "media://menu-action";
-export const MEDIA_DEBUG_EVENT = "media://debug";
-export const MEDIA_DEBUG_EVENT_V2 = "media://debug/v2";
-export const MEDIA_TELEMETRY_EVENT_V2 = "media://telemetry/v2";
-export const MEDIA_METADATA_EVENT = "media://metadata";
-export const MEDIA_ERROR_EVENT = "media://error";
 
 export interface PlaybackState {
   engine: string;

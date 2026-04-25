@@ -1,9 +1,9 @@
-use tauri::Manager;
-use tauri::State;
-use crate::app::media::player::renderer::{RendererState, VideoScaleMode};
 use crate::app::media::player::coordinator;
+use crate::app::media::player::renderer::{RendererState, VideoScaleMode};
 use crate::app::media::player::state::MediaState;
 use crate::app::media::types::PlaybackStatus;
+use tauri::Manager;
+use tauri::State;
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const PREFERENCES_WINDOW_LABEL: &str = "preferences";
@@ -71,10 +71,7 @@ pub fn handle_close_requested(window: &tauri::Window, event: &tauri::WindowEvent
 }
 
 #[tauri::command]
-pub fn window_set_main_always_on_top(
-    app: tauri::AppHandle,
-    enabled: bool,
-) -> Result<(), String> {
+pub fn window_set_main_always_on_top(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let window = app
         .get_webview_window(MAIN_WINDOW_LABEL)
         .ok_or_else(|| "main window not found".to_string())?;

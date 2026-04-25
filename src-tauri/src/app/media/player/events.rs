@@ -1,12 +1,5 @@
 use serde::Serialize;
 
-pub const MEDIA_STATE_EVENT: &str = "media://state";
-pub const MEDIA_STATE_EVENT_V2: &str = "media://state/v2";
-pub const MEDIA_METADATA_EVENT: &str = "media://metadata";
-pub const MEDIA_ERROR_EVENT: &str = "media://error";
-pub const MEDIA_DEBUG_EVENT: &str = "media://debug";
-pub const MEDIA_DEBUG_EVENT_V2: &str = "media://debug/v2";
-pub const MEDIA_TELEMETRY_EVENT_V2: &str = "media://telemetry/v2";
 pub const MEDIA_PLAYBACK_STATE_EVENT: &str = "media://playback/state";
 pub const MEDIA_PLAYBACK_METADATA_EVENT: &str = "media://playback/metadata";
 pub const MEDIA_PLAYBACK_ERROR_EVENT: &str = "media://playback/error";

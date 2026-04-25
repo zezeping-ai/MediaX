@@ -1,8 +1,7 @@
-use crate::app::media::player::events::{
-    MediaEventEnvelope, MEDIA_PLAYBACK_STATE_EVENT, MEDIA_PROTOCOL_VERSION, MEDIA_STATE_EVENT,
-    MEDIA_STATE_EVENT_V2,
-};
 use crate::app::media::error::MediaError;
+use crate::app::media::player::events::{
+    MediaEventEnvelope, MEDIA_PLAYBACK_STATE_EVENT, MEDIA_PROTOCOL_VERSION,
+};
 use crate::app::media::player::state::MediaState;
 use crate::app::media::types::MediaSnapshot;
 use tauri::{AppHandle, Emitter, Manager};
@@ -26,16 +25,14 @@ pub fn update_playback_progress(
             .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())?;
         if finalize {
             playback.stop();
-            let mut latest_position = state
-                .latest_stream_position_seconds
-                .lock()
-                .map_err(|_| MediaError::state_poisoned_lock("latest position state").to_string())?;
-            *latest_position = 0.0;
-            let mut pending_seek = state
-                .pending_seek_seconds
-                .lock()
-                .map_err(|_| MediaError::state_poisoned_lock("pending seek state").to_string())?;
-            *pending_seek = Some(0.0);
+            state
+                .stream
+                .set_latest_position_seconds(0.0)
+                .map_err(|err| err.to_string())?;
+            state
+                .stream
+                .reset_pending_seek_to_zero()
+                .map_err(|err| err.to_string())?;
         } else {
             playback.sync_position(position_seconds, duration_seconds);
         }
@@ -45,8 +42,6 @@ pub fn update_playback_progress(
             library,
         }
     };
-    app.emit(MEDIA_STATE_EVENT, &snapshot)
-        .map_err(|err| format!("emit media state failed: {err}"))?;
     let envelope = MediaEventEnvelope {
         protocol_version: MEDIA_PROTOCOL_VERSION,
         event_type: "playback_state",
@@ -59,11 +54,5 @@ pub fn update_playback_progress(
     };
     app.emit(MEDIA_PLAYBACK_STATE_EVENT, &envelope)
         .map_err(|err| format!("emit playback state failed: {err}"))?;
-    let legacy_v2_envelope = MediaEventEnvelope {
-        event_type: "state",
-        ..envelope
-    };
-    app.emit(MEDIA_STATE_EVENT_V2, &legacy_v2_envelope)
-    .map_err(|err| format!("emit media state v2 failed: {err}"))?;
     Ok(())
 }

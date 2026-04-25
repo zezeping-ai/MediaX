@@ -160,10 +160,7 @@ impl RendererState {
                 let _timed_out = wait_for_render_signal(&inner, idle_tick);
                 // Prevent enqueueing an unbounded number of main-thread render tasks
                 // when the UI thread is busy (which can cause macOS beachballing).
-                if inner
-                    .render_task_in_flight
-                    .swap(true, Ordering::AcqRel)
-                {
+                if inner.render_task_in_flight.swap(true, Ordering::AcqRel) {
                     continue;
                 }
                 let _ = app_handle.run_on_main_thread({
@@ -178,8 +175,10 @@ impl RendererState {
                                     rate: 1.0,
                                 },
                             };
-                            let elapsed = Instant::now().saturating_duration_since(clock.anchor_instant);
-                            clock.anchor_media_seconds + elapsed.as_secs_f64() * clock.rate.max(0.25)
+                            let elapsed =
+                                Instant::now().saturating_duration_since(clock.anchor_instant);
+                            clock.anchor_media_seconds
+                                + elapsed.as_secs_f64() * clock.rate.max(0.25)
                         };
                         let frame = pick_frame_for_present(&inner, now_media_seconds);
                         if let Ok(mut guard) = inner.renderer.lock() {
@@ -197,7 +196,10 @@ impl RendererState {
                                 );
                                 let lag_ms = frame
                                     .as_ref()
-                                    .map(|f| ((now_media_seconds - f.pts_seconds).max(0.0) * 1000.0) as f32)
+                                    .map(|f| {
+                                        ((now_media_seconds - f.pts_seconds).max(0.0) * 1000.0)
+                                            as f32
+                                    })
                                     .unwrap_or(0.0);
                                 inner
                                     .last_present_lag_ms_bits
@@ -289,7 +291,8 @@ impl RendererState {
         RendererMetricsSnapshot {
             queue_depth: self.queue_depth(),
             queue_capacity: FRAME_QUEUE_CAPACITY,
-            last_render_cost_ms: (self.inner.last_render_cost_micros.load(Ordering::Relaxed) as f64)
+            last_render_cost_ms: (self.inner.last_render_cost_micros.load(Ordering::Relaxed)
+                as f64)
                 / 1000.0,
             last_present_lag_ms: f32::from_bits(
                 self.inner.last_present_lag_ms_bits.load(Ordering::Relaxed),
@@ -302,10 +305,7 @@ fn pick_frame_for_present(inner: &RendererInner, now_media_seconds: f64) -> Opti
     let present_lead = 0.010; // 10ms lead allows small jitter without presenting too early.
     let deadline = now_media_seconds + present_lead;
     let mut queue = inner.queued_frames.lock().ok()?;
-    let Some(front) = queue.front() else {
-        return None;
-    };
-    let pts = front.pts_seconds;
+    let pts = queue.front()?.pts_seconds;
     if !pts.is_finite() || pts <= deadline {
         return queue.pop_front();
     }

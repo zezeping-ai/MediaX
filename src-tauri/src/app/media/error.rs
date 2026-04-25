@@ -1,10 +1,18 @@
 use std::fmt::{Display, Formatter};
 
+use serde::Serialize;
+
 #[derive(Debug)]
 pub enum MediaError {
     InvalidInput(String),
     Internal(String),
     StatePoisoned(String),
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MediaCommandError {
+    pub code: &'static str,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,9 +63,9 @@ impl MediaError {
 
     pub fn message(&self) -> &str {
         match self {
-            Self::InvalidInput(message) | Self::Internal(message) | Self::StatePoisoned(message) => {
-                message.as_str()
-            }
+            Self::InvalidInput(message)
+            | Self::Internal(message)
+            | Self::StatePoisoned(message) => message.as_str(),
         }
     }
 }
@@ -73,7 +81,10 @@ impl std::error::Error for MediaError {}
 impl From<String> for MediaError {
     fn from(value: String) -> Self {
         if let Some((code, detail)) = value.split_once(':') {
-            if code.trim().eq_ignore_ascii_case(MediaErrorCode::StatePoisoned.as_str()) {
+            if code
+                .trim()
+                .eq_ignore_ascii_case(MediaErrorCode::StatePoisoned.as_str())
+            {
                 return Self::state_poisoned(detail.trim().to_string());
             }
         }
@@ -84,6 +95,33 @@ impl From<String> for MediaError {
 impl From<&str> for MediaError {
     fn from(value: &str) -> Self {
         Self::internal(value.to_string())
+    }
+}
+
+impl From<MediaError> for MediaCommandError {
+    fn from(value: MediaError) -> Self {
+        Self {
+            code: value.code().as_str(),
+            message: value.message().to_string(),
+        }
+    }
+}
+
+impl From<String> for MediaCommandError {
+    fn from(value: String) -> Self {
+        Self {
+            code: MediaErrorCode::InternalError.as_str(),
+            message: value,
+        }
+    }
+}
+
+impl From<&str> for MediaCommandError {
+    fn from(value: &str) -> Self {
+        Self {
+            code: MediaErrorCode::InternalError.as_str(),
+            message: value.to_string(),
+        }
     }
 }
 

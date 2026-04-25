@@ -1,12 +1,13 @@
-use crate::app::media::error::{MediaError, MediaErrorCode};
+use crate::app::media::error::MediaErrorCode;
 use crate::app::media::player::events::{
-    MediaErrorPayload, MediaEventEnvelope, MEDIA_ERROR_EVENT, MEDIA_PLAYBACK_ERROR_EVENT,
-    MEDIA_PROTOCOL_VERSION,
+    MediaErrorPayload, MediaEventEnvelope, MEDIA_PLAYBACK_ERROR_EVENT, MEDIA_PROTOCOL_VERSION,
 };
 use crate::app::media::player::renderer::RendererState;
-use crate::app::media::player::state::{AudioControls, MediaState, TimingControls};
+use crate::app::media::player::state::{
+    AudioControls, DecodeStreamHandles, MediaState, StreamRuntimeState, TimingControls,
+};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -30,27 +31,15 @@ fn emit_error_events(app: &AppHandle, code: &'static str, message: String) {
             payload: error_payload.clone(),
         },
     );
-    let _ = app.emit(MEDIA_ERROR_EVENT, error_payload);
 }
 
 fn take_decode_stream_handles(
     state: &State<'_, MediaState>,
-) -> Result<(Option<Arc<AtomicBool>>, Option<thread::JoinHandle<()>>), String> {
-    let stop_flag = {
-        let mut guard = state
-            .stream_stop_flag
-            .lock()
-            .map_err(|_| MediaError::state_poisoned_lock("stream state").to_string())?;
-        guard.take()
-    };
-    let join_handle = {
-        let mut guard = state
-            .stream_thread
-            .lock()
-            .map_err(|_| MediaError::state_poisoned_lock("stream thread").to_string())?;
-        guard.take()
-    };
-    Ok((stop_flag, join_handle))
+) -> Result<DecodeStreamHandles, String> {
+    state
+        .stream
+        .take_decode_stream_handles()
+        .map_err(|err| err.to_string())
 }
 
 /// Request decode stream stop and wait for thread exit.
@@ -58,13 +47,9 @@ fn take_decode_stream_handles(
 /// Use this when the caller is about to start a new decode stream and must avoid
 /// multiple demux loops running concurrently (e.g. switching quality / hw decode).
 pub fn stop_decode_stream_blocking(state: &State<'_, MediaState>) -> Result<(), String> {
-    let (stop_flag, join_handle) = take_decode_stream_handles(state)?;
-    if let Some(flag) = stop_flag {
-        flag.store(true, Ordering::Relaxed);
-    }
-    if let Some(handle) = join_handle {
-        let _ = handle.join();
-    }
+    let handles = take_decode_stream_handles(state)?;
+    StreamRuntimeState::request_stop(&handles);
+    StreamRuntimeState::join(handles);
     Ok(())
 }
 
@@ -74,11 +59,9 @@ pub fn stop_decode_stream_blocking(state: &State<'_, MediaState>) -> Result<(), 
 /// decode thread inside a Tauri command would freeze the UI. We detach the join to
 /// a background thread to keep pause/stop responsive.
 pub fn stop_decode_stream_non_blocking(state: &State<'_, MediaState>) -> Result<(), String> {
-    let (stop_flag, join_handle) = take_decode_stream_handles(state)?;
-    if let Some(flag) = stop_flag {
-        flag.store(true, Ordering::Relaxed);
-    }
-    if let Some(handle) = join_handle {
+    let handles = take_decode_stream_handles(state)?;
+    StreamRuntimeState::request_stop(&handles);
+    if let Some(handle) = handles.1 {
         thread::spawn(move || {
             let _ = handle.join();
         });
@@ -98,13 +81,7 @@ pub fn start_decode_stream(
         format!("start decode stream: {source}"),
     );
     let stop_flag = Arc::new(AtomicBool::new(false));
-    {
-        let mut guard = state
-            .stream_stop_flag
-            .lock()
-            .map_err(|_| MediaError::state_poisoned_lock("stream state").to_string())?;
-        *guard = Some(stop_flag.clone());
-    }
+    let stop_flag_for_decode = stop_flag.clone();
     let renderer = {
         let handle = app.clone();
         (*handle.state::<RendererState>()).clone()
@@ -117,7 +94,7 @@ pub fn start_decode_stream(
             &app_handle,
             &renderer,
             &source,
-            &stop_flag,
+            &stop_flag_for_decode,
             &audio_controls,
             &timing_controls,
         ) {
@@ -128,13 +105,10 @@ pub fn start_decode_stream(
             emit_error_events(&app_handle, MediaErrorCode::DecodeFailed.as_str(), err);
         }
     });
-    {
-        let mut guard = state
-            .stream_thread
-            .lock()
-            .map_err(|_| MediaError::state_poisoned_lock("stream thread").to_string())?;
-        *guard = Some(handle);
-    }
+    state
+        .stream
+        .install_decode_stream_handle(stop_flag, handle)
+        .map_err(|err| err.to_string())?;
     Ok(())
 }
 
@@ -142,18 +116,15 @@ pub fn write_latest_stream_position(
     state: &State<'_, MediaState>,
     position_seconds: f64,
 ) -> Result<(), String> {
-    let mut guard = state
-        .latest_stream_position_seconds
-        .lock()
-        .map_err(|_| MediaError::state_poisoned_lock("latest position state").to_string())?;
-    *guard = position_seconds.max(0.0);
-    Ok(())
+    state
+        .stream
+        .set_latest_position_seconds(position_seconds)
+        .map_err(|err| err.to_string())
 }
 
 pub fn read_latest_stream_position(state: &State<'_, MediaState>) -> Result<f64, String> {
-    let guard = state
-        .latest_stream_position_seconds
-        .lock()
-        .map_err(|_| MediaError::state_poisoned_lock("latest position state").to_string())?;
-    Ok((*guard).max(0.0))
+    state
+        .stream
+        .latest_position_seconds()
+        .map_err(|err| err.to_string())
 }

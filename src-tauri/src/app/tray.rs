@@ -7,7 +7,13 @@ const MENU_TRAY_SHOW_MAIN_ID: &str = "mediax.tray.show_main";
 const TRAY_ID: &str = "mediax.tray";
 
 pub fn setup(app: &tauri::App) -> tauri::Result<()> {
-    let show_main = MenuItem::with_id(app, MENU_TRAY_SHOW_MAIN_ID, "显示主窗口", true, None::<&str>)?;
+    let show_main = MenuItem::with_id(
+        app,
+        MENU_TRAY_SHOW_MAIN_ID,
+        "显示主窗口",
+        true,
+        None::<&str>,
+    )?;
     let menu = Menu::with_items(app, &[&show_main])?;
 
     let icon = app.default_window_icon().cloned();
