@@ -20,6 +20,8 @@ export function useMediaSession() {
   const currentSource = ref("");
   const debugSnapshot = ref<Record<string, string>>({});
   const metadataDurationSeconds = ref<number | null>(null);
+  const metadataVideoWidth = ref<number | null>(null);
+  const metadataVideoHeight = ref<number | null>(null);
   const playbackErrorMessage = ref("");
   let unlistenPlaybackStateEvent: UnlistenFn | null = null;
   let unlistenMenuEvent: UnlistenFn | null = null;
@@ -60,7 +62,10 @@ export function useMediaSession() {
     >(
       MEDIA_PLAYBACK_METADATA_EVENT,
       (event) => {
-        metadataDurationSeconds.value = resolvePayload(event.payload).duration_seconds;
+        const payload = resolvePayload(event.payload);
+        metadataDurationSeconds.value = payload.duration_seconds;
+        metadataVideoWidth.value = payload.width;
+        metadataVideoHeight.value = payload.height;
       },
     );
     unlistenPlaybackErrorEvent = await listen<MediaEventEnvelope<MediaErrorPayload> | MediaErrorPayload>(
@@ -125,6 +130,8 @@ export function useMediaSession() {
     currentSource,
     debugSnapshot,
     metadataDurationSeconds,
+    metadataVideoWidth,
+    metadataVideoHeight,
     playbackErrorMessage,
     mount,
     unmount,

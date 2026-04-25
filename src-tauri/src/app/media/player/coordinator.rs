@@ -12,7 +12,9 @@ use crate::app::media::player::state::MediaState;
 use crate::app::media::player::state_locks;
 use crate::app::media::player::viewport_sync;
 use crate::app::media::snapshot::{emit_snapshot_with_request_id, snapshot_from_state};
-use crate::app::media::types::{HardwareDecodeMode, MediaSnapshot, PlaybackStatus, PreviewFrame};
+use crate::app::media::types::{
+    HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode, PlaybackStatus, PreviewFrame,
+};
 use std::sync::atomic::Ordering;
 use tauri::{async_runtime, AppHandle, Manager, State};
 
@@ -176,6 +178,41 @@ pub fn set_hw_decode_mode(
             None
         }
     };
+    if let Some(path) = playing_path {
+        let latest = read_latest_stream_position(&state).unwrap_or(0.0);
+        let resume = {
+            let mut playback = state_locks::playback(&state)?;
+            let pos = playback.state().position_seconds.max(latest).max(0.0);
+            playback.seek(pos);
+            pos
+        };
+        set_pending_seek(&state, resume)?;
+        stop_decode_stream(&state)?;
+        start_decode_stream(&app, &state, path)?;
+    }
+    emit_snapshot_with_request_id(&app, &state, request_id)
+}
+
+pub fn set_quality_mode(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    mode: PlaybackQualityMode,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    let playing_path = {
+        let mut playback = state_locks::playback(&state)?;
+        if mode == PlaybackQualityMode::Auto && !playback.adaptive_quality_supported() {
+            return Err("adaptive quality is not supported for current source".to_string());
+        }
+        playback.set_quality_mode(mode);
+        let st = playback.state();
+        if st.status == PlaybackStatus::Playing {
+            st.current_path.clone()
+        } else {
+            None
+        }
+    };
+
     if let Some(path) = playing_path {
         let latest = read_latest_stream_position(&state).unwrap_or(0.0);
         let resume = {

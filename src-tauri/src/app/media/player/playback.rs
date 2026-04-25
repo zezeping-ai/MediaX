@@ -1,4 +1,6 @@
-use crate::app::media::types::{HardwareDecodeMode, PlaybackState, PlaybackStatus};
+use crate::app::media::types::{
+    HardwareDecodeMode, PlaybackQualityMode, PlaybackState, PlaybackStatus,
+};
 
 #[derive(Default)]
 pub struct MediaPlaybackService {
@@ -11,6 +13,7 @@ impl MediaPlaybackService {
     }
 
     pub fn open(&mut self, source: String) -> PlaybackState {
+        let adaptive_quality_supported = is_adaptive_quality_source(&source);
         self.state.current_path = Some(source);
         self.state.position_seconds = 0.0;
         self.state.duration_seconds = 0.0;
@@ -20,6 +23,9 @@ impl MediaPlaybackService {
         self.state.hw_decode_active = false;
         self.state.hw_decode_backend = None;
         self.state.hw_decode_error = None;
+        // Opening a new source should not inherit previous source's manual downscale setting.
+        self.state.quality_mode = PlaybackQualityMode::Source;
+        self.state.adaptive_quality_supported = adaptive_quality_supported;
         self.state()
     }
 
@@ -71,9 +77,27 @@ impl MediaPlaybackService {
         self.state()
     }
 
+    pub fn quality_mode(&self) -> PlaybackQualityMode {
+        self.state.quality_mode
+    }
+
+    pub fn set_quality_mode(&mut self, mode: PlaybackQualityMode) -> PlaybackState {
+        self.state.quality_mode = mode;
+        self.state()
+    }
+
+    pub fn adaptive_quality_supported(&self) -> bool {
+        self.state.adaptive_quality_supported
+    }
+
     pub fn sync_position(&mut self, position_seconds: f64, duration_seconds: f64) -> PlaybackState {
         self.state.position_seconds = position_seconds.max(0.0);
         self.state.duration_seconds = duration_seconds.max(0.0);
         self.state()
     }
+}
+
+fn is_adaptive_quality_source(source: &str) -> bool {
+    let normalized = source.trim().to_ascii_lowercase();
+    normalized.contains(".m3u8") || normalized.contains(".mpd")
 }

@@ -12,8 +12,7 @@ use crate::app::media::player::video_frame::{
     detect_color_profile, ensure_scaler, transfer_hw_frame_if_needed,
     video_frame_to_nv12_planes_from_yuv420p,
 };
-use crate::app::media::types::HardwareDecodeMode;
-use crate::app::media::types::PreviewFrame;
+use crate::app::media::types::{HardwareDecodeMode, PlaybackQualityMode, PreviewFrame};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::format;
@@ -34,7 +33,11 @@ pub fn render_preview_frame_at<F>(
 where
     F: Fn() -> bool,
 {
-    let mut video_ctx = open_video_decode_context(source, HardwareDecodeMode::Auto)?;
+    let mut video_ctx = open_video_decode_context(
+        source,
+        HardwareDecodeMode::Auto,
+        PlaybackQualityMode::Source,
+    )?;
     let mut scaler: Option<ScalingContext> = None;
     let input_ctx = &mut video_ctx.input_ctx;
     let video_stream_index = video_ctx.video_stream_index;
@@ -117,7 +120,11 @@ pub fn generate_preview_frame<F>(
 where
     F: Fn() -> bool,
 {
-    let mut video_ctx = open_video_decode_context(source, HardwareDecodeMode::Auto)?;
+    let mut video_ctx = open_video_decode_context(
+        source,
+        HardwareDecodeMode::Auto,
+        PlaybackQualityMode::Source,
+    )?;
     let input_ctx = &mut video_ctx.input_ctx;
     let video_stream_index = video_ctx.video_stream_index;
     let video_time_base = video_ctx.video_time_base;

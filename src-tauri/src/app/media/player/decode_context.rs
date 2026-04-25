@@ -6,10 +6,7 @@ use ffmpeg_next::media::Type;
 use std::ffi::CString;
 use std::ptr;
 
-use crate::app::media::types::HardwareDecodeMode;
-
-const MAX_OUTPUT_WIDTH: u32 = 1280;
-const MAX_OUTPUT_HEIGHT: u32 = 720;
+use crate::app::media::types::{HardwareDecodeMode, PlaybackQualityMode};
 
 pub(crate) struct VideoDecodeContext {
     pub(crate) input_ctx: format::context::Input,
@@ -27,6 +24,7 @@ pub(crate) struct VideoDecodeContext {
 pub(crate) fn open_video_decode_context(
     source: &str,
     hw_mode: HardwareDecodeMode,
+    quality_mode: PlaybackQualityMode,
 ) -> Result<VideoDecodeContext, String> {
     ffmpeg::init().map_err(|err| format!("ffmpeg init failed: {err}"))?;
     let input_ctx = format::input(source).map_err(|err| format!("open media failed: {err}"))?;
@@ -55,7 +53,8 @@ pub(crate) fn open_video_decode_context(
         .decoder()
         .video()
         .map_err(|err| format!("video decoder create failed: {err}"))?;
-    let (output_width, output_height) = compute_output_size(decoder.width(), decoder.height());
+    let (output_width, output_height) =
+        compute_output_size(decoder.width(), decoder.height(), quality_mode);
     Ok(VideoDecodeContext {
         input_ctx,
         video_stream_index,
@@ -151,16 +150,32 @@ fn try_bind_hw_device(
     Ok(())
 }
 
-fn compute_output_size(width: u32, height: u32) -> (u32, u32) {
+fn compute_output_size(width: u32, height: u32, quality_mode: PlaybackQualityMode) -> (u32, u32) {
     if width == 0 || height == 0 {
         return (width, height);
     }
-    let width_scale = (MAX_OUTPUT_WIDTH as f64) / (width as f64);
-    let height_scale = (MAX_OUTPUT_HEIGHT as f64) / (height as f64);
-    let scale = width_scale.min(height_scale).min(1.0);
+    let Some(max_height) = quality_mode_max_height(quality_mode) else {
+        let mut out_width = width.max(2);
+        let mut out_height = height.max(2);
+        out_width &= !1;
+        out_height &= !1;
+        return (out_width.max(2), out_height.max(2));
+    };
+    let height_scale = (max_height as f64) / (height as f64);
+    let scale = height_scale.min(1.0);
     let mut out_width = ((width as f64) * scale).round().max(2.0) as u32;
     let mut out_height = ((height as f64) * scale).round().max(2.0) as u32;
     out_width &= !1;
     out_height &= !1;
     (out_width.max(2), out_height.max(2))
+}
+
+fn quality_mode_max_height(mode: PlaybackQualityMode) -> Option<u32> {
+    match mode {
+        PlaybackQualityMode::Source | PlaybackQualityMode::Auto => None,
+        PlaybackQualityMode::P1080 => Some(1080),
+        PlaybackQualityMode::P720 => Some(720),
+        PlaybackQualityMode::P480 => Some(480),
+        PlaybackQualityMode::P320 => Some(320),
+    }
 }

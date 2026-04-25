@@ -110,8 +110,15 @@ pub(super) fn decode_and_emit_stream(
             .map_err(|_| "playback state poisoned".to_string())?;
         playback.hw_decode_mode()
     };
+    let quality_mode = {
+        let playback = media_state
+            .playback
+            .lock()
+            .map_err(|_| "playback state poisoned".to_string())?;
+        playback.quality_mode()
+    };
     emit_debug(app, "open", "open decode context");
-    let mut video_ctx = open_video_decode_context(source, hw_mode)?;
+    let mut video_ctx = open_video_decode_context(source, hw_mode, quality_mode)?;
     emit_debug(
         app,
         "decoder_ready",

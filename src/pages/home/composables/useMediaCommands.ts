@@ -8,12 +8,18 @@ import {
   playbackResume,
   playbackSeekTo,
   playbackSetMuted,
+  playbackSetQuality,
   playbackSetRate,
   playbackSetVolume,
   playbackStopSession,
   playbackSyncPosition,
 } from "@/modules/media-player";
-import type { HardwareDecodeMode, MediaSnapshot, PreviewFrame } from "@/modules/media-types";
+import type {
+  HardwareDecodeMode,
+  MediaSnapshot,
+  PlaybackQualityMode,
+  PreviewFrame,
+} from "@/modules/media-types";
 
 export interface MediaCommandSet {
   openPath: (path: string) => Promise<MediaSnapshot>;
@@ -24,6 +30,7 @@ export interface MediaCommandSet {
   setRate: (playbackRate: number) => Promise<MediaSnapshot>;
   setVolume: (volume: number) => Promise<MediaSnapshot>;
   setMuted: (muted: boolean) => Promise<MediaSnapshot>;
+  setQuality: (mode: PlaybackQualityMode) => Promise<MediaSnapshot>;
   configureDecoderMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>;
   syncPosition: (positionSeconds: number, durationSeconds: number) => Promise<MediaSnapshot>;
   requestPreviewFrame: (
@@ -43,6 +50,7 @@ export function useMediaCommands(): MediaCommandSet {
     setRate: (playbackRate) => playbackSetRate(playbackRate),
     setVolume: (volume) => playbackSetVolume(volume),
     setMuted: (muted) => playbackSetMuted(muted),
+    setQuality: (mode) => playbackSetQuality(mode),
     configureDecoderMode: (mode) => playbackConfigureDecoderMode(mode),
     syncPosition: (positionSeconds, durationSeconds) =>
       playbackSyncPosition(positionSeconds, durationSeconds),

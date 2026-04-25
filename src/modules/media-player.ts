@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { HardwareDecodeMode, MediaSnapshot, PreviewFrame } from "./media-types";
+import type { HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode, PreviewFrame } from "./media-types";
 import type { PlayerVideoScaleMode } from "./preferences";
 
 export const DEFAULT_PREVIEW_FRAME_MAX_WIDTH = 160;
@@ -66,6 +66,10 @@ export function playbackSyncPosition(positionSeconds: number, durationSeconds: n
   });
 }
 
+export function playbackSetQuality(mode: PlaybackQualityMode) {
+  return invoke<MediaSnapshot>("playback_set_quality", { mode, requestId: nextRequestId() });
+}
+
 export function playbackPreviewFrame(
   positionSeconds: number,
   maxWidth = DEFAULT_PREVIEW_FRAME_MAX_WIDTH,
@@ -90,6 +94,7 @@ export const setMediaVolume = playbackSetVolume;
 export const setMediaMuted = playbackSetMuted;
 export const setMediaHwDecodeMode = playbackConfigureDecoderMode;
 export const syncMediaPosition = playbackSyncPosition;
+export const setMediaQuality = playbackSetQuality;
 export const previewMediaFrame = playbackPreviewFrame;
 
 export function setMainWindowAlwaysOnTop(enabled: boolean) {

@@ -2,7 +2,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { usePreferences } from "@/modules/preferences";
 import { getPlaybackSnapshot } from "@/modules/media-player";
-import type { MediaSnapshot } from "@/modules/media-types";
+import type { MediaSnapshot, PlaybackQualityMode } from "@/modules/media-types";
 import { useMediaCommands } from "./useMediaCommands";
 import { useMediaErrorMap } from "./useMediaErrorMap";
 import { usePlaybackSettings } from "./usePlaybackSettings";
@@ -16,6 +16,7 @@ export function useMediaCenter() {
     currentSource,
     debugSnapshot,
     metadataDurationSeconds,
+    metadataVideoHeight,
     playbackErrorMessage,
     mount,
     unmount,
@@ -146,6 +147,10 @@ export function useMediaCenter() {
     await runPlaybackCommand(() => commands.setMuted(muted));
   }
 
+  async function setQuality(mode: PlaybackQualityMode) {
+    await runPlaybackCommand(() => commands.setQuality(mode));
+  }
+
   async function requestPreviewFrame(positionSeconds: number, maxWidth = 160, maxHeight = 90) {
     try {
       return await playbackSettings.requestTimelinePreview(positionSeconds, maxWidth, maxHeight);
@@ -236,6 +241,7 @@ export function useMediaCenter() {
     isBusy,
     errorMessage,
     debugSnapshot,
+    metadataVideoHeight,
     openLocalFileByDialog: () => withBusyState(openLocalFileByDialog),
     openUrl: (url: string) => withBusyState(() => openUrl(url)),
     requestOpenUrlInput,
@@ -249,6 +255,7 @@ export function useMediaCenter() {
     setRate: (rate: number) => withBusyState(() => setRate(rate)),
     setVolume: (volume: number) => withBusyState(() => setVolume(volume)),
     setMuted: (muted: boolean) => withBusyState(() => setMuted(muted)),
+    setQuality: (mode: PlaybackQualityMode) => withBusyState(() => setQuality(mode)),
     requestPreviewFrame: (positionSeconds: number, maxWidth?: number, maxHeight?: number) =>
       requestPreviewFrame(positionSeconds, maxWidth, maxHeight),
     syncPosition: (positionSeconds: number, durationSeconds: number) =>

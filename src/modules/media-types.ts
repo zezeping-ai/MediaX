@@ -1,5 +1,6 @@
 export type PlaybackStatus = "idle" | "playing" | "paused" | "stopped";
 export type HardwareDecodeMode = "auto" | "on" | "off";
+export type PlaybackQualityMode = "source" | "auto" | "1080p" | "720p" | "480p" | "320p";
 export const MEDIA_PLAYBACK_STATE_EVENT = "media://playback/state";
 export const MEDIA_PLAYBACK_METADATA_EVENT = "media://playback/metadata";
 export const MEDIA_PLAYBACK_ERROR_EVENT = "media://playback/error";
@@ -26,6 +27,8 @@ export interface PlaybackState {
   hw_decode_active: boolean;
   hw_decode_backend: string | null;
   hw_decode_error: string | null;
+  quality_mode: PlaybackQualityMode;
+  adaptive_quality_supported: boolean;
 }
 
 export interface MediaItem {

@@ -1,6 +1,7 @@
 export const PREVIEW_SEEK_INTERVAL_MS = 100;
 
 export const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+export const QUALITY_DOWNGRADE_LEVELS = [1080, 720, 480, 320] as const;
 
 export const CIRCLE_BTN_BASE =
   "inline-flex h-10 min-h-10 w-10 min-w-10 items-center justify-center rounded-full p-0! leading-none transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-2 focus-visible:ring-offset-black/30 [&_.ant-btn-icon]:m-0! [&_.ant-btn-icon]:flex [&_.ant-btn-icon]:items-center [&_.ant-btn-icon]:justify-center disabled:opacity-55 disabled:cursor-not-allowed";

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { clamp } from "lodash-es";
+import type { PlaybackQualityMode } from "@/modules/media-types";
 import MediaViewport from "./components/MediaViewport.vue";
 import PlaybackControls from "./components/PlaybackControls.vue";
 import { useMediaCenter } from "./composables/useMediaCenter";
 import { usePlayerOverlayControls } from "./composables/usePlayerOverlayControls";
 import { usePlaybackShortcuts } from "./composables/usePlaybackShortcuts";
+import { QUALITY_DOWNGRADE_LEVELS } from "./components/playbackControls.constants";
+import { buildPlaybackQualityOptions } from "./components/playbackControls.utils";
 
 const {
   playback,
@@ -28,15 +31,28 @@ const {
   setRate,
   setVolume,
   setMuted,
+  setQuality,
+  metadataVideoHeight,
 } = useMediaCenter();
 
 const playbackRate = ref(1);
 const volume = ref(1);
 const muted = ref(false);
+const selectedQuality = ref("source");
+const sourceVideoHeightBaseline = ref<number | null>(null);
 const playerErrorMessage = ref("");
 
 const displayErrorMessage = computed(() => playerErrorMessage.value || errorMessage.value);
 const hasSource = computed(() => Boolean(currentSource.value));
+const adaptiveQualitySupported = computed(() => Boolean(playback.value?.adaptive_quality_supported));
+const playbackQualityOptions = computed(() =>
+  buildPlaybackQualityOptions(
+    sourceVideoHeightBaseline.value,
+    QUALITY_DOWNGRADE_LEVELS,
+    adaptiveQualitySupported.value,
+    selectedQuality.value,
+  ),
+);
 const {
   controlsVisible,
   controlsLocked,
@@ -95,6 +111,12 @@ async function toggleMute() {
   await setMuted(muted.value);
 }
 
+async function changeQuality(nextQuality: string) {
+  const nextMode = nextQuality as PlaybackQualityMode;
+  selectedQuality.value = nextQuality;
+  await setQuality(nextMode);
+}
+
 function increasePlaybackRate() {
   const nextRate = Math.min(3, Number((playbackRate.value + 0.1).toFixed(1)));
   void changePlaybackRate(nextRate);
@@ -111,6 +133,27 @@ async function handleVideoEnded() {
 
 watch(currentSource, () => {
   playerErrorMessage.value = "";
+  selectedQuality.value = "source";
+  sourceVideoHeightBaseline.value = null;
+});
+
+watch(playback, (value) => {
+  if (!value) {
+    selectedQuality.value = "source";
+    return;
+  }
+  selectedQuality.value = value.quality_mode ?? "source";
+});
+
+watch(metadataVideoHeight, (nextHeight) => {
+  if (typeof nextHeight !== "number" || !Number.isFinite(nextHeight) || nextHeight <= 0) {
+    return;
+  }
+  if (sourceVideoHeightBaseline.value === null) {
+    sourceVideoHeightBaseline.value = nextHeight;
+    return;
+  }
+  sourceVideoHeightBaseline.value = Math.max(sourceVideoHeightBaseline.value, nextHeight);
 });
 
 usePlaybackShortcuts({
@@ -156,6 +199,8 @@ watch(playback, (value) => {
         :volume="volume"
         :muted="muted"
         :locked="controlsLocked"
+        :quality-options="playbackQualityOptions"
+        :selected-quality="selectedQuality"
         :disabled="!currentSource || isBusy"
         :request-preview-frame="handleRequestPreviewFrame"
         @mouseenter="onControlsMouseEnter"
@@ -168,6 +213,7 @@ watch(playback, (value) => {
         @seek-preview="handleSeekPreview"
         @change-rate="(value) => void changePlaybackRate(value)"
         @change-volume="(value) => void changeVolume(value)"
+        @change-quality="(value) => void changeQuality(value)"
         @toggle-mute="() => void toggleMute()"
         @toggle-lock="toggleLock"
       />

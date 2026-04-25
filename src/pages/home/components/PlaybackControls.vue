@@ -12,7 +12,7 @@ import {
   SPEED_OPTIONS,
   TINY_PILL_BTN,
 } from "./playbackControls.constants";
-import { formatSeconds } from "./playbackControls.utils";
+import { formatSeconds, type PlaybackQualityOption } from "./playbackControls.utils";
 
 const props = defineProps<{
   playback: PlaybackState | null;
@@ -21,6 +21,8 @@ const props = defineProps<{
   volume: number;
   muted: boolean;
   locked: boolean;
+  qualityOptions: PlaybackQualityOption[];
+  selectedQuality: string;
   requestPreviewFrame?: (
     positionSeconds: number,
     maxWidth?: number,
@@ -36,6 +38,7 @@ const emit = defineEmits<{
   "seek-preview": [number];
   "change-rate": [number];
   "change-volume": [number];
+  "change-quality": [string];
   "toggle-mute": [];
   "toggle-lock": [];
 }>();
@@ -62,6 +65,10 @@ const volumeIcon = computed(() => {
   return "lucide:volume-2";
 });
 const speedLabel = computed(() => `${props.playbackRate}x`);
+const qualityLabel = computed(() => {
+  const matched = props.qualityOptions.find((option) => option.key === props.selectedQuality);
+  return matched?.label ?? "原画";
+});
 
 // 线性小图标：比 duotone 更轻，与音量区图标体量接近
 const lockIcon = computed(() => (props.locked ? "lucide:lock" : "lucide:lock-open"));
@@ -73,6 +80,10 @@ function emitPause() {
 
 function handleSpeedMenuClick({ key }: { key: string | number }) {
   emit("change-rate", Number(key));
+}
+
+function handleQualityMenuClick({ key }: { key: string | number }) {
+  emit("change-quality", String(key));
 }
 
 function handleProgressPreviewUpdate(value: number | [number, number]) {
@@ -225,6 +236,36 @@ onBeforeUnmount(() => {
               >
                 <a-menu-item v-for="value in SPEED_OPTIONS" :key="String(value)">
                   {{ value }}x
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+
+          <span class="h-5 w-px bg-white/10" aria-hidden="true" />
+
+          <a-dropdown :trigger="['click']" placement="top">
+            <a-button
+              size="small"
+              :class="TINY_PILL_BTN"
+              :disabled="disabled || qualityOptions.length <= 1"
+              title="切换清晰度"
+            >
+              <span class="tabular-nums">{{ qualityLabel }}</span>
+              <Icon
+                icon="mdi:chevron-up"
+                width="14"
+                height="14"
+                class="shrink-0 opacity-75"
+                aria-hidden="true"
+              />
+            </a-button>
+            <template #overlay>
+              <a-menu
+                :selected-keys="[selectedQuality]"
+                @click="handleQualityMenuClick"
+              >
+                <a-menu-item v-for="option in qualityOptions" :key="option.key">
+                  {{ option.label }}
                 </a-menu-item>
               </a-menu>
             </template>

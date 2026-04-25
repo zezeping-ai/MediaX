@@ -1,6 +1,6 @@
 use crate::app::media::player::coordinator;
 use crate::app::media::player::state::MediaState;
-use crate::app::media::types::{HardwareDecodeMode, MediaSnapshot, PreviewFrame};
+use crate::app::media::types::{HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode, PreviewFrame};
 use tauri::{AppHandle, State};
 
 #[tauri::command]
@@ -94,6 +94,16 @@ pub fn playback_configure_decoder_mode(
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, String> {
     coordinator::set_hw_decode_mode(app, state, mode, request_id)
+}
+
+#[tauri::command]
+pub fn playback_set_quality(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    mode: PlaybackQualityMode,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    coordinator::set_quality_mode(app, state, mode, request_id)
 }
 
 #[tauri::command]
@@ -210,6 +220,16 @@ pub fn media_set_hw_decode_mode(
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, String> {
     playback_configure_decoder_mode(app, state, mode, request_id)
+}
+
+#[tauri::command]
+pub fn media_set_quality(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    mode: PlaybackQualityMode,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_set_quality(app, state, mode, request_id)
 }
 
 #[tauri::command]
