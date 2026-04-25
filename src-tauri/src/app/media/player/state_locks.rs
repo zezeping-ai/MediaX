@@ -7,6 +7,7 @@ use std::sync::MutexGuard;
 
 use tauri::State;
 
+use crate::app::media::error::MediaError;
 use crate::app::media::library::MediaLibraryService;
 use crate::app::media::player::playback::MediaPlaybackService;
 use crate::app::media::player::state::MediaState;
@@ -17,7 +18,7 @@ pub fn playback<'a>(
     state
         .playback
         .lock()
-        .map_err(|_| "playback state poisoned".to_string())
+        .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())
 }
 
 pub fn library<'a>(
@@ -26,7 +27,7 @@ pub fn library<'a>(
     state
         .library
         .lock()
-        .map_err(|_| "media library state poisoned".to_string())
+        .map_err(|_| MediaError::state_poisoned_lock("media library state").to_string())
 }
 
 pub fn latest_stream_position_seconds<'a>(
@@ -35,7 +36,7 @@ pub fn latest_stream_position_seconds<'a>(
     state
         .latest_stream_position_seconds
         .lock()
-        .map_err(|_| "latest position state poisoned".to_string())
+        .map_err(|_| MediaError::state_poisoned_lock("latest position state").to_string())
 }
 
 pub fn pending_seek_seconds<'a>(
@@ -44,5 +45,5 @@ pub fn pending_seek_seconds<'a>(
     state
         .pending_seek_seconds
         .lock()
-        .map_err(|_| "pending seek state poisoned".to_string())
+        .map_err(|_| MediaError::state_poisoned_lock("pending seek state").to_string())
 }

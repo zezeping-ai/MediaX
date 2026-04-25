@@ -59,6 +59,42 @@ export interface PreviewFrame {
   position_seconds: number;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+export function isMediaSnapshot(value: unknown): value is MediaSnapshot {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const playback = value.playback;
+  const library = value.library;
+  if (!isRecord(playback) || !isRecord(library)) {
+    return false;
+  }
+  return (
+    typeof playback.engine === "string" &&
+    typeof playback.status === "string" &&
+    typeof playback.position_seconds === "number" &&
+    typeof playback.duration_seconds === "number" &&
+    Array.isArray(library.roots) &&
+    Array.isArray(library.items)
+  );
+}
+
+export function isPreviewFrame(value: unknown): value is PreviewFrame {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.mime_type === "string" &&
+    typeof value.data_base64 === "string" &&
+    typeof value.width === "number" &&
+    typeof value.height === "number" &&
+    typeof value.position_seconds === "number"
+  );
+}
+
 export interface MediaEventEnvelope<T> {
   protocol_version: number;
   event_type: string;

@@ -9,10 +9,16 @@ export function usePlayerOverlayControls(options: UsePlayerOverlayControlsOption
   const controlsVisible = ref(true);
   const controlsLocked = ref(false);
   const controlsHovered = ref(false);
+  const controlsOverlayInteracting = ref(false);
   let hideTimer: number | null = null;
 
   const shouldKeepVisible = computed(
-    () => controlsLocked.value || controlsHovered.value || !options.hasSource.value || options.isBusy.value,
+    () =>
+      controlsLocked.value ||
+      controlsHovered.value ||
+      controlsOverlayInteracting.value ||
+      !options.hasSource.value ||
+      options.isBusy.value,
   );
 
   function showControls() {
@@ -74,6 +80,16 @@ export function usePlayerOverlayControls(options: UsePlayerOverlayControlsOption
     scheduleHideControls();
   }
 
+  function setControlsOverlayInteracting(active: boolean) {
+    controlsOverlayInteracting.value = active;
+    if (active) {
+      clearHideTimer();
+      showControls();
+      return;
+    }
+    scheduleHideControls();
+  }
+
   watch(shouldKeepVisible, (keepVisible) => {
     if (keepVisible) {
       clearHideTimer();
@@ -96,5 +112,6 @@ export function usePlayerOverlayControls(options: UsePlayerOverlayControlsOption
     toggleLock,
     onControlsMouseEnter,
     onControlsMouseLeave,
+    setControlsOverlayInteracting,
   };
 }

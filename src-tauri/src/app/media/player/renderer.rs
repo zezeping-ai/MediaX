@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use std::collections::VecDeque;
 
+use crate::app::media::error::MediaError;
 use tauri::Manager;
 
 const FRAME_QUEUE_CAPACITY: usize = 6;
@@ -134,7 +135,7 @@ impl RendererState {
                 .inner
                 .renderer
                 .lock()
-                .map_err(|_| "renderer state poisoned".to_string())?;
+                .map_err(|_| MediaError::state_poisoned_lock("renderer state").to_string())?;
             *guard = Some(renderer);
         }
         let _ = app.run_on_main_thread({

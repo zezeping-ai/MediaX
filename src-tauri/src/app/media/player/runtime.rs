@@ -1,4 +1,5 @@
 use crate::app::media::player::decode_context::open_video_decode_context;
+use crate::app::media::error::MediaError;
 use crate::app::media::player::events::{
     MediaDebugPayload, MediaEventEnvelope, MediaMetadataPayload, MediaTelemetryPayload,
     MEDIA_DEBUG_EVENT, MEDIA_DEBUG_EVENT_V2, MEDIA_METADATA_EVENT, MEDIA_PLAYBACK_DEBUG_EVENT,
@@ -36,6 +37,7 @@ use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 
 const MAX_EMIT_FPS: u32 = 60;
+const METRICS_EMIT_INTERVAL_MS: u64 = 1000;
 
 mod audio;
 mod audio_pipeline;
@@ -52,10 +54,7 @@ pub use stream_control::{
 };
 
 fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) {
-    let at_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+    let at_ms = unix_epoch_ms_now();
     let msg = message.into();
     let _ = app.emit(
         MEDIA_PLAYBACK_DEBUG_EVENT,
@@ -95,6 +94,51 @@ fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) 
     );
 }
 
+fn unix_epoch_ms_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn emit_telemetry_payloads(app: &AppHandle, payload: MediaTelemetryPayload) {
+    let emitted_at_ms = unix_epoch_ms_now();
+    let _ = app.emit(
+        MEDIA_PLAYBACK_TELEMETRY_EVENT,
+        MediaEventEnvelope {
+            protocol_version: MEDIA_PROTOCOL_VERSION,
+            event_type: "playback_telemetry",
+            request_id: None,
+            emitted_at_ms,
+            payload: payload.clone(),
+        },
+    );
+    let _ = app.emit(
+        MEDIA_TELEMETRY_EVENT_V2,
+        MediaEventEnvelope {
+            protocol_version: MEDIA_PROTOCOL_VERSION,
+            event_type: "telemetry",
+            request_id: None,
+            emitted_at_ms,
+            payload,
+        },
+    );
+}
+
+fn emit_metadata_payloads(app: &AppHandle, payload: MediaMetadataPayload) {
+    let _ = app.emit(
+        MEDIA_PLAYBACK_METADATA_EVENT,
+        MediaEventEnvelope {
+            protocol_version: MEDIA_PROTOCOL_VERSION,
+            event_type: "playback_metadata",
+            request_id: None,
+            emitted_at_ms: unix_epoch_ms_now(),
+            payload: payload.clone(),
+        },
+    );
+    let _ = app.emit(MEDIA_METADATA_EVENT, payload);
+}
+
 pub(super) fn decode_and_emit_stream(
     app: &AppHandle,
     renderer: &RendererState,
@@ -104,19 +148,12 @@ pub(super) fn decode_and_emit_stream(
     timing_controls: &Arc<TimingControls>,
 ) -> Result<(), String> {
     let media_state = app.state::<MediaState>();
-    let hw_mode = {
+    let (hw_mode, quality_mode) = {
         let playback = media_state
             .playback
             .lock()
-            .map_err(|_| "playback state poisoned".to_string())?;
-        playback.hw_decode_mode()
-    };
-    let quality_mode = {
-        let playback = media_state
-            .playback
-            .lock()
-            .map_err(|_| "playback state poisoned".to_string())?;
-        playback.quality_mode()
+            .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())?;
+        (playback.hw_decode_mode(), playback.quality_mode())
     };
     emit_debug(app, "open", "open decode context");
     let mut video_ctx = open_video_decode_context(source, hw_mode, quality_mode)?;
@@ -175,7 +212,7 @@ pub(super) fn decode_and_emit_stream(
         let mut playback = media_state
             .playback
             .lock()
-            .map_err(|_| "playback state poisoned".to_string())?;
+            .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())?;
         playback.update_hw_decode_status(
             video_ctx.hw_decode_active,
             video_ctx.hw_decode_backend.clone(),
@@ -203,26 +240,8 @@ pub(super) fn decode_and_emit_stream(
         timing_controls,
     )?;
     let mut last_applied_audio_rate: f32 = clamp_playback_rate(timing_controls.playback_rate());
-    let _ = app.emit(
-        MEDIA_PLAYBACK_METADATA_EVENT,
-        MediaEventEnvelope {
-            protocol_version: MEDIA_PROTOCOL_VERSION,
-            event_type: "playback_metadata",
-            request_id: None,
-            emitted_at_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0),
-            payload: MediaMetadataPayload {
-                width: video_ctx.output_width,
-                height: video_ctx.output_height,
-                fps: video_ctx.fps_value,
-                duration_seconds: video_ctx.duration_seconds,
-            },
-        },
-    );
-    let _ = app.emit(
-        MEDIA_METADATA_EVENT,
+    emit_metadata_payloads(
+        app,
         MediaMetadataPayload {
             width: video_ctx.output_width,
             height: video_ctx.output_height,
@@ -605,74 +624,28 @@ fn drain_frames(
                     perf_snapshot.as_ref().map(|v| v.samples).unwrap_or(0),
                 ),
             );
-            let _ = app.emit(
-                MEDIA_PLAYBACK_TELEMETRY_EVENT,
-                MediaEventEnvelope {
-                    protocol_version: MEDIA_PROTOCOL_VERSION,
-                    event_type: "playback_telemetry",
-                    request_id: None,
-                    emitted_at_ms: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0),
-                    payload: MediaTelemetryPayload {
-                        source_fps: 1.0 / playback_clock.frame_duration.as_secs_f64().max(1e-6),
-                        render_fps,
-                        queue_depth: renderer_metrics.queue_depth,
-                        clock_seconds: *current_position_seconds,
-                        audio_drift_seconds: audio_drift,
-                        video_pts_gap_seconds: last_video_pts_seconds
-                            .map(|prev| (estimated_pts - prev).max(0.0)),
-                        seek_settle_ms: None,
-                        decode_avg_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.avg_ms),
-                        decode_max_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.max_ms),
-                        decode_samples: perf_snapshot.as_ref().map(|v| v.samples),
-                        process_cpu_percent: process_snapshot.as_ref().map(|v| v.cpu_percent),
-                        process_memory_mb: process_snapshot.as_ref().map(|v| v.memory_mb),
-                        gpu_queue_depth: Some(renderer_metrics.queue_depth),
-                        gpu_queue_capacity: Some(renderer_metrics.queue_capacity),
-                        gpu_queue_utilization: Some(
-                            (renderer_metrics.queue_depth as f64)
-                                / (renderer_metrics.queue_capacity.max(1) as f64),
-                        ),
-                        render_estimated_cost_ms: Some(renderer_metrics.last_render_cost_ms),
-                        render_present_lag_ms: Some(renderer_metrics.last_present_lag_ms),
-                    },
-                },
-            );
-            let _ = app.emit(
-                MEDIA_TELEMETRY_EVENT_V2,
-                MediaEventEnvelope {
-                    protocol_version: MEDIA_PROTOCOL_VERSION,
-                    event_type: "telemetry",
-                    request_id: None,
-                    emitted_at_ms: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0),
-                    payload: MediaTelemetryPayload {
-                        source_fps: 1.0 / playback_clock.frame_duration.as_secs_f64().max(1e-6),
-                        render_fps,
-                        queue_depth: renderer_metrics.queue_depth,
-                        clock_seconds: *current_position_seconds,
-                        audio_drift_seconds: audio_drift,
-                        video_pts_gap_seconds: last_video_pts_seconds
-                            .map(|prev| (estimated_pts - prev).max(0.0)),
-                        seek_settle_ms: None,
-                        decode_avg_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.avg_ms),
-                        decode_max_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.max_ms),
-                        decode_samples: perf_snapshot.as_ref().map(|v| v.samples),
-                        process_cpu_percent: process_snapshot.as_ref().map(|v| v.cpu_percent),
-                        process_memory_mb: process_snapshot.as_ref().map(|v| v.memory_mb),
-                        gpu_queue_depth: Some(renderer_metrics.queue_depth),
-                        gpu_queue_capacity: Some(renderer_metrics.queue_capacity),
-                        gpu_queue_utilization: Some(
-                            (renderer_metrics.queue_depth as f64)
-                                / (renderer_metrics.queue_capacity.max(1) as f64),
-                        ),
-                        render_estimated_cost_ms: Some(renderer_metrics.last_render_cost_ms),
-                        render_present_lag_ms: Some(renderer_metrics.last_present_lag_ms),
-                    },
+            emit_telemetry_payloads(
+                app,
+                MediaTelemetryPayload {
+                    source_fps: 1.0 / playback_clock.frame_duration.as_secs_f64().max(1e-6),
+                    render_fps,
+                    queue_depth: renderer_metrics.queue_depth,
+                    clock_seconds: *current_position_seconds,
+                    audio_drift_seconds: audio_drift,
+                    video_pts_gap_seconds: last_video_pts_seconds.map(|prev| (estimated_pts - prev).max(0.0)),
+                    seek_settle_ms: None,
+                    decode_avg_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.avg_ms),
+                    decode_max_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.max_ms),
+                    decode_samples: perf_snapshot.as_ref().map(|v| v.samples),
+                    process_cpu_percent: process_snapshot.as_ref().map(|v| v.cpu_percent),
+                    process_memory_mb: process_snapshot.as_ref().map(|v| v.memory_mb),
+                    gpu_queue_depth: Some(renderer_metrics.queue_depth),
+                    gpu_queue_capacity: Some(renderer_metrics.queue_capacity),
+                    gpu_queue_utilization: Some(
+                        (renderer_metrics.queue_depth as f64) / (renderer_metrics.queue_capacity.max(1) as f64),
+                    ),
+                    render_estimated_cost_ms: Some(renderer_metrics.last_render_cost_ms),
+                    render_present_lag_ms: Some(renderer_metrics.last_present_lag_ms),
                 },
             );
         }
@@ -829,7 +802,7 @@ impl VideoFramePipeline {
                 let should_log_drift = self
                     .integrity
                     .last_drift_log_instant
-                    .map(|last| last.elapsed() >= Duration::from_millis(1000))
+                    .map(|last| last.elapsed() >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS))
                     .unwrap_or(true);
                 if should_log_drift {
                     self.integrity.last_drift_log_instant = Some(Instant::now());
@@ -871,7 +844,9 @@ impl VideoFramePipeline {
         let should_emit = self
             .integrity
             .last_emit_instant
-            .map(|last| now.saturating_duration_since(last) >= Duration::from_millis(1000))
+            .map(|last| {
+                now.saturating_duration_since(last) >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS)
+            })
             .unwrap_or(true);
         if !should_emit {
             return;
@@ -1062,7 +1037,9 @@ fn drain_audio_frames(
         let should_emit = audio_state
             .stats
             .last_debug_instant
-            .map(|last| now.saturating_duration_since(last) >= Duration::from_millis(1000))
+            .map(|last| {
+                now.saturating_duration_since(last) >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS)
+            })
             .unwrap_or(true);
         if should_emit {
             audio_state.stats.last_debug_instant = Some(now);

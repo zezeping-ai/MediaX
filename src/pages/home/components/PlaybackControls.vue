@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { Icon } from "@iconify/vue";
 import type { PlaybackState, PreviewFrame } from "@/modules/media-types";
 import { useTimelineHoverPreview } from "../composables/useTimelineHoverPreview";
@@ -39,6 +39,7 @@ const emit = defineEmits<{
   "change-rate": [number];
   "change-volume": [number];
   "change-quality": [string];
+  "overlay-interaction-change": [boolean];
   "toggle-mute": [];
   "toggle-lock": [];
 }>();
@@ -72,6 +73,15 @@ const qualityLabel = computed(() => {
 
 // 线性小图标：比 duotone 更轻，与音量区图标体量接近
 const lockIcon = computed(() => (props.locked ? "lucide:lock" : "lucide:lock-open"));
+const speedDropdownOpen = ref(false);
+const qualityDropdownOpen = ref(false);
+
+watch(
+  () => speedDropdownOpen.value || qualityDropdownOpen.value,
+  (open) => {
+    emit("overlay-interaction-change", open);
+  },
+);
 
 
 function emitPause() {
@@ -118,6 +128,7 @@ const {
 onBeforeUnmount(() => {
   cancelPreviewSeek();
   disposeHoverPreview();
+  emit("overlay-interaction-change", false);
 });
 </script>
 
@@ -213,7 +224,11 @@ onBeforeUnmount(() => {
 
           <span class="h-5 w-px bg-white/10" aria-hidden="true" />
 
-          <a-dropdown :trigger="['click']" placement="top">
+          <a-dropdown
+            v-model:open="speedDropdownOpen"
+            :trigger="['click']"
+            placement="top"
+          >
             <a-button
               size="small"
               :class="TINY_PILL_BTN"
@@ -243,7 +258,11 @@ onBeforeUnmount(() => {
 
           <span class="h-5 w-px bg-white/10" aria-hidden="true" />
 
-          <a-dropdown :trigger="['click']" placement="top">
+          <a-dropdown
+            v-model:open="qualityDropdownOpen"
+            :trigger="['click']"
+            placement="top"
+          >
             <a-button
               size="small"
               :class="TINY_PILL_BTN"

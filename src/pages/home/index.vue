@@ -63,6 +63,7 @@ const {
   toggleLock,
   onControlsMouseEnter,
   onControlsMouseLeave,
+  setControlsOverlayInteracting,
 } = usePlayerOverlayControls({
   hasSource,
   isBusy,
@@ -218,6 +219,7 @@ watch(playback, (value) => {
         @change-rate="(value) => void changePlaybackRate(value)"
         @change-volume="(value) => void changeVolume(value)"
         @change-quality="(value) => void changeQuality(value)"
+        @overlay-interaction-change="setControlsOverlayInteracting"
         @toggle-mute="() => void toggleMute()"
         @toggle-lock="toggleLock"
       />

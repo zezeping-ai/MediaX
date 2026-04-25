@@ -2,6 +2,7 @@ use crate::app::media::player::events::{
     MediaEventEnvelope, MEDIA_PLAYBACK_STATE_EVENT, MEDIA_PROTOCOL_VERSION, MEDIA_STATE_EVENT,
     MEDIA_STATE_EVENT_V2,
 };
+use crate::app::media::error::MediaError;
 use crate::app::media::player::state::MediaState;
 use crate::app::media::types::MediaSnapshot;
 use tauri::{AppHandle, Emitter, State};
@@ -46,13 +47,13 @@ pub fn snapshot_from_state(state: &State<'_, MediaState>) -> Result<MediaSnapsho
     let library = state
         .library
         .lock()
-        .map_err(|_| "media library state poisoned".to_string())?
+        .map_err(|_| MediaError::state_poisoned_lock("media library state").to_string())?
         .state();
     let playback = {
         let mut playback = state
             .playback
             .lock()
-            .map_err(|_| "playback state poisoned".to_string())?;
+            .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())?;
         playback.state()
     };
     Ok(MediaSnapshot { playback, library })

@@ -2,6 +2,7 @@
 //!
 //! Heavy policy lives in [`crate::app::media::player::viewport_sync`] and [`crate::app::media::player::runtime`].
 
+use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::player::preview::generate_preview_frame;
 use crate::app::media::player::renderer::RendererState;
 use crate::app::media::player::runtime::{
@@ -18,8 +19,13 @@ use crate::app::media::types::{
 use std::sync::atomic::Ordering;
 use tauri::{async_runtime, AppHandle, Manager, State};
 
-pub fn get_snapshot(state: State<'_, MediaState>) -> Result<MediaSnapshot, String> {
-    snapshot_from_state(&state)
+const MIN_PLAYBACK_RATE: f64 = 0.25;
+const MAX_PLAYBACK_RATE: f64 = 4.0;
+const MIN_PREVIEW_EDGE: u32 = 32;
+const MAX_PREVIEW_EDGE: u32 = 4096;
+
+pub fn get_snapshot(state: State<'_, MediaState>) -> MediaResult<MediaSnapshot> {
+    snapshot_from_state(&state).map_err(MediaError::from)
 }
 
 pub fn open(
@@ -27,7 +33,7 @@ pub fn open(
     state: State<'_, MediaState>,
     path: String,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
     // Switching source must stop any active decode stream first, otherwise the old
     // stream can keep emitting progress and consume resources.
     stop_decode_stream(&state)?;
@@ -41,37 +47,37 @@ pub fn open(
         let mut library = state_locks::library(&state)?;
         library.mark_playback_progress(&path, 0.0);
     }
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub fn play(
     app: AppHandle,
     state: State<'_, MediaState>,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
     let (current_path, resume_position_seconds) = activate_playback_and_resume_position(&state)?;
     set_pending_seek(&state, resume_position_seconds)?;
     if let Some(source) = current_path {
         start_decode_stream(&app, &state, source)?;
     }
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub fn pause(
     app: AppHandle,
     state: State<'_, MediaState>,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
     stop_decode_stream(&state)?;
     sync_pause_resume_position(&state)?;
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub fn stop(
     app: AppHandle,
     state: State<'_, MediaState>,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
     stop_decode_stream(&state)?;
     *state_locks::latest_stream_position_seconds(&state)? = 0.0;
     let current_path = {
@@ -87,7 +93,7 @@ pub fn stop(
             eprintln!("stop preview failed: {err}");
         }
     }
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub fn seek(
@@ -96,7 +102,8 @@ pub fn seek(
     position_seconds: f64,
     _force_render: Option<bool>,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
+    let position_seconds = normalize_non_negative(position_seconds, "position_seconds")?;
     let (media_path, status) = {
         let mut playback = state_locks::playback(&state)?;
         playback.seek(position_seconds);
@@ -118,7 +125,7 @@ pub fn seek(
         }
     }
     write_latest_stream_position(&state, position_seconds.max(0.0))?;
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub fn set_rate(
@@ -126,13 +133,14 @@ pub fn set_rate(
     state: State<'_, MediaState>,
     playback_rate: f64,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
+    let playback_rate = normalize_playback_rate(playback_rate)?;
     {
         let mut playback = state_locks::playback(&state)?;
         playback.set_rate(playback_rate);
     }
     state.timing_controls.set_playback_rate(playback_rate as f32);
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub fn set_volume(
@@ -140,14 +148,15 @@ pub fn set_volume(
     state: State<'_, MediaState>,
     volume: f64,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
+    let volume = normalize_unit_interval(volume, "volume")?;
     state.audio_controls.set_volume(volume as f32);
     if volume <= 0.0 {
         state.audio_controls.set_muted(true);
     } else {
         state.audio_controls.set_muted(false);
     }
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub fn set_muted(
@@ -155,9 +164,9 @@ pub fn set_muted(
     state: State<'_, MediaState>,
     muted: bool,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
     state.audio_controls.set_muted(muted);
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub fn set_hw_decode_mode(
@@ -165,7 +174,7 @@ pub fn set_hw_decode_mode(
     state: State<'_, MediaState>,
     mode: HardwareDecodeMode,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
     let playing_path = {
         let mut playback = state_locks::playback(&state)?;
         playback.set_hw_decode_mode(mode);
@@ -190,7 +199,7 @@ pub fn set_hw_decode_mode(
         stop_decode_stream(&state)?;
         start_decode_stream(&app, &state, path)?;
     }
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub fn set_quality_mode(
@@ -198,11 +207,13 @@ pub fn set_quality_mode(
     state: State<'_, MediaState>,
     mode: PlaybackQualityMode,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
     let playing_path = {
         let mut playback = state_locks::playback(&state)?;
         if mode == PlaybackQualityMode::Auto && !playback.adaptive_quality_supported() {
-            return Err("adaptive quality is not supported for current source".to_string());
+            return Err(MediaError::invalid_input(
+                "adaptive quality is not supported for current source",
+            ));
         }
         playback.set_quality_mode(mode);
         let st = playback.state();
@@ -225,7 +236,7 @@ pub fn set_quality_mode(
         stop_decode_stream(&state)?;
         start_decode_stream(&app, &state, path)?;
     }
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub fn sync_position(
@@ -234,7 +245,9 @@ pub fn sync_position(
     position_seconds: f64,
     duration_seconds: f64,
     request_id: Option<String>,
-) -> Result<MediaSnapshot, String> {
+) -> MediaResult<MediaSnapshot> {
+    let position_seconds = normalize_non_negative(position_seconds, "position_seconds")?;
+    let duration_seconds = normalize_non_negative(duration_seconds, "duration_seconds")?;
     let path = {
         let mut playback = state_locks::playback(&state)?;
         playback.sync_position(position_seconds, duration_seconds);
@@ -244,7 +257,7 @@ pub fn sync_position(
         let mut library = state_locks::library(&state)?;
         library.mark_playback_progress(&path, position_seconds);
     }
-    emit_snapshot_with_request_id(&app, &state, request_id)
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
 pub async fn preview_frame(
@@ -253,7 +266,8 @@ pub async fn preview_frame(
     position_seconds: f64,
     max_width: Option<u32>,
     max_height: Option<u32>,
-) -> Result<Option<PreviewFrame>, String> {
+) -> MediaResult<Option<PreviewFrame>> {
+    let target = normalize_non_negative(position_seconds, "position_seconds")?;
     let source = {
         let mut playback = state_locks::playback(&state)?;
         playback.state().current_path
@@ -263,9 +277,8 @@ pub async fn preview_frame(
     };
 
     let epoch = state.preview_frame_epoch.fetch_add(1, Ordering::Relaxed) + 1;
-    let width = max_width.unwrap_or(160);
-    let height = max_height.unwrap_or(90);
-    let target = position_seconds.max(0.0);
+    let width = normalize_preview_edge(max_width.unwrap_or(160));
+    let height = normalize_preview_edge(max_height.unwrap_or(90));
     let app_handle = app.clone();
     async_runtime::spawn_blocking(move || {
         generate_preview_frame(&source, target, width, height, || {
@@ -277,17 +290,49 @@ pub async fn preview_frame(
         })
     })
     .await
-    .map_err(|err| format!("preview task join failed: {err}"))?
+    .map_err(|err| MediaError::internal(format!("preview task join failed: {err}")))?
+    .map_err(MediaError::from)
 }
 
-fn set_pending_seek(state: &State<'_, MediaState>, position_seconds: f64) -> Result<(), String> {
+fn set_pending_seek(state: &State<'_, MediaState>, position_seconds: f64) -> MediaResult<()> {
     *state_locks::pending_seek_seconds(state)? = Some(position_seconds.max(0.0));
     Ok(())
 }
 
+fn normalize_non_negative(value: f64, field: &str) -> MediaResult<f64> {
+    if !value.is_finite() {
+        return Err(MediaError::invalid_input(format!(
+            "{field} must be a finite number"
+        )));
+    }
+    Ok(value.max(0.0))
+}
+
+fn normalize_unit_interval(value: f64, field: &str) -> MediaResult<f64> {
+    if !value.is_finite() {
+        return Err(MediaError::invalid_input(format!(
+            "{field} must be a finite number"
+        )));
+    }
+    Ok(value.clamp(0.0, 1.0))
+}
+
+fn normalize_playback_rate(playback_rate: f64) -> MediaResult<f64> {
+    if !playback_rate.is_finite() {
+        return Err(MediaError::invalid_input(
+            "playback_rate must be a finite number",
+        ));
+    }
+    Ok(playback_rate.clamp(MIN_PLAYBACK_RATE, MAX_PLAYBACK_RATE))
+}
+
+fn normalize_preview_edge(edge: u32) -> u32 {
+    edge.clamp(MIN_PREVIEW_EDGE, MAX_PREVIEW_EDGE)
+}
+
 fn activate_playback_and_resume_position(
     state: &State<'_, MediaState>,
-) -> Result<(Option<String>, f64), String> {
+) -> MediaResult<(Option<String>, f64)> {
     let latest_stream_position_seconds = read_latest_stream_position(state).unwrap_or(0.0);
     let mut playback = state_locks::playback(state)?;
     playback.play();
@@ -300,7 +345,7 @@ fn activate_playback_and_resume_position(
     Ok((playback_state.current_path, resume_position_seconds))
 }
 
-fn sync_pause_resume_position(state: &State<'_, MediaState>) -> Result<(), String> {
+fn sync_pause_resume_position(state: &State<'_, MediaState>) -> MediaResult<()> {
     let latest_stream_position_seconds = read_latest_stream_position(state).unwrap_or(0.0);
     let mut playback = state_locks::playback(state)?;
     let current_position_seconds = playback.state().position_seconds.max(0.0);

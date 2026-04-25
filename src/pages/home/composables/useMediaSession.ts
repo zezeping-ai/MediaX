@@ -14,6 +14,7 @@ import {
   type MediaSnapshot,
   type MediaTelemetryPayload,
 } from "@/modules/media-types";
+import { toUserMediaErrorMessage } from "./useMediaErrorMap";
 
 export function useMediaSession() {
   const snapshot = ref<MediaSnapshot | null>(null);
@@ -75,7 +76,7 @@ export function useMediaSession() {
       MEDIA_PLAYBACK_ERROR_EVENT,
       (event) => {
         const payload = resolvePayload(event.payload);
-        playbackErrorMessage.value = `${payload.code}: ${payload.message}`;
+        playbackErrorMessage.value = toUserMediaErrorMessage(`${payload.code}: ${payload.message}`);
       },
     );
     const upsertDebug = (payload: MediaDebugPayload) => {

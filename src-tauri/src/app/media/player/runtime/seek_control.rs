@@ -1,3 +1,4 @@
+use crate::app::media::error::MediaError;
 use crate::app::media::player::state::MediaState;
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::format;
@@ -11,7 +12,7 @@ pub fn take_pending_seek_seconds(app: &AppHandle) -> Result<Option<f64>, String>
     let mut guard = media_state
         .pending_seek_seconds
         .lock()
-        .map_err(|_| "pending seek state poisoned".to_string())?;
+        .map_err(|_| MediaError::state_poisoned_lock("pending seek state").to_string())?;
     Ok(guard.take())
 }
 

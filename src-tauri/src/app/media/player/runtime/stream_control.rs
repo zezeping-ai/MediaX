@@ -1,3 +1,4 @@
+use crate::app::media::error::{MediaError, MediaErrorCode};
 use crate::app::media::player::events::{
     MediaErrorPayload, MediaEventEnvelope, MEDIA_ERROR_EVENT, MEDIA_PLAYBACK_ERROR_EVENT,
     MEDIA_PROTOCOL_VERSION,
@@ -9,11 +10,34 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+fn unix_epoch_ms_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn emit_error_events(app: &AppHandle, code: &'static str, message: String) {
+    let emitted_at_ms = unix_epoch_ms_now();
+    let error_payload = MediaErrorPayload { code, message };
+    let _ = app.emit(
+        MEDIA_PLAYBACK_ERROR_EVENT,
+        MediaEventEnvelope {
+            protocol_version: MEDIA_PROTOCOL_VERSION,
+            event_type: "playback_error",
+            request_id: None,
+            emitted_at_ms,
+            payload: error_payload.clone(),
+        },
+    );
+    let _ = app.emit(MEDIA_ERROR_EVENT, error_payload);
+}
+
 pub fn stop_decode_stream(state: &State<'_, MediaState>) -> Result<(), String> {
     let mut guard = state
         .stream_stop_flag
         .lock()
-        .map_err(|_| "stream state poisoned".to_string())?;
+        .map_err(|_| MediaError::state_poisoned_lock("stream state").to_string())?;
     if let Some(flag) = guard.take() {
         flag.store(true, Ordering::Relaxed);
     }
@@ -36,7 +60,7 @@ pub fn start_decode_stream(
         let mut guard = state
             .stream_stop_flag
             .lock()
-            .map_err(|_| "stream state poisoned".to_string())?;
+            .map_err(|_| MediaError::state_poisoned_lock("stream state").to_string())?;
         *guard = Some(stop_flag.clone());
     }
     let renderer = {
@@ -59,28 +83,7 @@ pub fn start_decode_stream(
                 playback.update_hw_decode_status(false, None, Some(err.clone()));
             }
             super::emit_debug(&app_handle, "decode_error", err.clone());
-            let emitted_at_ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            let error_payload = MediaErrorPayload {
-                code: "DECODE_FAILED",
-                message: err,
-            };
-            let _ = app_handle.emit(
-                MEDIA_PLAYBACK_ERROR_EVENT,
-                MediaEventEnvelope {
-                    protocol_version: MEDIA_PROTOCOL_VERSION,
-                    event_type: "playback_error",
-                    request_id: None,
-                    emitted_at_ms,
-                    payload: error_payload.clone(),
-                },
-            );
-            let _ = app_handle.emit(
-                MEDIA_ERROR_EVENT,
-                error_payload,
-            );
+            emit_error_events(&app_handle, MediaErrorCode::DecodeFailed.as_str(), err);
         }
     });
     Ok(())
@@ -93,7 +96,7 @@ pub fn write_latest_stream_position(
     let mut guard = state
         .latest_stream_position_seconds
         .lock()
-        .map_err(|_| "latest position state poisoned".to_string())?;
+        .map_err(|_| MediaError::state_poisoned_lock("latest position state").to_string())?;
     *guard = position_seconds.max(0.0);
     Ok(())
 }
@@ -102,6 +105,6 @@ pub fn read_latest_stream_position(state: &State<'_, MediaState>) -> Result<f64,
     let guard = state
         .latest_stream_position_seconds
         .lock()
-        .map_err(|_| "latest position state poisoned".to_string())?;
+        .map_err(|_| MediaError::state_poisoned_lock("latest position state").to_string())?;
     Ok((*guard).max(0.0))
 }
