@@ -11,19 +11,19 @@ const options: Array<{ label: string; value: ThemePreference; description: strin
 </script>
 
 <template>
-  <a-space direction="vertical" size="middle" style="width: 100%">
-    <a-typography-title :level="4" style="margin: 0">外观</a-typography-title>
-    <a-typography-text type="secondary">
+  <a-space direction="vertical" size="small" class="w-full">
+    <a-typography-title :level="5" class="m-0!">外观</a-typography-title>
+    <a-typography-text type="secondary" class="text-[12px]">
       这里的设置会立即生效，并同步保存到本地。
     </a-typography-text>
 
-    <a-card title="主题" :bordered="false">
-      <a-radio-group v-model:value="theme" style="width: 100%">
-        <a-space direction="vertical" style="width: 100%">
+    <a-card title="主题" :bordered="false" size="small" :body-style="{ padding: '12px' }">
+      <a-radio-group v-model:value="theme" class="w-full">
+        <a-space direction="vertical" size="small" class="w-full">
           <a-radio v-for="o in options" :key="o.value" :value="o.value">
             <a-space direction="vertical" size="small">
               <span>{{ o.label }}</span>
-              <a-typography-text type="secondary" style="font-size: 12px">
+              <a-typography-text type="secondary" class="text-xs">
                 {{ o.description }}
               </a-typography-text>
             </a-space>

@@ -1,8 +1,8 @@
 use crate::app::media::player::decode_context::open_video_decode_context;
 use crate::app::media::player::events::{
-    MediaDebugPayload, MediaErrorPayload, MediaEventEnvelope, MediaMetadataPayload,
-    MediaTelemetryPayload, MEDIA_DEBUG_EVENT, MEDIA_DEBUG_EVENT_V2, MEDIA_ERROR_EVENT,
-    MEDIA_METADATA_EVENT, MEDIA_PROTOCOL_VERSION, MEDIA_TELEMETRY_EVENT_V2,
+    MediaDebugPayload, MediaEventEnvelope, MediaMetadataPayload, MediaTelemetryPayload,
+    MEDIA_DEBUG_EVENT, MEDIA_DEBUG_EVENT_V2, MEDIA_METADATA_EVENT, MEDIA_PROTOCOL_VERSION,
+    MEDIA_TELEMETRY_EVENT_V2,
 };
 use crate::app::media::player::pts::timestamp_to_seconds;
 use crate::app::media::player::runtime::audio::clamp_playback_rate;
@@ -29,17 +29,25 @@ use rodio::{buffer::SamplesBuffer, DeviceSinkBuilder, MixerDeviceSink, Player};
 use std::num::{NonZeroU16, NonZeroU32};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread;
 use std::time::{Duration, Instant};
 use tauri::Manager;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter};
 
 const MAX_EMIT_FPS: u32 = 60;
 
 mod audio;
+mod audio_pipeline;
 mod clock;
 mod progress;
+mod seek_control;
 mod session;
+mod stream_control;
+mod video_pipeline;
+
+pub use stream_control::{
+    read_latest_stream_position, start_decode_stream, stop_decode_stream,
+    write_latest_stream_position,
+};
 
 fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) {
     let at_ms = std::time::SystemTime::now()
@@ -71,89 +79,7 @@ fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) 
     );
 }
 
-pub fn stop_decode_stream(state: &State<'_, MediaState>) -> Result<(), String> {
-    let mut guard = state
-        .stream_stop_flag
-        .lock()
-        .map_err(|_| "stream state poisoned".to_string())?;
-    if let Some(flag) = guard.take() {
-        flag.store(true, Ordering::Relaxed);
-    }
-    Ok(())
-}
-
-pub fn start_decode_stream(
-    app: &AppHandle,
-    state: &State<'_, MediaState>,
-    source: String,
-) -> Result<(), String> {
-    stop_decode_stream(state)?;
-    emit_debug(
-        app,
-        "stream_start",
-        format!("start decode stream: {source}"),
-    );
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    {
-        let mut guard = state
-            .stream_stop_flag
-            .lock()
-            .map_err(|_| "stream state poisoned".to_string())?;
-        *guard = Some(stop_flag.clone());
-    }
-    let renderer = {
-        let handle = app.clone();
-        (*handle.state::<RendererState>()).clone()
-    };
-    let audio_controls = state.audio_controls.clone();
-    let timing_controls = state.timing_controls.clone();
-    let app_handle = app.clone();
-    thread::spawn(move || {
-        if let Err(err) = decode_and_emit_stream(
-            &app_handle,
-            &renderer,
-            &source,
-            &stop_flag,
-            &audio_controls,
-            &timing_controls,
-        ) {
-            if let Ok(mut playback) = app_handle.state::<MediaState>().playback.lock() {
-                playback.update_hw_decode_status(false, None, Some(err.clone()));
-            }
-            emit_debug(&app_handle, "decode_error", err.clone());
-            let _ = app_handle.emit(
-                MEDIA_ERROR_EVENT,
-                MediaErrorPayload {
-                    code: "DECODE_FAILED",
-                    message: err,
-                },
-            );
-        }
-    });
-    Ok(())
-}
-
-pub fn write_latest_stream_position(
-    state: &State<'_, MediaState>,
-    position_seconds: f64,
-) -> Result<(), String> {
-    let mut guard = state
-        .latest_stream_position_seconds
-        .lock()
-        .map_err(|_| "latest position state poisoned".to_string())?;
-    *guard = position_seconds.max(0.0);
-    Ok(())
-}
-
-pub fn read_latest_stream_position(state: &State<'_, MediaState>) -> Result<f64, String> {
-    let guard = state
-        .latest_stream_position_seconds
-        .lock()
-        .map_err(|_| "latest position state poisoned".to_string())?;
-    Ok((*guard).max(0.0))
-}
-
-fn decode_and_emit_stream(
+pub(super) fn decode_and_emit_stream(
     app: &AppHandle,
     renderer: &RendererState,
     source: &str,
@@ -169,25 +95,19 @@ fn decode_and_emit_stream(
             .map_err(|_| "playback state poisoned".to_string())?;
         playback.hw_decode_mode()
     };
-    emit_debug(
-        app,
-        "open",
-        format!("open decode context (hw_mode={hw_mode:?})"),
-    );
+    emit_debug(app, "open", "open decode context");
     let mut video_ctx = open_video_decode_context(source, hw_mode)?;
     emit_debug(
         app,
         "decoder_ready",
         format!(
-            "video: {}x{} fps={:.3} duration={:.3}s output={}x{} hw_active={} backend={}",
+            "video: {}x{} fps={:.3} duration={:.3}s output={}x{}",
             video_ctx.decoder.width(),
             video_ctx.decoder.height(),
             video_ctx.fps_value,
             video_ctx.duration_seconds,
             video_ctx.output_width,
             video_ctx.output_height,
-            video_ctx.hw_decode_active,
-            video_ctx.hw_decode_backend.as_deref().unwrap_or("<none>")
         ),
     );
     if let Some(video_stream) = video_ctx
@@ -259,6 +179,7 @@ fn decode_and_emit_stream(
         audio_controls,
         timing_controls,
     )?;
+    let mut last_applied_audio_rate: f32 = clamp_playback_rate(timing_controls.playback_rate());
     let _ = app.emit(
         MEDIA_METADATA_EVENT,
         MediaMetadataPayload {
@@ -289,6 +210,30 @@ fn decode_and_emit_stream(
             emit_debug(app, "stop", "stop flag observed; exiting decode loop");
             return Ok(());
         }
+
+        // Apply speed changes immediately. Otherwise, rodio may keep playing already-queued samples
+        // at the old speed until the next PCM append, which is especially noticeable when slowing down.
+        if let Some(audio_state) = audio_pipeline.as_mut() {
+            let next_rate = clamp_playback_rate(timing_controls.playback_rate());
+            if (next_rate - last_applied_audio_rate).abs() > 1e-3 {
+                audio_state.output.player.set_speed(next_rate);
+                // If a lot of audio is already queued, changing speed can appear to "lag"
+                // because the queued audio keeps playing at the old rate for a while.
+                // Trade a small, bounded audio discontinuity for responsiveness.
+                //
+                // `len()` is the number of queued sources in rodio's player.
+                // In practice, deep queues are most noticeable when slowing down (<1.0x).
+                let queued_sources = audio_state.output.player.len();
+                if queued_sources >= audio_pipeline::DEEP_AUDIO_QUEUE_SOURCE_THRESHOLD && next_rate < 1.0 {
+                    audio_state.output.player.clear();
+                    audio_state.output.player.play();
+                    audio_clock = None;
+                    audio_queue_depth_sources = None;
+                }
+                last_applied_audio_rate = next_rate;
+            }
+        }
+
         // Keep decode near real-time. If we run far ahead (especially with a tiny video queue),
         // we can reach EOF quickly and the video will appear to "end" while audio is still draining.
         let max_lead_seconds = 0.25;
@@ -298,13 +243,13 @@ fn decode_and_emit_stream(
         {
             let lead = video_pts - audio_pts;
             if lead.is_finite() && lead > max_lead_seconds {
-                std::thread::sleep(Duration::from_millis(5));
+                std::thread::sleep(Duration::from_millis(video_pipeline::DECODE_LEAD_SLEEP_MS));
                 continue;
             }
         }
-        if let Some(target_seconds) = take_pending_seek_seconds(app)? {
+        if let Some(target_seconds) = seek_control::take_pending_seek_seconds(app)? {
             emit_debug(app, "seek", format!("apply seek to {target_seconds:.3}s"));
-            apply_seek_to_stream(
+            seek_control::apply_seek_to_stream(
                 &mut video_ctx.input_ctx,
                 &mut video_ctx.decoder,
                 target_seconds,
@@ -434,6 +379,20 @@ fn decode_and_emit_stream(
             emit_debug(app, "stop", "stop flag observed during eof tail; exiting");
             return Ok(());
         }
+
+        if let Some(audio_state) = audio_pipeline.as_mut() {
+            let next_rate = clamp_playback_rate(timing_controls.playback_rate());
+            if (next_rate - last_applied_audio_rate).abs() > 1e-3 {
+                audio_state.output.player.set_speed(next_rate);
+                let queued_sources = audio_state.output.player.len();
+                if queued_sources >= audio_pipeline::DEEP_AUDIO_QUEUE_SOURCE_THRESHOLD && next_rate < 1.0 {
+                    audio_state.output.player.clear();
+                    audio_state.output.player.play();
+                }
+                last_applied_audio_rate = next_rate;
+            }
+        }
+
         // If duration is unknown, fall back to finishing when audio drains (if any).
         let duration_seconds = video_ctx.duration_seconds.max(0.0);
         let rate = timing_controls.playback_rate().max(0.25) as f64;
@@ -511,7 +470,7 @@ fn drain_frames(
             if stop_flag.load(Ordering::Relaxed) {
                 return Ok(());
             }
-            std::thread::sleep(Duration::from_millis(2));
+            std::thread::sleep(Duration::from_millis(video_pipeline::RENDER_BACKPRESSURE_SLEEP_MS));
         }
 
         let frame_for_scale = match transfer_hw_frame_if_needed(&decoded) {
@@ -624,40 +583,6 @@ fn drain_frames(
     Ok(())
 }
 
-
-fn take_pending_seek_seconds(app: &AppHandle) -> Result<Option<f64>, String> {
-    let media_state = app.state::<MediaState>();
-    let mut guard = media_state
-        .pending_seek_seconds
-        .lock()
-        .map_err(|_| "pending seek state poisoned".to_string())?;
-    Ok(guard.take())
-}
-
-fn apply_seek_to_stream(
-    input_ctx: &mut format::context::Input,
-    decoder: &mut ffmpeg::decoder::Video,
-    target_seconds: f64,
-    playback_clock: &mut PlaybackClock,
-    current_position_seconds: &mut f64,
-    audio_pipeline: Option<&mut AudioPipeline>,
-) -> Result<(), String> {
-    let clamped = target_seconds.max(0.0);
-    let ts = (clamped * f64::from(ffmpeg::ffi::AV_TIME_BASE)).round() as i64;
-    input_ctx
-        .seek(ts, ..)
-        .map_err(|err| format!("seek stream failed: {err}"))?;
-    decoder.flush();
-    if let Some(audio_state) = audio_pipeline {
-        audio_state.decoder.flush();
-        audio_state.output.player.clear();
-        // rodio::Player::clear() also pauses playback. Ensure audio resumes after seek.
-        audio_state.output.player.play();
-    }
-    playback_clock.reset_to(clamped);
-    *current_position_seconds = clamped;
-    Ok(())
-}
 
 struct AudioPipeline {
     stream_index: usize,

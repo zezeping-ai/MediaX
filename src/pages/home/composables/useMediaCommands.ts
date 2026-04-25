@@ -1,4 +1,6 @@
 import {
+  DEFAULT_PREVIEW_FRAME_MAX_HEIGHT,
+  DEFAULT_PREVIEW_FRAME_MAX_WIDTH,
   openMedia,
   pauseMedia,
   playMedia,
@@ -44,7 +46,11 @@ export function useMediaCommands(): MediaCommandSet {
     setHwMode: (mode) => setMediaHwDecodeMode(mode),
     syncPosition: (positionSeconds, durationSeconds) =>
       syncMediaPosition(positionSeconds, durationSeconds),
-    requestPreviewFrame: (positionSeconds, maxWidth = 160, maxHeight = 90) =>
+    requestPreviewFrame: (
+      positionSeconds,
+      maxWidth = DEFAULT_PREVIEW_FRAME_MAX_WIDTH,
+      maxHeight = DEFAULT_PREVIEW_FRAME_MAX_HEIGHT,
+    ) =>
       previewMediaFrame(positionSeconds, maxWidth, maxHeight),
   };
 }

@@ -1,10 +1,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { usePreferences } from "@/modules/preferences";
-import { getMediaSnapshot, setMainWindowAlwaysOnTop } from "@/modules/media-player";
+import { getMediaSnapshot } from "@/modules/media-player";
 import type { MediaSnapshot } from "@/modules/media-types";
 import { useMediaCommands } from "./useMediaCommands";
 import { useMediaErrorMap } from "./useMediaErrorMap";
+import { usePlaybackSettings } from "./usePlaybackSettings";
 import { useMediaSession } from "./useMediaSession";
 const DEV_SEEK_LOG = import.meta.env.DEV;
 
@@ -22,6 +23,10 @@ export function useMediaCenter() {
   } = useMediaSession();
   const commands = useMediaCommands();
   const { toUserErrorMessage } = useMediaErrorMap();
+  const playbackSettings = usePlaybackSettings({
+    setHwMode: commands.setHwMode,
+    requestPreviewFrame: commands.requestPreviewFrame,
+  });
   const isBusy = ref(false);
   const errorMessage = ref("");
   const lastSyncedSecond = ref(-1);
@@ -41,20 +46,14 @@ export function useMediaCenter() {
   }
 
   async function applyHwDecodePreference(enabled: boolean) {
-    const mode = enabled ? "auto" : "off";
-    try {
-      updateSnapshot(await commands.setHwMode(mode));
-    } catch {
-      // Keep silent here; player surface already emits error events.
+    const next = await playbackSettings.applyHwDecodePreference(enabled);
+    if (next) {
+      updateSnapshot(next);
     }
   }
 
   async function applyAlwaysOnTopPreference(enabled: boolean) {
-    try {
-      await setMainWindowAlwaysOnTop(enabled);
-    } catch {
-      // Keep silent here; user action should not break playback flow.
-    }
+    await playbackSettings.applyAlwaysOnTopPreference(enabled);
   }
 
   async function openLocalFileByDialog() {
@@ -145,7 +144,7 @@ export function useMediaCenter() {
 
   async function requestPreviewFrame(positionSeconds: number, maxWidth = 160, maxHeight = 90) {
     try {
-      return await commands.requestPreviewFrame(positionSeconds, maxWidth, maxHeight);
+      return await playbackSettings.requestTimelinePreview(positionSeconds, maxWidth, maxHeight);
     } catch {
       return null;
     }

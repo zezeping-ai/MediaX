@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, watchEffect } from "vue";
 import { theme as antdTheme } from "ant-design-vue";
+import { useRoute } from "vue-router";
 import { usePreferences } from "@/modules/preferences";
 
 const { resolvedTheme } = usePreferences();
+const route = useRoute();
 
 const configTheme = computed(() => ({
   algorithm:
@@ -11,10 +13,16 @@ const configTheme = computed(() => ({
       ? antdTheme.darkAlgorithm
       : antdTheme.defaultAlgorithm,
 }));
+
+const componentSize = computed(() => (route.name === "preferences" ? "small" : "middle"));
+
+watchEffect(() => {
+  document.documentElement.dataset.page = String(route.name ?? "");
+});
 </script>
 
 <template>
-  <a-config-provider :theme="configTheme">
+  <a-config-provider :theme="configTheme" :component-size="componentSize">
     <router-view />
   </a-config-provider>
 </template>

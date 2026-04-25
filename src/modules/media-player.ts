@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { HardwareDecodeMode, MediaSnapshot, PreviewFrame } from "./media-types";
 
+export const DEFAULT_PREVIEW_FRAME_MAX_WIDTH = 160;
+export const DEFAULT_PREVIEW_FRAME_MAX_HEIGHT = 90;
+
 export interface SeekMediaOptions {
   forceRender?: boolean;
   requestId?: string;
@@ -62,7 +65,11 @@ export function syncMediaPosition(positionSeconds: number, durationSeconds: numb
   });
 }
 
-export function previewMediaFrame(positionSeconds: number, maxWidth = 160, maxHeight = 90) {
+export function previewMediaFrame(
+  positionSeconds: number,
+  maxWidth = DEFAULT_PREVIEW_FRAME_MAX_WIDTH,
+  maxHeight = DEFAULT_PREVIEW_FRAME_MAX_HEIGHT,
+) {
   return invoke<PreviewFrame | null>("media_preview_frame", {
     positionSeconds,
     maxWidth,

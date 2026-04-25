@@ -1,17 +1,18 @@
 // 全局 SCSS：在 main.ts 中引入（验证 sass）
-$demo-muted: rgba(15, 15, 15, 0.65);
 
-html,
-body {
-  height: 100%;
-}
-
-// Required for transparent Tauri windows (wgpu underlay renderer).
-// Keep the WebView background transparent so the native renderer is visible behind UI.
 html,
 body,
 #app {
-  background: transparent !important;
+  height: 100%;
+  overflow: hidden;
+}
+
+// Tauri: main window may have a native renderer underlay.
+// Keep the app surface transparent, but DO NOT force `html` transparent; otherwise
+// resizing in dark mode can reveal the platform default (white) background.
+body,
+#app {
+  background: transparent;
 }
 
 :root {
@@ -36,12 +37,13 @@ html[data-theme="dark"] {
   background-color: #2f2f2f;
 }
 
-.demo-tsx {
-  margin-top: 12px;
-  color: $demo-muted;
-  font-size: 14px;
+// Player page: keep root fully transparent so native Rust renderer remains visible.
+html[data-page="home"] {
+  background: transparent !important;
 }
 
-html[data-theme="dark"] .demo-tsx {
-  color: rgba(246, 246, 246, 0.65);
+.iconify {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }

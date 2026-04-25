@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount } from "vue";
 import { Icon } from "@iconify/vue";
-import { throttle } from "lodash-es";
 import type { PlaybackState, PreviewFrame } from "@/modules/media-types";
 import { useTimelineHoverPreview } from "../composables/useTimelineHoverPreview";
+import { usePlaybackTimelineState } from "../composables/usePlaybackTimelineState";
+import {
+  CIRCLE_BTN_BASE,
+  CIRCLE_BTN_GHOST,
+  CIRCLE_BTN_PRIMARY,
+  PILL_BASE,
+  SPEED_OPTIONS,
+  TINY_PILL_BTN,
+} from "./playbackControls.constants";
+import { formatSeconds } from "./playbackControls.utils";
 
 const props = defineProps<{
   playback: PlaybackState | null;
@@ -12,7 +21,11 @@ const props = defineProps<{
   volume: number;
   muted: boolean;
   locked: boolean;
-  requestPreviewFrame?: (positionSeconds: number, maxWidth?: number, maxHeight?: number) => Promise<PreviewFrame | null>;
+  requestPreviewFrame?: (
+    positionSeconds: number,
+    maxWidth?: number,
+    maxHeight?: number
+  ) => Promise<PreviewFrame | null>;
 }>();
 
 const emit = defineEmits<{
@@ -27,82 +40,52 @@ const emit = defineEmits<{
   "toggle-lock": [];
 }>();
 
-const nowTick = ref(Date.now());
-const anchorPosition = ref(0);
-const anchorAtMs = ref(Date.now());
-let tickTimer: number | null = null;
-const PREVIEW_SEEK_INTERVAL_MS = 100;
+function normalizeSliderValue(value: number | [number, number]) {
+  return Array.isArray(value) ? Number(value[0]) : Number(value);
+}
 
-const currentTime = computed(() => {
-  const playback = props.playback;
-  if (!playback) {
-    return 0;
-  }
-  if (playback.status !== "playing") {
-    return anchorPosition.value;
-  }
-  const rate = playback.playback_rate > 0 ? playback.playback_rate : 1;
-  const elapsedSeconds = Math.max(0, nowTick.value - anchorAtMs.value) / 1000;
-  const progressed = anchorPosition.value + elapsedSeconds * rate;
-  const maxDuration =
-    playback.duration_seconds > 0 ? playback.duration_seconds : Number.POSITIVE_INFINITY;
-  return Math.min(progressed, maxDuration);
+const { currentTime, commitSeek, previewSeekWhilePaused, cancelPreviewSeek } = usePlaybackTimelineState({
+  playback: () => props.playback,
+  onSeek: (seconds) => emit("seek", seconds),
+  onSeekPreview: (seconds) => emit("seek-preview", seconds),
 });
 const duration = computed(() => props.playback?.duration_seconds ?? 0);
 const sliderMax = computed(() => Math.max(duration.value, currentTime.value, 1));
 const isPlaying = computed(() => props.playback?.status === "playing");
 const volumeIcon = computed(() => {
   if (props.muted || props.volume <= 0) {
-    return "solar:volume-cross-bold-duotone";
+    return "lucide:volume-x";
   }
   if (props.volume < 0.5) {
-    return "solar:volume-small-bold-duotone";
+    return "lucide:volume-1";
   }
-  return "solar:volume-loud-bold-duotone";
+  return "lucide:volume-2";
 });
-const speedOptions = [0.25, 0.5, 0.75, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+const speedLabel = computed(() => `${props.playbackRate}x`);
 
-function formatSeconds(value: number) {
-  const safeValue = Math.max(0, Math.floor(value || 0));
-  const minutes = Math.floor(safeValue / 60);
-  const seconds = safeValue % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
+// 线性小图标：比 duotone 更轻，与音量区图标体量接近
+const lockIcon = computed(() => (props.locked ? "lucide:lock" : "lucide:lock-open"));
 
-function emitSeek(nextSeconds: number) {
-  const normalized = Math.max(0, Number.isFinite(nextSeconds) ? nextSeconds : 0);
-  // Final seek on slider release should win. Cancel any trailing paused-preview
-  // seek that may fire later from throttle, otherwise final frame commit can be
-  // intermittently overridden/cancelled.
-  emitPausedSeekPreview.cancel();
-  anchorPosition.value = normalized;
-  anchorAtMs.value = Date.now();
-  nowTick.value = anchorAtMs.value;
-  emit("seek", normalized);
-}
-
-function previewSeekWhilePaused(nextSeconds: number) {
-  const normalized = Math.max(0, Number.isFinite(nextSeconds) ? nextSeconds : 0);
-  anchorPosition.value = normalized;
-  anchorAtMs.value = Date.now();
-  nowTick.value = anchorAtMs.value;
-  if (props.playback?.status !== "paused") {
-    emitPausedSeekPreview.cancel();
-    return;
-  }
-  emitPausedSeekPreview(normalized);
-}
 
 function emitPause() {
   emit("pause", currentTime.value);
 }
 
-// Keep scrubbing responsive while avoiding frequent backend seek preview calls.
-const emitPausedSeekPreview = throttle(
-  (seconds: number) => emit("seek-preview", seconds),
-  PREVIEW_SEEK_INTERVAL_MS,
-  { leading: true, trailing: true },
-);
+function handleSpeedMenuClick({ key }: { key: string | number }) {
+  emit("change-rate", Number(key));
+}
+
+function handleProgressPreviewUpdate(value: number | [number, number]) {
+  previewSeekWhilePaused(normalizeSliderValue(value));
+}
+
+function handleProgressCommit(value: number | [number, number]) {
+  commitSeek(normalizeSliderValue(value));
+}
+
+function handleVolumeChange(value: number | [number, number]) {
+  emit("change-volume", normalizeSliderValue(value));
+}
 
 const {
   previewContainerRef,
@@ -118,251 +101,189 @@ const {
 } = useTimelineHoverPreview(
   () => Math.max(duration.value, sliderMax.value),
   () => props.playback?.current_path ?? "",
-  props.requestPreviewFrame,
-);
-
-function clearTickTimer() {
-  if (tickTimer !== null) {
-    window.clearInterval(tickTimer);
-    tickTimer = null;
-  }
-}
-
-function ensureTickTimer() {
-  if (tickTimer !== null) {
-    return;
-  }
-  tickTimer = window.setInterval(() => {
-    nowTick.value = Date.now();
-  }, 200);
-}
-
-watch(
-  () => props.playback,
-  (playback) => {
-    if (!playback) {
-      anchorPosition.value = 0;
-      anchorAtMs.value = Date.now();
-      clearTickTimer();
-      return;
-    }
-
-    const backendPos = playback.position_seconds ?? 0;
-    const drift = backendPos - anchorPosition.value;
-    const backendJumped = Math.abs(drift) >= 0.5;
-    const backendAdvanced = drift > 0.05;
-    if (backendJumped || backendAdvanced || playback.status !== "playing") {
-      anchorPosition.value = backendPos;
-      anchorAtMs.value = Date.now();
-    }
-
-    if (playback.status === "playing") {
-      ensureTickTimer();
-      emitPausedSeekPreview.cancel();
-    } else {
-      clearTickTimer();
-    }
-  },
-  { immediate: true, deep: true },
+  props.requestPreviewFrame
 );
 
 onBeforeUnmount(() => {
-  clearTickTimer();
-  emitPausedSeekPreview.cancel();
+  cancelPreviewSeek();
   disposeHoverPreview();
 });
-
 </script>
 
 <template>
-  <section class="playback-controls">
-    <div class="top-row">
-      <a-button
-        class="lock-btn"
-        shape="circle"
-        :title="locked ? '取消锁定控制器自动隐藏' : '锁定控制器常驻显示'"
-        @click="emit('toggle-lock')"
+  <section
+    class="w-full overflow-visible rounded-t-2xl rounded-b-none border border-white/10 bg-[linear-gradient(180deg,rgba(0,0,0,0.25)_0%,rgba(0,0,0,0.35)_100%)] shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
+  >
+    <div class="px-3.5 pb-2 pt-2.5">
+      <div
+        ref="previewContainerRef"
+        class="relative"
+        @mousemove="onTimelineMouseMove"
+        @mouseleave="onTimelineMouseLeave"
       >
-        <Icon
-          :icon="locked ? 'solar:lock-bold-duotone' : 'solar:lock-keyhole-minimalistic-unlocked-bold-duotone'"
-          class="lock-icon"
+        <a-slider
+          class="w-full [&_.ant-slider]:m-0! [&_.ant-slider-rail]:bg-white/12 [&_.ant-slider-track]:bg-white/85 [&_.ant-slider-handle::after]:bg-white [&_.ant-slider-handle::after]:shadow-[0_0_0_2px_rgba(255,255,255,0.26)] [&_.ant-slider-handle]:opacity-95 [&_.ant-slider-handle:hover]:opacity-100 [&_.ant-slider-rail]:h-[3px] [&_.ant-slider-track]:h-[3px]"
+          :value="currentTime"
+          :max="sliderMax"
+          :disabled="disabled"
+          title="拖动调整播放进度"
+          :tooltip-open="false"
+          @update:value="handleProgressPreviewUpdate"
+          @change="handleProgressCommit"
         />
-      </a-button>
-    </div>
-    <div ref="previewContainerRef" class="timeline-preview-zone" @mousemove="onTimelineMouseMove" @mouseleave="onTimelineMouseLeave">
-      <a-slider
-        :value="currentTime"
-        :max="sliderMax"
-        :disabled="disabled"
-        title="拖动调整播放进度"
-        :tooltip-open="false"
-        @update:value="(value: number | [number, number]) => previewSeekWhilePaused(Array.isArray(value) ? Number(value[0]) : Number(value))"
-        @change="(value: number | [number, number]) => emitSeek(Array.isArray(value) ? Number(value[0]) : Number(value))"
-      />
-      <div v-if="canShowPreview" class="timeline-preview-popup" :style="{ left: `${hoverLeft}px` }">
-        <img :src="hoverImageSrc" :width="hoverImageWidth" :height="hoverImageHeight" alt="preview frame" />
-        <span>{{ formatSeconds(hoverSeconds) }}</span>
+
+        <div
+          v-if="canShowPreview"
+          class="pointer-events-none absolute bottom-[calc(100%+10px)] z-10 flex -translate-x-1/2 flex-col items-center gap-1.5"
+          :style="{ left: `${hoverLeft}px` }"
+        >
+          <img
+            :src="hoverImageSrc"
+            :width="hoverImageWidth"
+            :height="hoverImageHeight"
+            class="rounded-lg border border-white/15 bg-black/50 shadow-[0_14px_40px_rgba(0,0,0,0.55)]"
+            alt="preview frame"
+          />
+          <span
+            class="rounded-md border border-white/10 bg-black/55 px-2 py-0.5 text-[11px] leading-4 text-white/90"
+          >
+            {{ formatSeconds(hoverSeconds) }}
+          </span>
+        </div>
       </div>
-    </div>
-    <div class="controls-row">
-      <a-button
-        class="control-btn primary"
-        shape="circle"
-        :disabled="disabled"
-        :title="isPlaying ? '暂停播放' : '开始播放'"
-        @click="isPlaying ? emitPause() : emit('play')"
-      >
-        {{ isPlaying ? "⏸" : "▶" }}
-      </a-button>
-      <a-button class="control-btn" shape="circle" :disabled="disabled" title="停止播放" @click="emit('stop')">
-        ⏹
-      </a-button>
-      <a-select
-        class="speed-select"
-        :value="playbackRate"
-        :options="speedOptions.map((value) => ({ value, label: `${value}x` }))"
-        :disabled="disabled"
-        title="调整播放倍速"
-        @change="(value: number) => emit('change-rate', value)"
-      />
-      <a-button
-        class="control-btn volume-btn"
-        shape="circle"
-        :disabled="disabled"
-        :title="muted || volume <= 0 ? '取消静音' : '静音'"
-        @click="emit('toggle-mute')"
-      >
-        <Icon :icon="volumeIcon" />
-      </a-button>
-      <a-slider
-        class="volume-slider"
-        :value="muted ? 0 : volume"
-        :min="0"
-        :max="1"
-        :step="0.01"
-        :tooltip-open="false"
-        :disabled="disabled"
-        title="调整音量"
-        @change="
-          (value: number | [number, number]) =>
-            emit('change-volume', Array.isArray(value) ? Number(value[0]) : Number(value))
-        "
-      />
-      <span class="time-label">{{ formatSeconds(currentTime) }} / {{ formatSeconds(duration) }}</span>
+
+      <div class="mt-1 grid grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2 max-[720px]:grid-cols-[34px_minmax(0,1fr)_34px]">
+        <div aria-hidden="true" />
+        <div class="flex justify-center">
+          <div :class="[PILL_BASE, 'max-w-full gap-2.5 px-3']">
+          <div
+            class="flex items-baseline gap-1.5 text-[11px] text-white/70 [font-variant-numeric:tabular-nums]"
+          >
+            <span class="text-white/85">{{ formatSeconds(currentTime) }}</span>
+            <span class="text-white/35">/</span>
+            <span class="text-white/60">{{ formatSeconds(duration) }}</span>
+          </div>
+
+          <span class="h-5 w-px bg-white/10" aria-hidden="true" />
+
+          <a-button
+            size="small"
+            shape="circle"
+            :disabled="disabled"
+            title="停止播放"
+            :class="[CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST]"
+            @click="emit('stop')"
+          >
+            <Icon
+              icon="ph:stop-fill"
+              width="16"
+              height="16"
+              class="block shrink-0"
+              aria-hidden="true"
+            />
+          </a-button>
+
+          <a-button
+            size="small"
+            shape="circle"
+            :disabled="disabled"
+            :title="isPlaying ? '暂停播放' : '开始播放'"
+            :class="[CIRCLE_BTN_BASE, 'h-11 min-h-11 w-11 min-w-11', CIRCLE_BTN_PRIMARY]"
+            @click="isPlaying ? emitPause() : emit('play')"
+          >
+            <Icon
+              :icon="isPlaying ? 'ph:pause-fill' : 'ph:play-fill'"
+              width="20"
+              height="20"
+              class="block shrink-0"
+              aria-hidden="true"
+            />
+          </a-button>
+
+          <span class="h-5 w-px bg-white/10" aria-hidden="true" />
+
+          <a-dropdown :trigger="['click']" placement="top">
+            <a-button
+              size="small"
+              :class="TINY_PILL_BTN"
+              :disabled="disabled"
+              title="调整播放倍速"
+            >
+              <span class="tabular-nums">{{ speedLabel }}</span>
+              <Icon
+                icon="mdi:chevron-up"
+                width="14"
+                height="14"
+                class="shrink-0 opacity-75"
+                aria-hidden="true"
+              />
+            </a-button>
+            <template #overlay>
+              <a-menu
+                :selected-keys="[String(playbackRate)]"
+                @click="handleSpeedMenuClick"
+              >
+                <a-menu-item v-for="value in SPEED_OPTIONS" :key="String(value)">
+                  {{ value }}x
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+
+          <span class="h-5 w-px bg-white/10" aria-hidden="true" />
+
+          <a-button
+            size="small"
+            shape="circle"
+            :disabled="disabled"
+            :title="muted || volume <= 0 ? '取消静音' : '静音'"
+            :class="[CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST]"
+            @click="emit('toggle-mute')"
+          >
+            <Icon
+              :icon="volumeIcon"
+              width="18"
+              height="18"
+              class="block shrink-0"
+              aria-hidden="true"
+            />
+          </a-button>
+
+          <div class="ml-1 mr-2 w-[118px] max-[720px]:hidden">
+            <a-slider
+              class="w-full [&_.ant-slider]:m-0! [&_.ant-slider-rail]:bg-white/12 [&_.ant-slider-track]:bg-white/70 [&_.ant-slider-handle::after]:bg-white [&_.ant-slider-handle::after]:shadow-[0_0_0_2px_rgba(255,255,255,0.20)] [&_.ant-slider-handle]:opacity-90 [&_.ant-slider-handle:hover]:opacity-100 [&_.ant-slider-rail]:h-[3px] [&_.ant-slider-track]:h-[3px]"
+              :value="muted ? 0 : volume"
+              :min="0"
+              :max="1"
+              :step="0.01"
+              :tooltip-open="false"
+              :disabled="disabled"
+              title="调整音量"
+              @change="handleVolumeChange"
+            />
+          </div>
+
+          </div>
+        </div>
+
+        <a-button
+          type="text"
+          size="small"
+          shape="circle"
+          class="justify-self-end max-[720px]:h-9 max-[720px]:min-h-9 max-[720px]:w-9 max-[720px]:min-w-9"
+          :class="[CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST, locked ? 'bg-white/15 text-white' : '']"
+          :title="locked ? '取消锁定控制器自动隐藏' : '锁定控制器常驻显示'"
+          @click="emit('toggle-lock')"
+        >
+          <Icon
+            :icon="lockIcon"
+            width="15"
+            height="15"
+            class="block shrink-0"
+            aria-hidden="true"
+          />
+        </a-button>
+      </div>
     </div>
   </section>
 </template>
-
-<style scoped>
-.playback-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px 16px 14px;
-  border-radius: 12px;
-  backdrop-filter: blur(18px);
-  background: linear-gradient(
-    to bottom,
-    rgba(30, 30, 34, 0.42) 0%,
-    rgba(20, 20, 24, 0.72) 35%,
-    rgba(12, 12, 14, 0.8) 100%
-  );
-}
-
-.top-row {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.timeline-preview-zone {
-  position: relative;
-}
-
-.timeline-preview-popup {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  pointer-events: none;
-  z-index: 6;
-}
-
-.timeline-preview-popup img {
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.55);
-}
-
-.timeline-preview-popup span {
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  line-height: 16px;
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(0, 0, 0, 0.62);
-}
-
-.lock-btn {
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  transition: all 180ms ease;
-}
-
-.lock-btn:hover {
-  border-color: rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.lock-icon {
-  font-size: 16px;
-}
-
-.controls-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.control-btn {
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
-  border: none;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}
-
-.control-btn.primary {
-  background: rgba(255, 255, 255, 0.95);
-  color: #0e0f13;
-}
-
-.time-label {
-  margin-left: auto;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.speed-select {
-  width: 86px;
-}
-
-.volume-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-}
-
-.volume-slider {
-  width: 90px;
-}
-</style>

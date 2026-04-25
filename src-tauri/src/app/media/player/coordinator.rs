@@ -47,19 +47,8 @@ pub fn play(
     state: State<'_, MediaState>,
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, String> {
-    let latest_stream_position_seconds = read_latest_stream_position(&state).unwrap_or(0.0);
-    let (current_path, resume_position_seconds) = {
-        let mut playback = state_locks::playback(&state)?;
-        playback.play();
-        let playback_state = playback.state();
-        let resume_position_seconds = playback_state
-            .position_seconds
-            .max(latest_stream_position_seconds)
-            .max(0.0);
-        playback.seek(resume_position_seconds);
-        (playback_state.current_path, resume_position_seconds)
-    };
-    *state_locks::pending_seek_seconds(&state)? = Some(resume_position_seconds);
+    let (current_path, resume_position_seconds) = activate_playback_and_resume_position(&state)?;
+    set_pending_seek(&state, resume_position_seconds)?;
     if let Some(source) = current_path {
         start_decode_stream(&app, &state, source)?;
     }
@@ -72,14 +61,7 @@ pub fn pause(
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, String> {
     stop_decode_stream(&state)?;
-    let latest_stream_position_seconds = read_latest_stream_position(&state).unwrap_or(0.0);
-    {
-        let mut playback = state_locks::playback(&state)?;
-        let current_position_seconds = playback.state().position_seconds.max(0.0);
-        let resume_position_seconds = current_position_seconds.max(latest_stream_position_seconds);
-        playback.seek(resume_position_seconds);
-        playback.pause();
-    }
+    sync_pause_resume_position(&state)?;
     emit_snapshot_with_request_id(&app, &state, request_id)
 }
 
@@ -123,7 +105,7 @@ pub fn seek(
         let mut library = state_locks::library(&state)?;
         library.mark_playback_progress(path_ref, position_seconds);
     }
-    *state_locks::pending_seek_seconds(&state)? = Some(position_seconds.max(0.0));
+    set_pending_seek(&state, position_seconds)?;
     if status == PlaybackStatus::Paused {
         if let Some(source) = media_path {
             let target = position_seconds.max(0.0);
@@ -182,10 +164,29 @@ pub fn set_hw_decode_mode(
     mode: HardwareDecodeMode,
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, String> {
-    {
+    let playing_path = {
         let mut playback = state_locks::playback(&state)?;
         playback.set_hw_decode_mode(mode);
+        // 新模式要等下一次打开 codec 才生效；仅改状态会沿用已存在的解码线程。
         playback.update_hw_decode_status(false, None, None);
+        let st = playback.state();
+        if st.status == PlaybackStatus::Playing {
+            st.current_path.clone()
+        } else {
+            None
+        }
+    };
+    if let Some(path) = playing_path {
+        let latest = read_latest_stream_position(&state).unwrap_or(0.0);
+        let resume = {
+            let mut playback = state_locks::playback(&state)?;
+            let pos = playback.state().position_seconds.max(latest).max(0.0);
+            playback.seek(pos);
+            pos
+        };
+        set_pending_seek(&state, resume)?;
+        stop_decode_stream(&state)?;
+        start_decode_stream(&app, &state, path)?;
     }
     emit_snapshot_with_request_id(&app, &state, request_id)
 }
@@ -240,4 +241,34 @@ pub async fn preview_frame(
     })
     .await
     .map_err(|err| format!("preview task join failed: {err}"))?
+}
+
+fn set_pending_seek(state: &State<'_, MediaState>, position_seconds: f64) -> Result<(), String> {
+    *state_locks::pending_seek_seconds(state)? = Some(position_seconds.max(0.0));
+    Ok(())
+}
+
+fn activate_playback_and_resume_position(
+    state: &State<'_, MediaState>,
+) -> Result<(Option<String>, f64), String> {
+    let latest_stream_position_seconds = read_latest_stream_position(state).unwrap_or(0.0);
+    let mut playback = state_locks::playback(state)?;
+    playback.play();
+    let playback_state = playback.state();
+    let resume_position_seconds = playback_state
+        .position_seconds
+        .max(latest_stream_position_seconds)
+        .max(0.0);
+    playback.seek(resume_position_seconds);
+    Ok((playback_state.current_path, resume_position_seconds))
+}
+
+fn sync_pause_resume_position(state: &State<'_, MediaState>) -> Result<(), String> {
+    let latest_stream_position_seconds = read_latest_stream_position(state).unwrap_or(0.0);
+    let mut playback = state_locks::playback(state)?;
+    let current_position_seconds = playback.state().position_seconds.max(0.0);
+    let resume_position_seconds = current_position_seconds.max(latest_stream_position_seconds);
+    playback.seek(resume_position_seconds);
+    playback.pause();
+    Ok(())
 }

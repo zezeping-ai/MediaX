@@ -38,6 +38,16 @@ export function usePlayerOverlayControls(options: UsePlayerOverlayControlsOption
     }, 1800);
   }
 
+  function hideControlsImmediately() {
+    clearHideTimer();
+    controlsHovered.value = false;
+    if (shouldKeepVisible.value) {
+      showControls();
+      return;
+    }
+    controlsVisible.value = false;
+  }
+
   function markMouseActive() {
     showControls();
     scheduleHideControls();
@@ -81,6 +91,7 @@ export function usePlayerOverlayControls(options: UsePlayerOverlayControlsOption
     controlsVisible,
     controlsLocked,
     scheduleHideControls,
+    hideControlsImmediately,
     markMouseActive,
     toggleLock,
     onControlsMouseEnter,

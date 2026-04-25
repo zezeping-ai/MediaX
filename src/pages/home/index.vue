@@ -40,7 +40,7 @@ const hasSource = computed(() => Boolean(currentSource.value));
 const {
   controlsVisible,
   controlsLocked,
-  scheduleHideControls,
+  hideControlsImmediately,
   markMouseActive,
   toggleLock,
   onControlsMouseEnter,
@@ -96,12 +96,12 @@ async function toggleMute() {
 }
 
 function increasePlaybackRate() {
-  const nextRate = Math.min(3, Number((playbackRate.value + 0.25).toFixed(2)));
+  const nextRate = Math.min(3, Number((playbackRate.value + 0.1).toFixed(1)));
   void changePlaybackRate(nextRate);
 }
 
 function decreasePlaybackRate() {
-  const nextRate = Math.max(0.25, Number((playbackRate.value - 0.25).toFixed(2)));
+  const nextRate = Math.max(0.1, Number((playbackRate.value - 0.1).toFixed(1)));
   void changePlaybackRate(nextRate);
 }
 
@@ -131,8 +131,12 @@ watch(playback, (value) => {
 </script>
 
 <template>
-  <main class="media-player-page">
-    <section class="player-shell" @mousemove="markMouseActive" @mouseleave="scheduleHideControls">
+  <main class="h-screen w-screen overflow-hidden bg-transparent">
+    <section
+      class="relative h-full w-full"
+      @mousemove="markMouseActive"
+      @mouseleave="hideControlsImmediately"
+    >
       <MediaViewport
         :source="currentSource"
         :playback="playback"
@@ -144,8 +148,8 @@ watch(playback, (value) => {
       />
       <PlaybackControls
         v-if="hasSource"
-        class="overlay-controls"
-        :class="{ 'overlay-controls-hidden': !controlsVisible }"
+        class="absolute bottom-0 left-1/2 z-30 w-[min(760px,calc(100vw-32px))] -translate-x-1/2 opacity-100 transition-[opacity,transform] duration-300 ease-out will-change-transform"
+        :class="!controlsVisible ? 'pointer-events-none translate-y-[120%] opacity-0' : ''"
         :playback="playback"
         :playback-rate="playbackRate"
         :volume="volume"
@@ -168,7 +172,7 @@ watch(playback, (value) => {
       />
       <a-alert
         v-if="displayErrorMessage"
-        class="overlay-error"
+        class="absolute left-1/2 top-4 z-40 w-[min(620px,calc(100vw-32px))] -translate-x-1/2"
         type="error"
         :message="displayErrorMessage"
         show-icon
@@ -195,61 +199,20 @@ watch(playback, (value) => {
 </template>
 
 <style scoped>
-.media-player-page {
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-  background: transparent;
-}
+/* .media-player-page removed (Tailwind) */
 
-.player-shell {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
+/* .player-shell removed (Tailwind) */
 
-:deep(.player-canvas) {
-  width: 100%;
-  height: 100%;
-}
+/* :deep(.player-canvas) sizing handled by component */
 
-.overlay-controls {
-  position: absolute;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  width: min(760px, calc(100vw - 32px));
-  z-index: 3;
-  opacity: 1;
-  transition: opacity 220ms ease, transform 220ms ease;
-}
+/* .overlay-controls removed (Tailwind) */
 
-.overlay-controls-hidden {
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, 12px);
-}
+/* .overlay-controls-hidden removed (Tailwind) */
 
-.overlay-error {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(620px, calc(100vw - 32px));
-  z-index: 4;
-}
+/* .overlay-error removed (Tailwind) */
 
 :deep(.ant-alert) {
   border-radius: 8px;
-}
-
-:deep(.ant-slider-track) {
-  background: rgba(255, 255, 255, 0.88);
-}
-
-:deep(.ant-slider-handle::after) {
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.32);
-  background: #fff;
 }
 
 :deep(.ant-empty-description) {

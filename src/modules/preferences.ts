@@ -15,10 +15,10 @@ export type Preferences = {
 const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
   player: {
-    hwDecodeEnabled: false,
+    hwDecodeEnabled: true,
     // 默认打开：方便定位“打开/解析/解码”阶段的问题
     parseDebugEnabled: true,
-    alwaysOnTop: false,
+    alwaysOnTop: true,
   },
 };
 

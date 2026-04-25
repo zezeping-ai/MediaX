@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { Icon } from "@iconify/vue";
 import AppearanceSection from "../sections/appearance/index.vue";
 import PlayerSection from "../sections/player/index.vue";
+import { usePreferences } from "@/modules/preferences";
 
 type SectionKey = "appearance" | "player";
 
@@ -31,6 +32,8 @@ const SECTIONS: Section[] = [
 
 const router = useRouter();
 const route = useRoute();
+const { resolvedTheme } = usePreferences();
+const siderTheme = computed(() => (resolvedTheme.value === "dark" ? "dark" : "light"));
 
 const activeKey = computed<SectionKey>({
   get: () =>
@@ -58,15 +61,15 @@ const activeSection = computed(() => SECTIONS.find((s) => s.key === activeKey.va
 </script>
 
 <template>
-  <a-layout style="min-height: 100vh">
+  <a-layout class="h-full">
     <a-layout-sider
-      width="220"
-      theme="light"
-      style="border-right: 1px solid rgba(5, 5, 5, 0.06)"
+      width="200"
+      :theme="siderTheme"
+      class="border-r border-black/6 dark:border-white/10"
     >
-      <div style="padding: 16px 16px 8px">
-        <a-typography-title :level="4" style="margin: 0">设置</a-typography-title>
-        <a-typography-text type="secondary" style="font-size: 12px">
+      <div class="px-3 pb-2 pt-3">
+        <a-typography-title :level="5" class="m-0!">设置</a-typography-title>
+        <a-typography-text type="secondary" class="text-[11px]">
           偏好会自动保存
         </a-typography-text>
       </div>
@@ -81,8 +84,8 @@ const activeSection = computed(() => SECTIONS.find((s) => s.key === activeKey.va
       </a-menu>
     </a-layout-sider>
 
-    <a-layout>
-      <a-layout-content style="padding: 24px">
+    <a-layout class="h-full">
+      <a-layout-content class="h-full p-4 overflow-auto">
         <component :is="activeSection.component" />
       </a-layout-content>
     </a-layout>
