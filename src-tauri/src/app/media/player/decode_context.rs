@@ -19,6 +19,7 @@ pub(crate) struct VideoDecodeContext {
     pub(crate) output_height: u32,
     pub(crate) hw_decode_active: bool,
     pub(crate) hw_decode_backend: Option<String>,
+    pub(crate) hw_decode_error: Option<String>,
 }
 
 pub(crate) fn open_video_decode_context(
@@ -66,12 +67,14 @@ pub(crate) fn open_video_decode_context(
         output_height,
         hw_decode_active: hw_status.active,
         hw_decode_backend: hw_status.backend,
+        hw_decode_error: hw_status.error,
     })
 }
 
 struct HwDecodeStatus {
     active: bool,
     backend: Option<String>,
+    error: Option<String>,
 }
 
 fn preferred_hw_backends() -> &'static [&'static str] {
@@ -97,14 +100,22 @@ fn configure_hw_decode(
         return Ok(HwDecodeStatus {
             active: false,
             backend: None,
+            error: None,
         });
     }
+    let mut last_error: Option<String> = None;
     for backend in preferred_hw_backends() {
-        if try_bind_hw_device(codec_context, backend).is_ok() {
-            return Ok(HwDecodeStatus {
-                active: true,
-                backend: Some((*backend).to_string()),
-            });
+        match try_bind_hw_device(codec_context, backend) {
+            Ok(()) => {
+                return Ok(HwDecodeStatus {
+                    active: true,
+                    backend: Some((*backend).to_string()),
+                    error: None,
+                });
+            }
+            Err(err) => {
+                last_error = Some(err);
+            }
         }
     }
     if hw_mode == HardwareDecodeMode::On {
@@ -113,6 +124,7 @@ fn configure_hw_decode(
     Ok(HwDecodeStatus {
         active: false,
         backend: None,
+        error: last_error,
     })
 }
 

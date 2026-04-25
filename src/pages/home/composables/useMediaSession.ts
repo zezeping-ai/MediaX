@@ -27,6 +27,7 @@ export function useMediaSession() {
   const metadataVideoFps = ref<number | null>(null);
   const playbackErrorMessage = ref("");
   const networkReadBytesPerSecond = ref<number | null>(null);
+  const lastTelemetryAtMs = ref<number>(0);
   let unlistenPlaybackStateEvent: UnlistenFn | null = null;
   let unlistenMenuEvent: UnlistenFn | null = null;
   let unlistenPlaybackMetadataEvent: UnlistenFn | null = null;
@@ -34,10 +35,16 @@ export function useMediaSession() {
   let unlistenPlaybackDebugEvent: UnlistenFn | null = null;
   let unlistenPlaybackTelemetryEvent: UnlistenFn | null = null;
   let snapshotPollingTimer: number | null = null;
+  let telemetryStaleTimer: number | null = null;
 
   function updateSnapshot(next: MediaSnapshot) {
     snapshot.value = next;
     currentSource.value = next.playback.current_path ?? "";
+    if (!currentSource.value) {
+      // When no active source, clear any previous network speed display.
+      networkReadBytesPerSecond.value = null;
+      lastTelemetryAtMs.value = 0;
+    }
   }
 
   function resolvePayload<T>(payload: T | MediaEventEnvelope<T>): T {
@@ -104,6 +111,7 @@ export function useMediaSession() {
       MEDIA_PLAYBACK_TELEMETRY_EVENT,
       (event) => {
         const p = resolvePayload(event.payload);
+        lastTelemetryAtMs.value = Date.now();
         const decodeAvg = p.decode_avg_frame_cost_ms ?? 0;
         const decodeMax = p.decode_max_frame_cost_ms ?? 0;
         const decodeSamples = p.decode_samples ?? 0;
@@ -143,6 +151,16 @@ export function useMediaSession() {
     snapshotPollingTimer = window.setInterval(() => {
       void getSnapshot().then(updateSnapshot);
     }, 1000);
+
+    // If telemetry stops arriving (pause/stop or network stall), avoid showing stale last value forever.
+    telemetryStaleTimer = window.setInterval(() => {
+      if (!currentSource.value) return;
+      const last = lastTelemetryAtMs.value;
+      if (!last) return;
+      if (Date.now() - last >= 2000) {
+        networkReadBytesPerSecond.value = 0;
+      }
+    }, 500);
   }
 
   function unmount() {
@@ -161,6 +179,10 @@ export function useMediaSession() {
     if (snapshotPollingTimer !== null) {
       window.clearInterval(snapshotPollingTimer);
       snapshotPollingTimer = null;
+    }
+    if (telemetryStaleTimer !== null) {
+      window.clearInterval(telemetryStaleTimer);
+      telemetryStaleTimer = null;
     }
   }
 

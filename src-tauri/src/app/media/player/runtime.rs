@@ -56,8 +56,8 @@ mod stream_control;
 mod video_pipeline;
 
 pub use stream_control::{
-    read_latest_stream_position, start_decode_stream, stop_decode_stream,
-    write_latest_stream_position,
+    read_latest_stream_position, start_decode_stream, stop_decode_stream_blocking,
+    stop_decode_stream_non_blocking, write_latest_stream_position,
 };
 
 fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) {
@@ -318,7 +318,7 @@ pub(super) fn decode_and_emit_stream(
         playback.update_hw_decode_status(
             video_ctx.hw_decode_active,
             video_ctx.hw_decode_backend.clone(),
-            None,
+            video_ctx.hw_decode_error.clone(),
         );
     }
     let mut scaler: Option<ScalingContext> = None;

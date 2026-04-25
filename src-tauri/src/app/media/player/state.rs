@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::thread::JoinHandle;
 
 pub struct CacheRecorderSession {
     pub source: String,
@@ -19,6 +20,7 @@ pub struct MediaState {
     pub library: Mutex<MediaLibraryService>,
     pub playback: Mutex<MediaPlaybackService>,
     pub stream_stop_flag: Mutex<Option<Arc<AtomicBool>>>,
+    pub stream_thread: Mutex<Option<JoinHandle<()>>>,
     pub pending_seek_seconds: Mutex<Option<f64>>,
     // Cancellation epoch for paused seek rendering to main viewport.
     pub paused_seek_epoch: AtomicU32,

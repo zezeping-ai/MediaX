@@ -31,6 +31,10 @@ export function usePlaybackShortcuts(options: UsePlaybackShortcutsOptions) {
     if (!playback || !playback.current_path) {
       return null;
     }
+    // For non-seekable streams, duration_seconds is 0. Avoid emitting seek commands.
+    if (!Number.isFinite(playback.duration_seconds) || playback.duration_seconds <= 0) {
+      return null;
+    }
     const max = Number.isFinite(playback.duration_seconds) && playback.duration_seconds > 0
       ? playback.duration_seconds
       : 0;

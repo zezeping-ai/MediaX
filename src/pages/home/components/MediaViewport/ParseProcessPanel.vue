@@ -42,11 +42,11 @@ function formatTime(ms: number) {
         :key="`${item.at_ms}-${idx}`"
         class="rounded-md border border-slate-400/12 bg-slate-900/15 px-1.5 py-1"
       >
-        <div class="grid grid-cols-[70px_1fr] items-start gap-1.5">
+        <div class="flex items-center justify-between gap-2">
           <span class="text-[10px] text-slate-400/95">{{ formatStageLabel(item.stage) }}</span>
-          <span class="wrap-break-word text-slate-100/95">{{ item.message }}</span>
+          <span class="text-[10px] text-slate-500/90">{{ formatTime(item.at_ms) }}</span>
         </div>
-        <div class="mt-0.5 text-[10px] text-slate-500/90">{{ formatTime(item.at_ms) }}</div>
+        <div class="mt-0.5 wrap-break-word text-slate-100/95">{{ item.message }}</div>
       </div>
     </div>
   </div>

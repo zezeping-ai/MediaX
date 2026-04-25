@@ -6,7 +6,8 @@ use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::player::preview::generate_preview_frame;
 use crate::app::media::player::renderer::RendererState;
 use crate::app::media::player::runtime::{
-    read_latest_stream_position, start_decode_stream, stop_decode_stream,
+    read_latest_stream_position, start_decode_stream, stop_decode_stream_blocking,
+    stop_decode_stream_non_blocking,
     write_latest_stream_position,
 };
 use crate::app::media::player::state::MediaState;
@@ -44,7 +45,7 @@ pub fn open(
     )?;
     // Switching source must stop any active decode stream first, otherwise the old
     // stream can keep emitting progress and consume resources.
-    stop_decode_stream(&state)?;
+    stop_decode_stream_non_blocking(&state)?;
     {
         let mut playback = state_locks::playback(&state)?;
         playback.open(path.clone());
@@ -76,7 +77,7 @@ pub fn pause(
     state: State<'_, MediaState>,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
-    stop_decode_stream(&state)?;
+    stop_decode_stream_non_blocking(&state)?;
     sync_pause_resume_position(&state)?;
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
@@ -90,7 +91,7 @@ pub fn stop(
         &state,
         "播放已停止，录制已自动停止",
     )?;
-    stop_decode_stream(&state)?;
+    stop_decode_stream_non_blocking(&state)?;
     *state_locks::latest_stream_position_seconds(&state)? = 0.0;
     let current_path = {
         let mut playback = state_locks::playback(&state)?;
@@ -100,10 +101,17 @@ pub fn stop(
     };
     *state_locks::pending_seek_seconds(&state)? = Some(0.0);
     if let Some(source) = current_path {
-        let renderer = (*app.state::<RendererState>()).clone();
-        if let Err(err) = viewport_sync::sync_main_viewport_to(&state, &renderer, &source, 0.0) {
-            eprintln!("stop preview failed: {err}");
-        }
+        // Do not block stop() on preview decode, especially for network streams (m3u8),
+        // where opening/reading can take noticeable time and freezes the UI while the
+        // Tauri command is awaiting completion.
+        let app_handle = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let renderer = (*app_handle.state::<RendererState>()).clone();
+            let media_state = app_handle.state::<MediaState>();
+            if let Err(err) = viewport_sync::sync_main_viewport_to(&*media_state, &renderer, &source, 0.0) {
+                eprintln!("stop preview failed: {err}");
+            }
+        });
     }
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
@@ -208,7 +216,7 @@ pub fn set_hw_decode_mode(
             pos
         };
         set_pending_seek(&state, resume)?;
-        stop_decode_stream(&state)?;
+        stop_decode_stream_blocking(&state)?;
         start_decode_stream(&app, &state, path)?;
     }
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
@@ -245,7 +253,7 @@ pub fn set_quality_mode(
             pos
         };
         set_pending_seek(&state, resume)?;
-        stop_decode_stream(&state)?;
+        stop_decode_stream_blocking(&state)?;
         start_decode_stream(&app, &state, path)?;
     }
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)

@@ -4,12 +4,13 @@ import { useLocalStorage } from "@vueuse/core";
 import { clamp } from "lodash-es";
 import type { PlaybackQualityMode } from "@/modules/media-types";
 import MediaViewport from "./components/MediaViewport/index.vue";
-import PlaybackControls from "./components/PlaybackControls.vue";
+import PlaybackControls from "./components/PlaybackControls/index.vue";
+import OpenUrlModal from "./components/OpenUrlModal.vue";
 import { useMediaCenter } from "./composables/useMediaCenter";
 import { usePlayerOverlayControls } from "./composables/usePlayerOverlayControls";
 import { usePlaybackShortcuts } from "./composables/usePlaybackShortcuts";
-import { QUALITY_DOWNGRADE_LEVELS } from "./components/playbackControls.constants";
-import { buildPlaybackQualityOptions } from "./components/playbackControls.utils";
+import { QUALITY_DOWNGRADE_LEVELS } from "./components/PlaybackControls/playbackControls.constants";
+import { buildPlaybackQualityOptions } from "./components/PlaybackControls/playbackControlsUtils";
 
 const QUALITY_BASELINE_STORAGE_KEY = "mediax:quality-baseline-by-source";
 const sourceHeightBaselineByPath = useLocalStorage<Record<string, number>>(
@@ -76,13 +77,6 @@ const {
   toggleCacheRecording,
   metadataVideoHeight,
 } = useMediaCenter();
-
-function formatOpenedAt(timestamp: number) {
-  if (!Number.isFinite(timestamp) || timestamp <= 0) {
-    return "未知时间";
-  }
-  return new Date(timestamp).toLocaleString();
-}
 
 async function handlePlayFromUrlPlaylist(url: string) {
   urlInputValue.value = url;
@@ -313,78 +307,18 @@ watch(playback, (value) => {
         show-icon
         banner
       />
-      <a-modal
+      <OpenUrlModal
         v-model:open="urlDialogVisible"
-        title="打开 URL"
-        ok-text="开始播放"
-        cancel-text="取消"
-        :confirm-loading="isBusy"
-        @ok="confirmOpenUrlInput"
+        v-model:input-value="urlInputValue"
+        :busy="isBusy"
+        :playlist="urlPlaylist"
+        @confirm="confirmOpenUrlInput"
         @cancel="cancelOpenUrlInput"
-      >
-        <a-space direction="vertical" class="w-full" :size="12">
-          <a-input
-            v-model:value="urlInputValue"
-            placeholder="请输入视频 URL（http/https）"
-            allow-clear
-            @press-enter="confirmOpenUrlInput"
-          />
-          <div class="flex items-center justify-between">
-            <span class="text-xs opacity-70">播放列表（最近优先）</span>
-            <a-button
-              v-if="urlPlaylist.length"
-              size="small"
-              danger
-              type="text"
-              @click="clearUrlPlaylist"
-            >
-              一键清空
-            </a-button>
-          </div>
-          <a-empty v-if="!urlPlaylist.length" description="暂无历史 URL" />
-          <a-list v-else size="small" :data-source="urlPlaylist">
-            <template #renderItem="{ item }">
-              <a-list-item class="overflow-hidden">
-                <div class="min-w-0 w-full space-y-1 overflow-hidden">
-                  <button
-                    class="block min-w-0 w-full cursor-pointer bg-transparent p-0 text-left"
-                    type="button"
-                    :title="item.url"
-                    @click="urlInputValue = item.url"
-                  >
-                    <span
-                      class="block min-w-0 w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[rgba(255,255,255,0.85)]"
-                    >
-                      {{ item.url }}
-                    </span>
-                  </button>
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-xs opacity-70">{{ formatOpenedAt(item.lastOpenedAt) }}</span>
-                    <a-space :size="4">
-                      <a-button
-                        size="small"
-                        type="link"
-                        :disabled="isBusy"
-                        @click="handlePlayFromUrlPlaylist(item.url)"
-                      >
-                        播放
-                      </a-button>
-                      <a-button
-                        size="small"
-                        danger
-                        type="text"
-                        @click="removeUrlFromPlaylist(item.url)"
-                      >
-                        删除
-                      </a-button>
-                    </a-space>
-                  </div>
-                </div>
-              </a-list-item>
-            </template>
-          </a-list>
-        </a-space>
-      </a-modal>
+        @clear="clearUrlPlaylist"
+        @remove="removeUrlFromPlaylist"
+        @select="(url) => (urlInputValue = url)"
+        @play="handlePlayFromUrlPlaylist"
+      />
     </section>
   </main>
 </template>
