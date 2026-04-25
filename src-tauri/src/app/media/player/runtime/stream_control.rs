@@ -1,4 +1,7 @@
-use crate::app::media::player::events::{MediaErrorPayload, MEDIA_ERROR_EVENT};
+use crate::app::media::player::events::{
+    MediaErrorPayload, MediaEventEnvelope, MEDIA_ERROR_EVENT, MEDIA_PLAYBACK_ERROR_EVENT,
+    MEDIA_PROTOCOL_VERSION,
+};
 use crate::app::media::player::renderer::RendererState;
 use crate::app::media::player::state::{AudioControls, MediaState, TimingControls};
 use std::sync::Arc;
@@ -56,12 +59,27 @@ pub fn start_decode_stream(
                 playback.update_hw_decode_status(false, None, Some(err.clone()));
             }
             super::emit_debug(&app_handle, "decode_error", err.clone());
+            let emitted_at_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let error_payload = MediaErrorPayload {
+                code: "DECODE_FAILED",
+                message: err,
+            };
+            let _ = app_handle.emit(
+                MEDIA_PLAYBACK_ERROR_EVENT,
+                MediaEventEnvelope {
+                    protocol_version: MEDIA_PROTOCOL_VERSION,
+                    event_type: "playback_error",
+                    request_id: None,
+                    emitted_at_ms,
+                    payload: error_payload.clone(),
+                },
+            );
             let _ = app_handle.emit(
                 MEDIA_ERROR_EVENT,
-                MediaErrorPayload {
-                    code: "DECODE_FAILED",
-                    message: err,
-                },
+                error_payload,
             );
         }
     });

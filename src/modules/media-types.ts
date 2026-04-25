@@ -1,5 +1,10 @@
 export type PlaybackStatus = "idle" | "playing" | "paused" | "stopped";
 export type HardwareDecodeMode = "auto" | "on" | "off";
+export const MEDIA_PLAYBACK_STATE_EVENT = "media://playback/state";
+export const MEDIA_PLAYBACK_METADATA_EVENT = "media://playback/metadata";
+export const MEDIA_PLAYBACK_ERROR_EVENT = "media://playback/error";
+export const MEDIA_PLAYBACK_DEBUG_EVENT = "media://playback/debug";
+export const MEDIA_PLAYBACK_TELEMETRY_EVENT = "media://playback/telemetry";
 export const MEDIA_STATE_EVENT = "media://state";
 export const MEDIA_STATE_EVENT_V2 = "media://state/v2";
 export const MEDIA_MENU_EVENT = "media://menu-action";

@@ -4,11 +4,11 @@ import type { HardwareDecodeMode, MediaSnapshot } from "./media-types";
 
 export async function applyHwDecodePreference(
   enabled: boolean,
-  setHwMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>,
+  configureDecoderMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>,
 ) {
   const mode: HardwareDecodeMode = enabled ? "auto" : "off";
   try {
-    return await setHwMode(mode);
+    return await configureDecoderMode(mode);
   } catch {
     // Keep silent here; player surface already emits error events.
     return null;

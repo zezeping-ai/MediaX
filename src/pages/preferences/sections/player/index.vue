@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usePreferences } from "@/modules/preferences";
-import { setMediaHwDecodeMode } from "@/modules/media-player";
+import { playbackConfigureDecoderMode } from "@/modules/media-player";
 import {
   applyAlwaysOnTopPreference,
   applyVideoScaleModePreference,
@@ -13,7 +13,7 @@ async function applyHwDecode(enabled: boolean) {
   // “开”使用 auto：尽可能启用硬解，失败则自动回退。
   const mode = enabled ? "auto" : "off";
   try {
-    await setMediaHwDecodeMode(mode);
+    await playbackConfigureDecoderMode(mode);
   } catch {
     // 不把错误强行冒泡到偏好页；播放页会显示具体错误事件。
   }

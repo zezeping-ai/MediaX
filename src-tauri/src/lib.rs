@@ -27,9 +27,21 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            app::media::player::commands::media_get_snapshot,
+            app::media::player::commands::playback_get_snapshot,
             app::media::library_commands::media_set_library_roots,
             app::media::library_commands::media_rescan_library,
+            app::media::player::commands::playback_open_source,
+            app::media::player::commands::playback_resume,
+            app::media::player::commands::playback_pause,
+            app::media::player::commands::playback_stop_session,
+            app::media::player::commands::playback_seek_to,
+            app::media::player::commands::playback_set_rate,
+            app::media::player::commands::playback_set_volume,
+            app::media::player::commands::playback_set_muted,
+            app::media::player::commands::playback_configure_decoder_mode,
+            app::media::player::commands::playback_sync_position,
+            app::media::player::commands::playback_preview_frame,
+            app::media::player::commands::media_get_snapshot,
             app::media::player::commands::media_open,
             app::media::player::commands::media_play,
             app::media::player::commands::media_pause,

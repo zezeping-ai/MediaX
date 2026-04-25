@@ -1,7 +1,8 @@
 use crate::app::media::player::decode_context::open_video_decode_context;
 use crate::app::media::player::events::{
     MediaDebugPayload, MediaEventEnvelope, MediaMetadataPayload, MediaTelemetryPayload,
-    MEDIA_DEBUG_EVENT, MEDIA_DEBUG_EVENT_V2, MEDIA_METADATA_EVENT, MEDIA_PROTOCOL_VERSION,
+    MEDIA_DEBUG_EVENT, MEDIA_DEBUG_EVENT_V2, MEDIA_METADATA_EVENT, MEDIA_PLAYBACK_DEBUG_EVENT,
+    MEDIA_PLAYBACK_METADATA_EVENT, MEDIA_PLAYBACK_TELEMETRY_EVENT, MEDIA_PROTOCOL_VERSION,
     MEDIA_TELEMETRY_EVENT_V2,
 };
 use crate::app::media::player::pts::timestamp_to_seconds;
@@ -55,6 +56,20 @@ fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) 
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
     let msg = message.into();
+    let _ = app.emit(
+        MEDIA_PLAYBACK_DEBUG_EVENT,
+        MediaEventEnvelope {
+            protocol_version: MEDIA_PROTOCOL_VERSION,
+            event_type: "playback_debug",
+            request_id: None,
+            emitted_at_ms: at_ms,
+            payload: MediaDebugPayload {
+                stage,
+                message: msg.clone(),
+                at_ms,
+            },
+        },
+    );
     let _ = app.emit(
         MEDIA_DEBUG_EVENT,
         MediaDebugPayload {
@@ -180,6 +195,24 @@ pub(super) fn decode_and_emit_stream(
         timing_controls,
     )?;
     let mut last_applied_audio_rate: f32 = clamp_playback_rate(timing_controls.playback_rate());
+    let _ = app.emit(
+        MEDIA_PLAYBACK_METADATA_EVENT,
+        MediaEventEnvelope {
+            protocol_version: MEDIA_PROTOCOL_VERSION,
+            event_type: "playback_metadata",
+            request_id: None,
+            emitted_at_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+            payload: MediaMetadataPayload {
+                width: video_ctx.output_width,
+                height: video_ctx.output_height,
+                fps: video_ctx.fps_value,
+                duration_seconds: video_ctx.duration_seconds,
+            },
+        },
+    );
     let _ = app.emit(
         MEDIA_METADATA_EVENT,
         MediaMetadataPayload {
@@ -551,6 +584,28 @@ fn drain_frames(
                     output_width,
                     output_height
                 ),
+            );
+            let _ = app.emit(
+                MEDIA_PLAYBACK_TELEMETRY_EVENT,
+                MediaEventEnvelope {
+                    protocol_version: MEDIA_PROTOCOL_VERSION,
+                    event_type: "playback_telemetry",
+                    request_id: None,
+                    emitted_at_ms: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0),
+                    payload: MediaTelemetryPayload {
+                        source_fps: 1.0 / playback_clock.frame_duration.as_secs_f64().max(1e-6),
+                        render_fps,
+                        queue_depth: renderer.queue_depth(),
+                        clock_seconds: *current_position_seconds,
+                        audio_drift_seconds: audio_drift,
+                        video_pts_gap_seconds: last_video_pts_seconds
+                            .map(|prev| (estimated_pts - prev).max(0.0)),
+                        seek_settle_ms: None,
+                    },
+                },
             );
             let _ = app.emit(
                 MEDIA_TELEMETRY_EVENT_V2,

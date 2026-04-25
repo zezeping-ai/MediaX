@@ -11,7 +11,7 @@ import type { PlayerVideoScaleMode } from "@/modules/preferences";
 import type { HardwareDecodeMode, MediaSnapshot, PreviewFrame } from "@/modules/media-types";
 
 interface UsePlaybackSettingsArgs {
-  setHwMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>;
+  configureDecoderMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>;
   requestPreviewFrame: (
     positionSeconds: number,
     maxWidth?: number,
@@ -19,9 +19,9 @@ interface UsePlaybackSettingsArgs {
   ) => Promise<PreviewFrame | null>;
 }
 
-export function usePlaybackSettings({ setHwMode, requestPreviewFrame }: UsePlaybackSettingsArgs) {
+export function usePlaybackSettings({ configureDecoderMode, requestPreviewFrame }: UsePlaybackSettingsArgs) {
   async function applyHwDecode(enabled: boolean) {
-    return applyHwDecodePreference(enabled, setHwMode);
+    return applyHwDecodePreference(enabled, configureDecoderMode);
   }
 
   async function applyAlwaysOnTop(enabled: boolean) {

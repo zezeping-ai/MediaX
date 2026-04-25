@@ -117,6 +117,7 @@ usePlaybackShortcuts({
   playback,
   onPlay: () => void handlePlay(),
   onPause: (positionSeconds) => void handlePause(positionSeconds),
+  onSeek: (positionSeconds) => void handleSeek(positionSeconds),
   onResetRate: () => void changePlaybackRate(1),
   onIncreaseRate: increasePlaybackRate,
   onDecreaseRate: decreasePlaybackRate,

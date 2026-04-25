@@ -1,17 +1,17 @@
 import {
   DEFAULT_PREVIEW_FRAME_MAX_HEIGHT,
   DEFAULT_PREVIEW_FRAME_MAX_WIDTH,
-  openMedia,
-  pauseMedia,
-  playMedia,
-  previewMediaFrame,
-  seekMedia,
-  setMediaHwDecodeMode,
-  setMediaMuted,
-  setMediaRate,
-  setMediaVolume,
-  stopMedia,
-  syncMediaPosition,
+  playbackConfigureDecoderMode,
+  playbackOpenSource,
+  playbackPause,
+  playbackPreviewFrame,
+  playbackResume,
+  playbackSeekTo,
+  playbackSetMuted,
+  playbackSetRate,
+  playbackSetVolume,
+  playbackStopSession,
+  playbackSyncPosition,
 } from "@/modules/media-player";
 import type { HardwareDecodeMode, MediaSnapshot, PreviewFrame } from "@/modules/media-types";
 
@@ -24,7 +24,7 @@ export interface MediaCommandSet {
   setRate: (playbackRate: number) => Promise<MediaSnapshot>;
   setVolume: (volume: number) => Promise<MediaSnapshot>;
   setMuted: (muted: boolean) => Promise<MediaSnapshot>;
-  setHwMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>;
+  configureDecoderMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>;
   syncPosition: (positionSeconds: number, durationSeconds: number) => Promise<MediaSnapshot>;
   requestPreviewFrame: (
     positionSeconds: number,
@@ -35,22 +35,22 @@ export interface MediaCommandSet {
 
 export function useMediaCommands(): MediaCommandSet {
   return {
-    openPath: (path) => openMedia(path),
-    play: () => playMedia(),
-    pause: () => pauseMedia(),
-    stop: () => stopMedia(),
-    seek: (positionSeconds, forceRender = false) => seekMedia(positionSeconds, { forceRender }),
-    setRate: (playbackRate) => setMediaRate(playbackRate),
-    setVolume: (volume) => setMediaVolume(volume),
-    setMuted: (muted) => setMediaMuted(muted),
-    setHwMode: (mode) => setMediaHwDecodeMode(mode),
+    openPath: (path) => playbackOpenSource(path),
+    play: () => playbackResume(),
+    pause: () => playbackPause(),
+    stop: () => playbackStopSession(),
+    seek: (positionSeconds, forceRender = false) => playbackSeekTo(positionSeconds, { forceRender }),
+    setRate: (playbackRate) => playbackSetRate(playbackRate),
+    setVolume: (volume) => playbackSetVolume(volume),
+    setMuted: (muted) => playbackSetMuted(muted),
+    configureDecoderMode: (mode) => playbackConfigureDecoderMode(mode),
     syncPosition: (positionSeconds, durationSeconds) =>
-      syncMediaPosition(positionSeconds, durationSeconds),
+      playbackSyncPosition(positionSeconds, durationSeconds),
     requestPreviewFrame: (
       positionSeconds,
       maxWidth = DEFAULT_PREVIEW_FRAME_MAX_WIDTH,
       maxHeight = DEFAULT_PREVIEW_FRAME_MAX_HEIGHT,
     ) =>
-      previewMediaFrame(positionSeconds, maxWidth, maxHeight),
+      playbackPreviewFrame(positionSeconds, maxWidth, maxHeight),
   };
 }

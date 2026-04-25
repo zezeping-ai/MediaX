@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { usePreferences } from "@/modules/preferences";
-import { getMediaSnapshot } from "@/modules/media-player";
+import { getPlaybackSnapshot } from "@/modules/media-player";
 import type { MediaSnapshot } from "@/modules/media-types";
 import { useMediaCommands } from "./useMediaCommands";
 import { useMediaErrorMap } from "./useMediaErrorMap";
@@ -24,7 +24,7 @@ export function useMediaCenter() {
   const commands = useMediaCommands();
   const { toUserErrorMessage } = useMediaErrorMap();
   const playbackSettings = usePlaybackSettings({
-    setHwMode: commands.setHwMode,
+    configureDecoderMode: commands.configureDecoderMode,
     requestPreviewFrame: commands.requestPreviewFrame,
   });
   const isBusy = ref(false);
@@ -42,7 +42,7 @@ export function useMediaCenter() {
   }
 
   async function refreshSnapshot() {
-    updateSnapshot(await getMediaSnapshot());
+    updateSnapshot(await getPlaybackSnapshot());
   }
 
   async function applyHwDecodePreference(enabled: boolean) {
@@ -187,7 +187,7 @@ export function useMediaCenter() {
       if (action === "open_url") {
         requestOpenUrlInput();
       }
-    }, getMediaSnapshot);
+    }, getPlaybackSnapshot);
   });
 
   onBeforeUnmount(() => {

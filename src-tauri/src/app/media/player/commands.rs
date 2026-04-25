@@ -4,12 +4,12 @@ use crate::app::media::types::{HardwareDecodeMode, MediaSnapshot, PreviewFrame};
 use tauri::{AppHandle, State};
 
 #[tauri::command]
-pub fn media_get_snapshot(state: State<'_, MediaState>) -> Result<MediaSnapshot, String> {
+pub fn playback_get_snapshot(state: State<'_, MediaState>) -> Result<MediaSnapshot, String> {
     coordinator::get_snapshot(state)
 }
 
 #[tauri::command]
-pub fn media_open(
+pub fn playback_open_source(
     app: AppHandle,
     state: State<'_, MediaState>,
     path: String,
@@ -19,7 +19,7 @@ pub fn media_open(
 }
 
 #[tauri::command]
-pub fn media_play(
+pub fn playback_resume(
     app: AppHandle,
     state: State<'_, MediaState>,
     request_id: Option<String>,
@@ -28,7 +28,7 @@ pub fn media_play(
 }
 
 #[tauri::command]
-pub fn media_pause(
+pub fn playback_pause(
     app: AppHandle,
     state: State<'_, MediaState>,
     request_id: Option<String>,
@@ -37,7 +37,7 @@ pub fn media_pause(
 }
 
 #[tauri::command]
-pub fn media_stop(
+pub fn playback_stop_session(
     app: AppHandle,
     state: State<'_, MediaState>,
     request_id: Option<String>,
@@ -46,7 +46,7 @@ pub fn media_stop(
 }
 
 #[tauri::command]
-pub fn media_seek(
+pub fn playback_seek_to(
     app: AppHandle,
     state: State<'_, MediaState>,
     position_seconds: f64,
@@ -57,7 +57,7 @@ pub fn media_seek(
 }
 
 #[tauri::command]
-pub fn media_set_rate(
+pub fn playback_set_rate(
     app: AppHandle,
     state: State<'_, MediaState>,
     playback_rate: f64,
@@ -67,7 +67,7 @@ pub fn media_set_rate(
 }
 
 #[tauri::command]
-pub fn media_set_volume(
+pub fn playback_set_volume(
     app: AppHandle,
     state: State<'_, MediaState>,
     volume: f64,
@@ -77,7 +77,7 @@ pub fn media_set_volume(
 }
 
 #[tauri::command]
-pub fn media_set_muted(
+pub fn playback_set_muted(
     app: AppHandle,
     state: State<'_, MediaState>,
     muted: bool,
@@ -87,7 +87,7 @@ pub fn media_set_muted(
 }
 
 #[tauri::command]
-pub fn media_set_hw_decode_mode(
+pub fn playback_configure_decoder_mode(
     app: AppHandle,
     state: State<'_, MediaState>,
     mode: HardwareDecodeMode,
@@ -97,7 +97,7 @@ pub fn media_set_hw_decode_mode(
 }
 
 #[tauri::command]
-pub fn media_sync_position(
+pub fn playback_sync_position(
     app: AppHandle,
     state: State<'_, MediaState>,
     position_seconds: f64,
@@ -108,7 +108,7 @@ pub fn media_sync_position(
 }
 
 #[tauri::command]
-pub async fn media_preview_frame(
+pub async fn playback_preview_frame(
     app: AppHandle,
     state: State<'_, MediaState>,
     position_seconds: f64,
@@ -116,4 +116,120 @@ pub async fn media_preview_frame(
     max_height: Option<u32>,
 ) -> Result<Option<PreviewFrame>, String> {
     coordinator::preview_frame(app, state, position_seconds, max_width, max_height).await
+}
+
+// Legacy command aliases kept for compatibility with existing UI paths.
+#[tauri::command]
+pub fn media_get_snapshot(state: State<'_, MediaState>) -> Result<MediaSnapshot, String> {
+    playback_get_snapshot(state)
+}
+
+#[tauri::command]
+pub fn media_open(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    path: String,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_open_source(app, state, path, request_id)
+}
+
+#[tauri::command]
+pub fn media_play(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_resume(app, state, request_id)
+}
+
+#[tauri::command]
+pub fn media_pause(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_pause(app, state, request_id)
+}
+
+#[tauri::command]
+pub fn media_stop(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_stop_session(app, state, request_id)
+}
+
+#[tauri::command]
+pub fn media_seek(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    position_seconds: f64,
+    force_render: Option<bool>,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_seek_to(app, state, position_seconds, force_render, request_id)
+}
+
+#[tauri::command]
+pub fn media_set_rate(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    playback_rate: f64,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_set_rate(app, state, playback_rate, request_id)
+}
+
+#[tauri::command]
+pub fn media_set_volume(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    volume: f64,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_set_volume(app, state, volume, request_id)
+}
+
+#[tauri::command]
+pub fn media_set_muted(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    muted: bool,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_set_muted(app, state, muted, request_id)
+}
+
+#[tauri::command]
+pub fn media_set_hw_decode_mode(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    mode: HardwareDecodeMode,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_configure_decoder_mode(app, state, mode, request_id)
+}
+
+#[tauri::command]
+pub fn media_sync_position(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    position_seconds: f64,
+    duration_seconds: f64,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, String> {
+    playback_sync_position(app, state, position_seconds, duration_seconds, request_id)
+}
+
+#[tauri::command]
+pub async fn media_preview_frame(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    position_seconds: f64,
+    max_width: Option<u32>,
+    max_height: Option<u32>,
+) -> Result<Option<PreviewFrame>, String> {
+    playback_preview_frame(app, state, position_seconds, max_width, max_height).await
 }
