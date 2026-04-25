@@ -9,4 +9,6 @@ pub mod pts;
 pub mod renderer;
 pub mod runtime;
 pub mod state;
+pub mod state_locks;
 pub mod video_frame;
+pub mod viewport_sync;
