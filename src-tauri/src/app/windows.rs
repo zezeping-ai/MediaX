@@ -1,6 +1,9 @@
 use tauri::Manager;
 use tauri::State;
 use crate::app::media::player::renderer::{RendererState, VideoScaleMode};
+use crate::app::media::player::coordinator;
+use crate::app::media::player::state::MediaState;
+use crate::app::media::types::PlaybackStatus;
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const PREFERENCES_WINDOW_LABEL: &str = "preferences";
@@ -45,6 +48,23 @@ pub fn show_preferences_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 pub fn handle_close_requested(window: &tauri::Window, event: &tauri::WindowEvent) {
     // 点击窗口关闭按钮时：隐藏窗口，不退出应用（托盘仍可恢复）
     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        // If the user closes the main window while playing, pause playback first to avoid
+        // the decode thread continuing in background unexpectedly.
+        if window.label() == MAIN_WINDOW_LABEL {
+            let app = window.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let state = app.state::<MediaState>();
+                let is_playing = state
+                    .playback
+                    .lock()
+                    .ok()
+                    .map(|mut playback| playback.state().status == PlaybackStatus::Playing)
+                    .unwrap_or(false);
+                if is_playing {
+                    let _ = coordinator::pause(app.clone(), state, None);
+                }
+            });
+        }
         api.prevent_close();
         let _ = window.hide();
     }
