@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { HardwareDecodeMode, MediaSnapshot, PreviewFrame } from "./media-types";
+import type { PlayerVideoScaleMode } from "./preferences";
 
 export const DEFAULT_PREVIEW_FRAME_MAX_WIDTH = 160;
 export const DEFAULT_PREVIEW_FRAME_MAX_HEIGHT = 90;
@@ -79,4 +80,8 @@ export function previewMediaFrame(
 
 export function setMainWindowAlwaysOnTop(enabled: boolean) {
   return invoke<void>("window_set_main_always_on_top", { enabled });
+}
+
+export function setMainWindowVideoScaleMode(mode: PlayerVideoScaleMode) {
+  return invoke<void>("window_set_main_video_scale_mode", { mode });
 }

@@ -1,4 +1,6 @@
 use tauri::Manager;
+use tauri::State;
+use crate::app::media::player::renderer::{RendererState, VideoScaleMode};
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const PREFERENCES_WINDOW_LABEL: &str = "preferences";
@@ -59,5 +61,15 @@ pub fn window_set_main_always_on_top(
     window
         .set_always_on_top(enabled)
         .map_err(|err| format!("set always on top failed: {err}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn window_set_main_video_scale_mode(
+    renderer: State<'_, RendererState>,
+    mode: String,
+) -> Result<(), String> {
+    let scale_mode = VideoScaleMode::try_from(mode.as_str())?;
+    renderer.set_video_scale_mode(scale_mode);
     Ok(())
 }

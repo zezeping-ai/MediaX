@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex;
@@ -38,6 +38,7 @@ struct RendererInner {
     render_task_in_flight: AtomicBool,
     pending_render: Mutex<bool>,
     render_cv: Condvar,
+    video_scale_mode: AtomicU8,
 }
 
 #[derive(Clone, Copy)]
@@ -45,6 +46,40 @@ struct ClockState {
     anchor_instant: Instant,
     anchor_media_seconds: f64,
     rate: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum VideoScaleMode {
+    Contain,
+    Cover,
+}
+
+impl VideoScaleMode {
+    fn from_u8(value: u8) -> Self {
+        match value {
+            1 => Self::Cover,
+            _ => Self::Contain,
+        }
+    }
+
+    fn as_u8(self) -> u8 {
+        match self {
+            Self::Contain => 0,
+            Self::Cover => 1,
+        }
+    }
+}
+
+impl TryFrom<&str> for VideoScaleMode {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "contain" => Ok(Self::Contain),
+            "cover" => Ok(Self::Cover),
+            other => Err(format!("unsupported video scale mode: {other}")),
+        }
+    }
 }
 
 impl RendererState {
@@ -64,8 +99,15 @@ impl RendererState {
                 render_task_in_flight: AtomicBool::new(false),
                 pending_render: Mutex::new(false),
                 render_cv: Condvar::new(),
+                video_scale_mode: AtomicU8::new(VideoScaleMode::Contain.as_u8()),
             }),
         }
+    }
+
+    pub fn set_video_scale_mode(&self, mode: VideoScaleMode) {
+        self.inner
+            .video_scale_mode
+            .store(mode.as_u8(), Ordering::Relaxed);
     }
 
     /// Start the renderer loop.
@@ -129,6 +171,9 @@ impl RendererState {
                         let frame = pick_frame_for_present(&inner, now_media_seconds);
                         if let Ok(mut guard) = inner.renderer.lock() {
                             if let Some(renderer) = guard.as_mut() {
+                                renderer.set_video_scale_mode(VideoScaleMode::from_u8(
+                                    inner.video_scale_mode.load(Ordering::Relaxed),
+                                ));
                                 // Always present each tick; upload only when we have a new frame.
                                 let _ = renderer.render(frame.as_ref(), true);
                             }
@@ -247,6 +292,7 @@ struct Renderer {
     bind_group: wgpu::BindGroup,
     texture_size: (u32, u32),
     has_uploaded_frame: bool,
+    video_scale_mode: VideoScaleMode,
 }
 
 struct ColorParams {
@@ -518,7 +564,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             bind_group,
             texture_size: (1, 1),
             has_uploaded_frame: false,
+            video_scale_mode: VideoScaleMode::Contain,
         })
+    }
+
+    fn set_video_scale_mode(&mut self, mode: VideoScaleMode) {
+        self.video_scale_mode = mode;
     }
 
     fn resize_if_needed(&mut self) -> bool {
@@ -731,12 +782,32 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             if self.has_uploaded_frame {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(0, &self.bind_group, &[]);
+                let (x, y, width, height) = self.compute_content_viewport();
+                pass.set_viewport(x, y, width, height, 0.0, 1.0);
                 pass.draw(0..3, 0..1);
             }
         }
         self.queue.submit([encoder.finish()]);
         output.present();
         Ok(())
+    }
+
+    fn compute_content_viewport(&self) -> (f32, f32, f32, f32) {
+        let surface_w = self.config.width.max(1) as f32;
+        let surface_h = self.config.height.max(1) as f32;
+        let video_w = self.texture_size.0.max(1) as f32;
+        let video_h = self.texture_size.1.max(1) as f32;
+        let scale_x = surface_w / video_w;
+        let scale_y = surface_h / video_h;
+        let scale = match self.video_scale_mode {
+            VideoScaleMode::Contain => scale_x.min(scale_y),
+            VideoScaleMode::Cover => scale_x.max(scale_y),
+        };
+        let width = (video_w * scale).max(1.0);
+        let height = (video_h * scale).max(1.0);
+        let x = ((surface_w - width) / 2.0).round();
+        let y = ((surface_h - height) / 2.0).round();
+        (x, y, width, height)
     }
 }
 

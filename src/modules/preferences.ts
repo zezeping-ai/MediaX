@@ -2,6 +2,7 @@ import { computed, watchEffect } from "vue";
 import { usePreferredDark, useStorage } from "@vueuse/core";
 
 export type ThemePreference = "system" | "dark" | "light";
+export type PlayerVideoScaleMode = "contain" | "cover";
 
 export type Preferences = {
   theme: ThemePreference;
@@ -9,6 +10,7 @@ export type Preferences = {
     hwDecodeEnabled: boolean;
     parseDebugEnabled: boolean;
     alwaysOnTop: boolean;
+    videoScaleMode: PlayerVideoScaleMode;
   };
 };
 
@@ -19,6 +21,8 @@ const DEFAULT_PREFERENCES: Preferences = {
     // 默认打开：方便定位“打开/解析/解码”阶段的问题
     parseDebugEnabled: true,
     alwaysOnTop: true,
+    // 默认“自适应”：完整显示视频，必要时留黑边。
+    videoScaleMode: "contain",
   },
 };
 
@@ -36,6 +40,24 @@ export function usePreferences() {
       mergeDefaults: true,
     },
   );
+
+  // Backfill newly added nested player preferences for older localStorage snapshots.
+  // `mergeDefaults` may not deep-merge nested objects in all historical states.
+  watchEffect(() => {
+    const player = preferences.value.player;
+    if (!player || !player.videoScaleMode) {
+      preferences.value = {
+        ...preferences.value,
+        player: {
+          hwDecodeEnabled: player?.hwDecodeEnabled ?? DEFAULT_PREFERENCES.player.hwDecodeEnabled,
+          parseDebugEnabled:
+            player?.parseDebugEnabled ?? DEFAULT_PREFERENCES.player.parseDebugEnabled,
+          alwaysOnTop: player?.alwaysOnTop ?? DEFAULT_PREFERENCES.player.alwaysOnTop,
+          videoScaleMode: DEFAULT_PREFERENCES.player.videoScaleMode,
+        },
+      };
+    }
+  });
 
   const preferredDark = usePreferredDark();
 
@@ -85,6 +107,15 @@ export function usePreferences() {
         preferences.value = {
           ...preferences.value,
           player: { ...preferences.value.player, alwaysOnTop: v },
+        };
+      },
+    }),
+    playerVideoScaleMode: computed({
+      get: () => preferences.value.player.videoScaleMode,
+      set: (v: PlayerVideoScaleMode) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, videoScaleMode: v },
         };
       },
     }),

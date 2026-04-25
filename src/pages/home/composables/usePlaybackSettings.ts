@@ -1,8 +1,13 @@
 import {
   DEFAULT_PREVIEW_FRAME_MAX_HEIGHT,
   DEFAULT_PREVIEW_FRAME_MAX_WIDTH,
-  setMainWindowAlwaysOnTop,
 } from "@/modules/media-player";
+import {
+  applyAlwaysOnTopPreference,
+  applyHwDecodePreference,
+  applyVideoScaleModePreference,
+} from "@/modules/player-settings-actions";
+import type { PlayerVideoScaleMode } from "@/modules/preferences";
 import type { HardwareDecodeMode, MediaSnapshot, PreviewFrame } from "@/modules/media-types";
 
 interface UsePlaybackSettingsArgs {
@@ -15,22 +20,16 @@ interface UsePlaybackSettingsArgs {
 }
 
 export function usePlaybackSettings({ setHwMode, requestPreviewFrame }: UsePlaybackSettingsArgs) {
-  async function applyHwDecodePreference(enabled: boolean) {
-    const mode: HardwareDecodeMode = enabled ? "auto" : "off";
-    try {
-      return await setHwMode(mode);
-    } catch {
-      // Keep silent here; player surface already emits error events.
-      return null;
-    }
+  async function applyHwDecode(enabled: boolean) {
+    return applyHwDecodePreference(enabled, setHwMode);
   }
 
-  async function applyAlwaysOnTopPreference(enabled: boolean) {
-    try {
-      await setMainWindowAlwaysOnTop(enabled);
-    } catch {
-      // Keep silent here; user action should not break playback flow.
-    }
+  async function applyAlwaysOnTop(enabled: boolean) {
+    await applyAlwaysOnTopPreference(enabled);
+  }
+
+  async function applyVideoScaleMode(mode: PlayerVideoScaleMode) {
+    await applyVideoScaleModePreference(mode);
   }
 
   function requestTimelinePreview(
@@ -42,8 +41,9 @@ export function usePlaybackSettings({ setHwMode, requestPreviewFrame }: UsePlayb
   }
 
   return {
-    applyHwDecodePreference,
-    applyAlwaysOnTopPreference,
+    applyHwDecode,
+    applyAlwaysOnTop,
+    applyVideoScaleMode,
     requestTimelinePreview,
   };
 }

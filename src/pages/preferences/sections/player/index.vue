@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { usePreferences } from "@/modules/preferences";
-import { setMainWindowAlwaysOnTop, setMediaHwDecodeMode } from "@/modules/media-player";
+import { setMediaHwDecodeMode } from "@/modules/media-player";
+import {
+  applyAlwaysOnTopPreference,
+  applyVideoScaleModePreference,
+} from "@/modules/player-settings-actions";
 
-const { playerHwDecodeEnabled, playerParseDebugEnabled, playerAlwaysOnTop } = usePreferences();
+const { playerHwDecodeEnabled, playerParseDebugEnabled, playerAlwaysOnTop, playerVideoScaleMode } =
+  usePreferences();
 
 async function applyHwDecode(enabled: boolean) {
   // “开”使用 auto：尽可能启用硬解，失败则自动回退。
@@ -15,11 +20,11 @@ async function applyHwDecode(enabled: boolean) {
 }
 
 async function applyAlwaysOnTop(enabled: boolean) {
-  try {
-    await setMainWindowAlwaysOnTop(enabled);
-  } catch {
-    // 不把错误强行冒泡到偏好页；主窗口功能不应阻塞设置面板。
-  }
+  await applyAlwaysOnTopPreference(enabled);
+}
+
+async function applyVideoScaleMode(mode: "contain" | "cover") {
+  await applyVideoScaleModePreference(mode);
 }
 </script>
 
@@ -73,6 +78,27 @@ async function applyAlwaysOnTop(enabled: boolean) {
           <a-switch
             v-model:checked="playerAlwaysOnTop"
             @change="(checked: boolean) => void applyAlwaysOnTop(checked)"
+          />
+        </div>
+      </a-space>
+    </a-card>
+
+    <a-card title="画面" :bordered="false" size="small" :body-style="{ padding: '12px' }">
+      <a-space direction="vertical" class="w-full">
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="font-semibold">视频显示模式</div>
+            <div class="text-xs text-black/55 dark:text-white/55">
+              自适应会完整显示视频（留黑边）；铺满会填满窗口（可能裁切画面）。
+            </div>
+          </div>
+          <a-segmented
+            v-model:value="playerVideoScaleMode"
+            :options="[
+              { label: '自适应', value: 'contain' },
+              { label: '铺满', value: 'cover' },
+            ]"
+            @change="(value: string | number) => void applyVideoScaleMode(value as 'contain' | 'cover')"
           />
         </div>
       </a-space>

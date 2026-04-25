@@ -10,7 +10,7 @@ import { useMediaSession } from "./useMediaSession";
 const DEV_SEEK_LOG = import.meta.env.DEV;
 
 export function useMediaCenter() {
-  const { playerHwDecodeEnabled, playerAlwaysOnTop } = usePreferences();
+  const { playerHwDecodeEnabled, playerAlwaysOnTop, playerVideoScaleMode } = usePreferences();
   const {
     snapshot,
     currentSource,
@@ -46,14 +46,18 @@ export function useMediaCenter() {
   }
 
   async function applyHwDecodePreference(enabled: boolean) {
-    const next = await playbackSettings.applyHwDecodePreference(enabled);
+    const next = await playbackSettings.applyHwDecode(enabled);
     if (next) {
       updateSnapshot(next);
     }
   }
 
   async function applyAlwaysOnTopPreference(enabled: boolean) {
-    await playbackSettings.applyAlwaysOnTopPreference(enabled);
+    await playbackSettings.applyAlwaysOnTop(enabled);
+  }
+
+  async function applyVideoScaleModePreference(mode: "contain" | "cover") {
+    await playbackSettings.applyVideoScaleMode(mode);
   }
 
   async function openLocalFileByDialog() {
@@ -175,6 +179,7 @@ export function useMediaCenter() {
     // Ensure backend matches persisted preference.
     await applyHwDecodePreference(playerHwDecodeEnabled.value);
     await applyAlwaysOnTopPreference(playerAlwaysOnTop.value);
+    await applyVideoScaleModePreference(playerVideoScaleMode.value);
     await mount((action) => {
       if (action === "open_local") {
         void withBusyState(openLocalFileByDialog);
@@ -200,6 +205,13 @@ export function useMediaCenter() {
     playerAlwaysOnTop,
     (enabled) => {
       void applyAlwaysOnTopPreference(enabled);
+    },
+    { immediate: false },
+  );
+  watch(
+    playerVideoScaleMode,
+    (mode) => {
+      void applyVideoScaleModePreference(mode);
     },
     { immediate: false },
   );
