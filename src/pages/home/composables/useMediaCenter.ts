@@ -15,8 +15,11 @@ export function useMediaCenter() {
     snapshot,
     currentSource,
     debugSnapshot,
+    debugTimeline,
     metadataDurationSeconds,
+    metadataVideoWidth,
     metadataVideoHeight,
+    metadataVideoFps,
     playbackErrorMessage,
     mount,
     unmount,
@@ -35,6 +38,27 @@ export function useMediaCenter() {
   const urlDialogVisible = ref(false);
 
   const playback = computed(() => snapshot.value?.playback ?? null);
+
+  const mediaInfoSnapshot = computed<Record<string, string>>(() => {
+    const playbackState = playback.value;
+    const source = currentSource.value;
+    const duration =
+      playbackState?.duration_seconds ||
+      metadataDurationSeconds.value ||
+      0;
+    const width = metadataVideoWidth.value || 0;
+    const height = metadataVideoHeight.value || 0;
+    const fps = metadataVideoFps.value || 0;
+
+    const record: Record<string, string> = {};
+    if (source) record.source = source;
+    if (playbackState?.engine) record.engine = playbackState.engine;
+    if (duration > 0) record.duration = `${duration.toFixed(3)}s`;
+    if (width > 0 && height > 0) record.resolution = `${width}x${height}`;
+    if (fps > 0) record.fps = `${fps.toFixed(3)}fps`;
+    if (playbackState?.quality_mode) record.quality = playbackState.quality_mode;
+    return record;
+  });
 
   async function runPlaybackCommand(command: () => Promise<MediaSnapshot>) {
     const next = await command();
@@ -241,6 +265,8 @@ export function useMediaCenter() {
     isBusy,
     errorMessage,
     debugSnapshot,
+    debugTimeline,
+    mediaInfoSnapshot,
     metadataVideoHeight,
     openLocalFileByDialog: () => withBusyState(openLocalFileByDialog),
     openUrl: (url: string) => withBusyState(() => openUrl(url)),

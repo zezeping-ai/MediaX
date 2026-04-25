@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex;
@@ -29,6 +29,14 @@ pub struct RendererState {
     inner: Arc<RendererInner>,
 }
 
+#[derive(Clone, Copy, Default)]
+pub struct RendererMetricsSnapshot {
+    pub queue_depth: usize,
+    pub queue_capacity: usize,
+    pub last_render_cost_ms: f64,
+    pub last_present_lag_ms: f64,
+}
+
 struct RendererInner {
     stop: AtomicBool,
     renderer: Mutex<Option<Renderer>>,
@@ -39,6 +47,8 @@ struct RendererInner {
     pending_render: Mutex<bool>,
     render_cv: Condvar,
     video_scale_mode: AtomicU8,
+    last_render_cost_micros: AtomicU64,
+    last_present_lag_ms_bits: AtomicU32,
 }
 
 #[derive(Clone, Copy)]
@@ -100,6 +110,8 @@ impl RendererState {
                 pending_render: Mutex::new(false),
                 render_cv: Condvar::new(),
                 video_scale_mode: AtomicU8::new(VideoScaleMode::Contain.as_u8()),
+                last_render_cost_micros: AtomicU64::new(0),
+                last_present_lag_ms_bits: AtomicU32::new(0f32.to_bits()),
             }),
         }
     }
@@ -171,11 +183,24 @@ impl RendererState {
                         let frame = pick_frame_for_present(&inner, now_media_seconds);
                         if let Ok(mut guard) = inner.renderer.lock() {
                             if let Some(renderer) = guard.as_mut() {
+                                let render_start = Instant::now();
                                 renderer.set_video_scale_mode(VideoScaleMode::from_u8(
                                     inner.video_scale_mode.load(Ordering::Relaxed),
                                 ));
                                 // Always present each tick; upload only when we have a new frame.
                                 let _ = renderer.render(frame.as_ref(), true);
+                                let elapsed = render_start.elapsed();
+                                inner.last_render_cost_micros.store(
+                                    u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX),
+                                    Ordering::Relaxed,
+                                );
+                                let lag_ms = frame
+                                    .as_ref()
+                                    .map(|f| ((now_media_seconds - f.pts_seconds).max(0.0) * 1000.0) as f32)
+                                    .unwrap_or(0.0);
+                                inner
+                                    .last_present_lag_ms_bits
+                                    .store(lag_ms.to_bits(), Ordering::Relaxed);
                             }
                         }
                         inner.render_task_in_flight.store(false, Ordering::Release);
@@ -256,6 +281,18 @@ impl RendererState {
         if let Ok(mut pending) = self.inner.pending_render.lock() {
             *pending = true;
             self.inner.render_cv.notify_one();
+        }
+    }
+
+    pub fn metrics_snapshot(&self) -> RendererMetricsSnapshot {
+        RendererMetricsSnapshot {
+            queue_depth: self.queue_depth(),
+            queue_capacity: FRAME_QUEUE_CAPACITY,
+            last_render_cost_ms: (self.inner.last_render_cost_micros.load(Ordering::Relaxed) as f64)
+                / 1000.0,
+            last_present_lag_ms: f32::from_bits(
+                self.inner.last_present_lag_ms_bits.load(Ordering::Relaxed),
+            ) as f64,
         }
     }
 }

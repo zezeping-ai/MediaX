@@ -31,6 +31,7 @@ use std::num::{NonZeroU16, NonZeroU32};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 
@@ -243,6 +244,7 @@ pub(super) fn decode_and_emit_stream(
     let mut last_video_pts_seconds: Option<f64> = None;
     let mut fps_window = FpsWindow::default();
     let mut frame_pipeline = VideoFramePipeline::default();
+    let mut process_metrics = ProcessMetricsSampler::new();
     renderer.reset_timeline(0.0, timing_controls.playback_rate() as f64);
     emit_debug(app, "running", "decode loop running");
     loop {
@@ -334,6 +336,7 @@ pub(super) fn decode_and_emit_stream(
                         &mut last_video_pts_seconds,
                         &mut fps_window,
                         &mut frame_pipeline,
+                        &mut process_metrics,
                     )?;
                     continue;
                 }
@@ -383,6 +386,7 @@ pub(super) fn decode_and_emit_stream(
         &mut last_video_pts_seconds,
         &mut fps_window,
         &mut frame_pipeline,
+        &mut process_metrics,
     )?;
     if let Some(audio_state) = audio_pipeline.as_mut() {
         audio_state
@@ -484,9 +488,11 @@ fn drain_frames(
     last_video_pts_seconds: &mut Option<f64>,
     fps_window: &mut FpsWindow,
     frame_pipeline: &mut VideoFramePipeline,
+    process_metrics: &mut ProcessMetricsSampler,
 ) -> Result<(), String> {
     let mut decoded = frame::Video::empty();
     while decoder.receive_frame(&mut decoded).is_ok() {
+        let frame_cost_start = Instant::now();
         if stop_flag.load(Ordering::Relaxed) {
             return Ok(());
         }
@@ -575,7 +581,11 @@ fn drain_frames(
             continue;
         };
         renderer.submit_frame(render_frame);
+        frame_pipeline.record_frame_cost(frame_cost_start.elapsed());
         if let Some(render_fps) = fps_window.record_frame_and_compute() {
+            let perf_snapshot = frame_pipeline.take_perf_snapshot();
+            let process_snapshot = process_metrics.sample();
+            let renderer_metrics = renderer.metrics_snapshot();
             emit_debug(app, "video_fps", format!("render_fps={render_fps:.2}"));
             let audio_now = audio_clock.map(|clock| clock.now_seconds(playback_clock.playback_rate()));
             let audio_drift = audio_now.map(|a| estimated_pts - a);
@@ -583,13 +593,16 @@ fn drain_frames(
                 app,
                 "video_pipeline",
                 format!(
-                    "pts={:.3}s queue_depth={} clock={:.3}s rate={:.2} output={}x{}",
+                    "pts={:.3}s queue_depth={} clock={:.3}s rate={:.2} output={}x{} decode_avg={:.2}ms decode_max={:.2}ms samples={}",
                     estimated_pts.max(0.0),
-                    renderer.queue_depth(),
+                    renderer_metrics.queue_depth,
                     *current_position_seconds,
                     playback_clock.playback_rate(),
                     output_width,
-                    output_height
+                    output_height,
+                    perf_snapshot.as_ref().map(|v| v.avg_ms).unwrap_or(0.0),
+                    perf_snapshot.as_ref().map(|v| v.max_ms).unwrap_or(0.0),
+                    perf_snapshot.as_ref().map(|v| v.samples).unwrap_or(0),
                 ),
             );
             let _ = app.emit(
@@ -605,12 +618,25 @@ fn drain_frames(
                     payload: MediaTelemetryPayload {
                         source_fps: 1.0 / playback_clock.frame_duration.as_secs_f64().max(1e-6),
                         render_fps,
-                        queue_depth: renderer.queue_depth(),
+                        queue_depth: renderer_metrics.queue_depth,
                         clock_seconds: *current_position_seconds,
                         audio_drift_seconds: audio_drift,
                         video_pts_gap_seconds: last_video_pts_seconds
                             .map(|prev| (estimated_pts - prev).max(0.0)),
                         seek_settle_ms: None,
+                        decode_avg_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.avg_ms),
+                        decode_max_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.max_ms),
+                        decode_samples: perf_snapshot.as_ref().map(|v| v.samples),
+                        process_cpu_percent: process_snapshot.as_ref().map(|v| v.cpu_percent),
+                        process_memory_mb: process_snapshot.as_ref().map(|v| v.memory_mb),
+                        gpu_queue_depth: Some(renderer_metrics.queue_depth),
+                        gpu_queue_capacity: Some(renderer_metrics.queue_capacity),
+                        gpu_queue_utilization: Some(
+                            (renderer_metrics.queue_depth as f64)
+                                / (renderer_metrics.queue_capacity.max(1) as f64),
+                        ),
+                        render_estimated_cost_ms: Some(renderer_metrics.last_render_cost_ms),
+                        render_present_lag_ms: Some(renderer_metrics.last_present_lag_ms),
                     },
                 },
             );
@@ -627,12 +653,25 @@ fn drain_frames(
                     payload: MediaTelemetryPayload {
                         source_fps: 1.0 / playback_clock.frame_duration.as_secs_f64().max(1e-6),
                         render_fps,
-                        queue_depth: renderer.queue_depth(),
+                        queue_depth: renderer_metrics.queue_depth,
                         clock_seconds: *current_position_seconds,
                         audio_drift_seconds: audio_drift,
                         video_pts_gap_seconds: last_video_pts_seconds
                             .map(|prev| (estimated_pts - prev).max(0.0)),
                         seek_settle_ms: None,
+                        decode_avg_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.avg_ms),
+                        decode_max_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.max_ms),
+                        decode_samples: perf_snapshot.as_ref().map(|v| v.samples),
+                        process_cpu_percent: process_snapshot.as_ref().map(|v| v.cpu_percent),
+                        process_memory_mb: process_snapshot.as_ref().map(|v| v.memory_mb),
+                        gpu_queue_depth: Some(renderer_metrics.queue_depth),
+                        gpu_queue_capacity: Some(renderer_metrics.queue_capacity),
+                        gpu_queue_utilization: Some(
+                            (renderer_metrics.queue_depth as f64)
+                                / (renderer_metrics.queue_capacity.max(1) as f64),
+                        ),
+                        render_estimated_cost_ms: Some(renderer_metrics.last_render_cost_ms),
+                        render_present_lag_ms: Some(renderer_metrics.last_present_lag_ms),
                     },
                 },
             );
@@ -683,9 +722,93 @@ struct VideoIntegrityStats {
 struct VideoFramePipeline {
     locked_color_profile: Option<ColorProfile>,
     integrity: VideoIntegrityStats,
+    perf_window: VideoPerfWindow,
+}
+
+#[derive(Default)]
+struct VideoPerfWindow {
+    samples: u64,
+    total_micros: u128,
+    max_micros: u64,
+}
+
+struct VideoPerfSnapshot {
+    avg_ms: f64,
+    max_ms: f64,
+    samples: u64,
+}
+
+struct ProcessMetricsSnapshot {
+    cpu_percent: f32,
+    memory_mb: f64,
+}
+
+struct ProcessMetricsSampler {
+    system: System,
+    pid: Pid,
+}
+
+impl ProcessMetricsSampler {
+    fn new() -> Self {
+        let refresh = RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing());
+        let mut sampler = Self {
+            system: System::new_with_specifics(refresh),
+            pid: Pid::from_u32(std::process::id()),
+        };
+
+        // `sysinfo` computes cpu_usage() based on deltas between refreshes.
+        // Prime a baseline (and give it a short interval) so first samples are meaningful.
+        let refresh = ProcessRefreshKind::nothing().with_cpu().with_memory();
+        sampler
+            .system
+            .refresh_processes_specifics(ProcessesToUpdate::Some(&[sampler.pid]), true, refresh);
+        std::thread::sleep(Duration::from_millis(120));
+        sampler
+            .system
+            .refresh_processes_specifics(ProcessesToUpdate::Some(&[sampler.pid]), true, refresh);
+
+        sampler
+    }
+
+    fn sample(&mut self) -> Option<ProcessMetricsSnapshot> {
+        let refresh = ProcessRefreshKind::nothing().with_cpu().with_memory();
+        self.system
+            .refresh_processes_specifics(ProcessesToUpdate::Some(&[self.pid]), true, refresh);
+        let process = self.system.process(self.pid)?;
+        let memory_mb = (process.memory() as f64) / (1024.0 * 1024.0);
+        Some(ProcessMetricsSnapshot {
+            cpu_percent: process.cpu_usage(),
+            memory_mb,
+        })
+    }
 }
 
 impl VideoFramePipeline {
+    fn record_frame_cost(&mut self, cost: Duration) {
+        let micros = cost.as_micros();
+        self.perf_window.samples = self.perf_window.samples.saturating_add(1);
+        self.perf_window.total_micros = self.perf_window.total_micros.saturating_add(micros);
+        self.perf_window.max_micros = self
+            .perf_window
+            .max_micros
+            .max(u64::try_from(micros).unwrap_or(u64::MAX));
+    }
+
+    fn take_perf_snapshot(&mut self) -> Option<VideoPerfSnapshot> {
+        if self.perf_window.samples == 0 {
+            return None;
+        }
+        let samples = self.perf_window.samples;
+        let avg_micros = (self.perf_window.total_micros as f64) / (samples as f64);
+        let max_micros = self.perf_window.max_micros as f64;
+        self.perf_window = VideoPerfWindow::default();
+        Some(VideoPerfSnapshot {
+            avg_ms: avg_micros / 1000.0,
+            max_ms: max_micros / 1000.0,
+            samples,
+        })
+    }
+
     fn on_hw_transfer_failed(&mut self, app: &AppHandle, err: &str) {
         self.integrity.dropped_hw_transfer = self.integrity.dropped_hw_transfer.saturating_add(1);
         emit_debug(app, "hw_frame_transfer", format!("drop frame: {err}"));

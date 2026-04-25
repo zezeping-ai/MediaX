@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { clamp } from "lodash-es";
 import type { PlaybackQualityMode } from "@/modules/media-types";
-import MediaViewport from "./components/MediaViewport.vue";
+import MediaViewport from "./components/MediaViewport/index.vue";
 import PlaybackControls from "./components/PlaybackControls.vue";
 import { useMediaCenter } from "./composables/useMediaCenter";
 import { usePlayerOverlayControls } from "./composables/usePlayerOverlayControls";
@@ -16,6 +16,8 @@ const {
   isBusy,
   errorMessage,
   debugSnapshot,
+  debugTimeline,
+  mediaInfoSnapshot,
   openLocalFileByDialog,
   requestOpenUrlInput,
   cancelOpenUrlInput,
@@ -186,6 +188,8 @@ watch(playback, (value) => {
         :playback="playback"
         :loading="isBusy"
         :debug-snapshot="debugSnapshot"
+        :debug-timeline="debugTimeline"
+        :media-info-snapshot="mediaInfoSnapshot"
         @ended="handleVideoEnded"
         @quick-open-local="openLocalFileByDialog"
         @quick-open-url="requestOpenUrlInput"

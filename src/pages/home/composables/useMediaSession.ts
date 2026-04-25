@@ -19,9 +19,11 @@ export function useMediaSession() {
   const snapshot = ref<MediaSnapshot | null>(null);
   const currentSource = ref("");
   const debugSnapshot = ref<Record<string, string>>({});
+  const debugTimeline = ref<Array<{ stage: string; message: string; at_ms: number }>>([]);
   const metadataDurationSeconds = ref<number | null>(null);
   const metadataVideoWidth = ref<number | null>(null);
   const metadataVideoHeight = ref<number | null>(null);
+  const metadataVideoFps = ref<number | null>(null);
   const playbackErrorMessage = ref("");
   let unlistenPlaybackStateEvent: UnlistenFn | null = null;
   let unlistenMenuEvent: UnlistenFn | null = null;
@@ -66,6 +68,7 @@ export function useMediaSession() {
         metadataDurationSeconds.value = payload.duration_seconds;
         metadataVideoWidth.value = payload.width;
         metadataVideoHeight.value = payload.height;
+        metadataVideoFps.value = payload.fps;
       },
     );
     unlistenPlaybackErrorEvent = await listen<MediaEventEnvelope<MediaErrorPayload> | MediaErrorPayload>(
@@ -78,6 +81,10 @@ export function useMediaSession() {
     const upsertDebug = (payload: MediaDebugPayload) => {
       const stage = payload.stage?.trim() || "debug";
       const msg = payload.message?.trim() || "";
+      debugTimeline.value = [
+        ...debugTimeline.value,
+        { stage, message: msg || "-", at_ms: payload.at_ms ?? Date.now() },
+      ].slice(-200);
       debugSnapshot.value = {
         ...debugSnapshot.value,
         [stage]: msg || "-",
@@ -95,9 +102,35 @@ export function useMediaSession() {
       MEDIA_PLAYBACK_TELEMETRY_EVENT,
       (event) => {
         const p = resolvePayload(event.payload);
+        const decodeAvg = p.decode_avg_frame_cost_ms ?? 0;
+        const decodeMax = p.decode_max_frame_cost_ms ?? 0;
+        const decodeSamples = p.decode_samples ?? 0;
+        const processCpu = p.process_cpu_percent ?? 0;
+        const processMemory = p.process_memory_mb ?? 0;
+        const gpuQueueDepth = p.gpu_queue_depth ?? p.queue_depth ?? 0;
+        const gpuQueueCapacity = p.gpu_queue_capacity ?? 0;
+        const gpuQueueUsage = p.gpu_queue_utilization ?? 0;
+        const renderCost = p.render_estimated_cost_ms ?? 0;
+        const renderLag = p.render_present_lag_ms ?? 0;
+        const renderBusyEstimatePercent =
+          renderCost > 0 && p.render_fps > 0
+            ? Math.min(100, Math.max(0, (renderCost * p.render_fps) / 10))
+            : 0;
+        const decodeBusyEstimatePercent =
+          decodeAvg > 0 && p.render_fps > 0
+            ? Math.min(100, Math.max(0, (decodeAvg * p.render_fps) / 10))
+            : 0;
         debugSnapshot.value = {
           ...debugSnapshot.value,
-          telemetry: `src=${p.source_fps.toFixed(2)} render=${p.render_fps.toFixed(2)} queue=${p.queue_depth} drift=${(p.audio_drift_seconds ?? 0).toFixed(3)}s`,
+          telemetry_timing:
+            `src=${p.source_fps.toFixed(2)}fps render=${p.render_fps.toFixed(2)}fps ` +
+            `drift=${(p.audio_drift_seconds ?? 0).toFixed(3)}s`,
+          telemetry_resources:
+            `decode_avg=${decodeAvg.toFixed(2)}ms decode_max=${decodeMax.toFixed(2)}ms samples=${decodeSamples} ` +
+            `解码忙碌≈${decodeBusyEstimatePercent.toFixed(0)}% cpu=${processCpu.toFixed(1)}% mem=${processMemory.toFixed(1)}MB`,
+          telemetry_render:
+            `gpu_queue=${gpuQueueDepth}/${gpuQueueCapacity || "?"} (${(gpuQueueUsage * 100).toFixed(0)}%) ` +
+            `render_cost≈${renderCost.toFixed(2)}ms 渲染忙碌≈${renderBusyEstimatePercent.toFixed(0)}% present_lag≈${renderLag.toFixed(2)}ms`,
         };
       },
     );
@@ -129,9 +162,11 @@ export function useMediaSession() {
     snapshot,
     currentSource,
     debugSnapshot,
+    debugTimeline,
     metadataDurationSeconds,
     metadataVideoWidth,
     metadataVideoHeight,
+    metadataVideoFps,
     playbackErrorMessage,
     mount,
     unmount,

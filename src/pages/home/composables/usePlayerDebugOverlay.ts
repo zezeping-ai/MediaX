@@ -2,6 +2,7 @@ import { computed, type Ref } from "vue";
 import type { PlaybackState } from "@/modules/media-types";
 
 const PREFERRED_DEBUG_ORDER = [
+  "telemetry_resources",
   "open",
   "decoder_ready",
   "video_stream",
@@ -9,7 +10,8 @@ const PREFERRED_DEBUG_ORDER = [
   "running",
   "video_pipeline",
   "video_integrity",
-  "telemetry",
+  "telemetry_timing",
+  "telemetry_render",
   "video_fps",
   "audio_stats",
   "video_gap",
@@ -29,7 +31,9 @@ const DEBUG_LABELS: Record<string, string> = {
   running: "运行状态",
   video_pipeline: "视频管线",
   video_integrity: "完整性",
-  telemetry: "时序指标",
+  telemetry_timing: "时序指标",
+  telemetry_resources: "资源占用",
+  telemetry_render: "渲染估计",
   video_fps: "视频帧率",
   audio_stats: "音频统计",
   video_gap: "帧间间隔",
@@ -63,7 +67,7 @@ export interface DebugGroup {
   rows: DebugRow[];
 }
 
-const DEBUG_GROUP_ORDER = ["open", "decode", "stream", "timing", "error", "other"] as const;
+const DEBUG_GROUP_ORDER = ["decode", "open", "stream", "timing", "error", "other"] as const;
 
 export function usePlayerDebugOverlay(
   playback: Ref<PlaybackState | null>,
@@ -84,6 +88,8 @@ export function usePlayerDebugOverlay(
     };
   });
 
+  const resourceSummary = computed(() => debugSnapshot.value.telemetry_resources || "");
+
   const debugRows = computed(() => {
     const snapshot = debugSnapshot.value;
     const rows: DebugRow[] = [];
@@ -93,7 +99,7 @@ export function usePlayerDebugOverlay(
       rows.push({ key, label: formatDebugLabel(key), value });
     }
     for (const [key, value] of Object.entries(snapshot)) {
-      if (key === "hw_decode" || !value) continue;
+      if (key === "hw_decode" || key === "telemetry_resources" || !value) continue;
       if (PREFERRED_DEBUG_ORDER.includes(key as (typeof PREFERRED_DEBUG_ORDER)[number])) continue;
       rows.push({ key, label: formatDebugLabel(key), value });
     }
@@ -121,6 +127,7 @@ export function usePlayerDebugOverlay(
 
   return {
     decodeBanner,
+    resourceSummary,
     debugGroups,
   };
 }
@@ -144,9 +151,22 @@ function formatHwModeLabel(mode: string): string {
 
 function detectDebugGroup(key: string): string {
   if (key === "open") return "open";
-  if (key === "decoder_ready" || key.startsWith("decode")) return "decode";
+  if (
+    key === "decoder_ready" ||
+    key.startsWith("decode") ||
+    key === "telemetry_resources"
+  ) {
+    return "decode";
+  }
   if (key === "video_stream" || key === "audio" || key === "audio_stats") return "stream";
-  if (key === "running" || key.startsWith("video_") || key === "telemetry" || key === "seek" || key === "audio_resume") {
+  if (
+    key === "running" ||
+    key.startsWith("video_") ||
+    key === "telemetry_timing" ||
+    key === "telemetry_render" ||
+    key === "seek" ||
+    key === "audio_resume"
+  ) {
     return "timing";
   }
   if (key.endsWith("error")) return "error";

@@ -75,6 +75,16 @@ export interface MediaTelemetryPayload {
   audio_drift_seconds: number | null;
   video_pts_gap_seconds: number | null;
   seek_settle_ms: number | null;
+  decode_avg_frame_cost_ms: number | null;
+  decode_max_frame_cost_ms: number | null;
+  decode_samples: number | null;
+  process_cpu_percent: number | null;
+  process_memory_mb: number | null;
+  gpu_queue_depth: number | null;
+  gpu_queue_capacity: number | null;
+  gpu_queue_utilization: number | null;
+  render_estimated_cost_ms: number | null;
+  render_present_lag_ms: number | null;
 }
 
 export interface MediaMetadataPayload {
