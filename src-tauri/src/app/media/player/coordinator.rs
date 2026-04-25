@@ -14,9 +14,13 @@ use crate::app::media::player::state_locks;
 use crate::app::media::player::viewport_sync;
 use crate::app::media::snapshot::{emit_snapshot_with_request_id, snapshot_from_state};
 use crate::app::media::types::{
-    HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode, PlaybackStatus, PreviewFrame,
+    CacheRecordingStatus, HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode, PlaybackStatus,
+    PreviewFrame,
 };
+use crate::app::media::player::state::CacheRecorderSession;
+use std::fs;
 use std::sync::atomic::Ordering;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{async_runtime, AppHandle, Manager, State};
 
 const MIN_PLAYBACK_RATE: f64 = 0.25;
@@ -34,6 +38,10 @@ pub fn open(
     path: String,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
+    finalize_active_cache_recording(
+        &state,
+        "播放源已切换，录制已自动停止",
+    )?;
     // Switching source must stop any active decode stream first, otherwise the old
     // stream can keep emitting progress and consume resources.
     stop_decode_stream(&state)?;
@@ -78,6 +86,10 @@ pub fn stop(
     state: State<'_, MediaState>,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
+    finalize_active_cache_recording(
+        &state,
+        "播放已停止，录制已自动停止",
+    )?;
     stop_decode_stream(&state)?;
     *state_locks::latest_stream_position_seconds(&state)? = 0.0;
     let current_path = {
@@ -292,6 +304,171 @@ pub async fn preview_frame(
     .await
     .map_err(|err| MediaError::internal(format!("preview task join failed: {err}")))?
     .map_err(MediaError::from)
+}
+
+pub fn get_cache_recording_status(state: State<'_, MediaState>) -> MediaResult<CacheRecordingStatus> {
+    let guard = state
+        .cache_recorder
+        .lock()
+        .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
+    if let Some(session) = guard.as_ref() {
+        let output_size_bytes = fs::metadata(&session.output_path).ok().map(|meta| meta.len());
+        Ok(CacheRecordingStatus {
+            recording: session.active,
+            source: Some(session.source.clone()),
+            output_path: Some(session.output_path.clone()),
+            finalized_output_path: (!session.active).then(|| session.output_path.clone()),
+            output_size_bytes,
+            started_at_ms: Some(session.started_at_ms),
+            error_message: session.error_message.clone(),
+            fallback_transcoding: Some(session.fallback_transcoding),
+        })
+    } else {
+        Ok(CacheRecordingStatus {
+            recording: false,
+            source: None,
+            output_path: None,
+            finalized_output_path: None,
+            output_size_bytes: None,
+            started_at_ms: None,
+            error_message: None,
+            fallback_transcoding: None,
+        })
+    }
+}
+
+pub fn start_cache_recording(
+    state: State<'_, MediaState>,
+    output_dir: Option<String>,
+) -> MediaResult<CacheRecordingStatus> {
+    let source = {
+        let mut playback = state_locks::playback(&state)?;
+        let current = playback.state().current_path;
+        current.ok_or_else(|| MediaError::invalid_input("no active source to cache"))?
+    };
+
+    let output_base_dir = output_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| MediaError::invalid_input("cache output_dir is required"))?;
+    fs::create_dir_all(&output_base_dir).map_err(|err| {
+        MediaError::internal(format!(
+            "failed to create cache output directory '{}': {err}",
+            output_base_dir
+        ))
+    })?;
+    let started_at_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let source_lower = source.to_ascii_lowercase();
+    let is_live_source = source_lower.contains(".m3u8") || is_network_source(&source_lower);
+    let output_ext = if is_live_source { "ts" } else { "mp4" };
+    let output_path = format!(
+        "{}/mediax-cache-{}.{}",
+        output_base_dir.trim_end_matches('/'),
+        started_at_ms,
+        output_ext
+    );
+
+    let mut recorder_guard = state
+        .cache_recorder
+        .lock()
+        .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
+    if recorder_guard.is_some() {
+        return Err(MediaError::invalid_input("cache recording already running"));
+    }
+
+    if source_lower.ends_with(".mp4") && source_lower.contains("mediax-cache-") {
+        return Err(MediaError::invalid_input(
+            "cannot start cache recording from an existing cache recording file",
+        ));
+    }
+    if source_lower.ends_with(".ts") && source_lower.contains("mediax-cache-") {
+        return Err(MediaError::invalid_input(
+            "cannot start cache recording from an existing cache recording file",
+        ));
+    }
+
+    *recorder_guard = Some(CacheRecorderSession {
+        source: source.clone(),
+        output_path: output_path.clone(),
+        started_at_ms,
+        active: true,
+        fallback_transcoding: false,
+        error_message: None,
+    });
+    drop(recorder_guard);
+
+    Ok(CacheRecordingStatus {
+        recording: true,
+        source: Some(source),
+        output_path: Some(output_path),
+        finalized_output_path: None,
+        output_size_bytes: Some(0),
+        started_at_ms: Some(started_at_ms),
+        error_message: None,
+        fallback_transcoding: Some(false),
+    })
+}
+
+pub fn stop_cache_recording(state: State<'_, MediaState>) -> MediaResult<CacheRecordingStatus> {
+    let mut recorder_guard = state
+        .cache_recorder
+        .lock()
+        .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
+    let Some(session) = recorder_guard.take() else {
+        return Ok(CacheRecordingStatus {
+            recording: false,
+            source: None,
+            output_path: None,
+            finalized_output_path: None,
+            output_size_bytes: None,
+            started_at_ms: None,
+            error_message: None,
+            fallback_transcoding: None,
+        });
+    };
+    let output_size_bytes = fs::metadata(&session.output_path).ok().map(|meta| meta.len());
+    Ok(CacheRecordingStatus {
+        recording: false,
+        source: Some(session.source),
+        output_path: Some(session.output_path.clone()),
+        finalized_output_path: Some(session.output_path),
+        output_size_bytes,
+        started_at_ms: Some(session.started_at_ms),
+        error_message: session.error_message,
+        fallback_transcoding: Some(session.fallback_transcoding),
+    })
+}
+
+fn finalize_active_cache_recording(
+    state: &State<'_, MediaState>,
+    reason: &str,
+) -> MediaResult<()> {
+    let mut recorder_guard = state
+        .cache_recorder
+        .lock()
+        .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
+    let Some(session) = recorder_guard.as_mut() else {
+        return Ok(());
+    };
+    if !session.active {
+        return Ok(());
+    }
+    session.active = false;
+    session.error_message = Some(reason.to_string());
+    Ok(())
+}
+
+fn is_network_source(source: &str) -> bool {
+    source.starts_with("http://")
+        || source.starts_with("https://")
+        || source.starts_with("rtsp://")
+        || source.starts_with("rtmp://")
+        || source.starts_with("mms://")
 }
 
 fn set_pending_seek(state: &State<'_, MediaState>, position_seconds: f64) -> MediaResult<()> {

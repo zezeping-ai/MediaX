@@ -1,6 +1,8 @@
 use crate::app::media::player::coordinator;
 use crate::app::media::player::state::MediaState;
-use crate::app::media::types::{HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode, PreviewFrame};
+use crate::app::media::types::{
+    CacheRecordingStatus, HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode, PreviewFrame,
+};
 use tauri::{AppHandle, State};
 
 fn command_result<T>(result: crate::app::media::error::MediaResult<T>) -> Result<T, String> {
@@ -144,6 +146,28 @@ pub async fn playback_preview_frame(
     command_result(
         coordinator::preview_frame(app, state, position_seconds, max_width, max_height).await,
     )
+}
+
+#[tauri::command]
+pub fn playback_get_cache_recording_status(
+    state: State<'_, MediaState>,
+) -> Result<CacheRecordingStatus, String> {
+    command_result(coordinator::get_cache_recording_status(state))
+}
+
+#[tauri::command]
+pub fn playback_start_cache_recording(
+    state: State<'_, MediaState>,
+    output_dir: Option<String>,
+) -> Result<CacheRecordingStatus, String> {
+    command_result(coordinator::start_cache_recording(state, output_dir))
+}
+
+#[tauri::command]
+pub fn playback_stop_cache_recording(
+    state: State<'_, MediaState>,
+) -> Result<CacheRecordingStatus, String> {
+    command_result(coordinator::stop_cache_recording(state))
 }
 
 // Legacy command aliases kept for compatibility with existing UI paths.

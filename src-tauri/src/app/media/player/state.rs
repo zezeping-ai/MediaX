@@ -5,6 +5,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+pub struct CacheRecorderSession {
+    pub source: String,
+    pub output_path: String,
+    pub started_at_ms: u64,
+    pub active: bool,
+    pub fallback_transcoding: bool,
+    pub error_message: Option<String>,
+}
+
 #[derive(Default)]
 pub struct MediaState {
     pub library: Mutex<MediaLibraryService>,
@@ -18,6 +27,7 @@ pub struct MediaState {
     pub latest_stream_position_seconds: Mutex<f64>,
     pub audio_controls: Arc<AudioControls>,
     pub timing_controls: Arc<TimingControls>,
+    pub cache_recorder: Mutex<Option<CacheRecorderSession>>,
 }
 
 #[derive(Default)]

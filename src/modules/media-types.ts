@@ -59,6 +59,17 @@ export interface PreviewFrame {
   position_seconds: number;
 }
 
+export interface CacheRecordingStatus {
+  recording: boolean;
+  source: string | null;
+  output_path: string | null;
+  finalized_output_path: string | null;
+  output_size_bytes?: number | null;
+  started_at_ms: number | null;
+  error_message?: string | null;
+  fallback_transcoding?: boolean | null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -108,6 +119,7 @@ export interface MediaTelemetryPayload {
   render_fps: number;
   queue_depth: number;
   clock_seconds: number;
+  network_read_bytes_per_second?: number | null;
   audio_drift_seconds: number | null;
   video_pts_gap_seconds: number | null;
   seek_settle_ms: number | null;

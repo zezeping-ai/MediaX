@@ -26,6 +26,7 @@ export function useMediaSession() {
   const metadataVideoHeight = ref<number | null>(null);
   const metadataVideoFps = ref<number | null>(null);
   const playbackErrorMessage = ref("");
+  const networkReadBytesPerSecond = ref<number | null>(null);
   let unlistenPlaybackStateEvent: UnlistenFn | null = null;
   let unlistenMenuEvent: UnlistenFn | null = null;
   let unlistenPlaybackMetadataEvent: UnlistenFn | null = null;
@@ -113,6 +114,10 @@ export function useMediaSession() {
         const gpuQueueUsage = p.gpu_queue_utilization ?? 0;
         const renderCost = p.render_estimated_cost_ms ?? 0;
         const renderLag = p.render_present_lag_ms ?? 0;
+        networkReadBytesPerSecond.value =
+          typeof p.network_read_bytes_per_second === "number" && Number.isFinite(p.network_read_bytes_per_second)
+            ? Math.max(0, p.network_read_bytes_per_second)
+            : null;
         const renderBusyEstimatePercent =
           renderCost > 0 && p.render_fps > 0
             ? Math.min(100, Math.max(0, (renderCost * p.render_fps) / 10))
@@ -164,6 +169,7 @@ export function useMediaSession() {
     currentSource,
     debugSnapshot,
     debugTimeline,
+    networkReadBytesPerSecond,
     metadataDurationSeconds,
     metadataVideoWidth,
     metadataVideoHeight,

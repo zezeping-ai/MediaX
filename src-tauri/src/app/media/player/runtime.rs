@@ -27,7 +27,9 @@ use ffmpeg_next::software::resampling::context::Context as ResamplingContext;
 use ffmpeg_next::software::scaling::{context::Context as ScalingContext, flag::Flags};
 use ffmpeg_next::Error as FfmpegError;
 use ffmpeg_next::Packet;
+use ffmpeg_next::Dictionary;
 use rodio::{buffer::SamplesBuffer, DeviceSinkBuilder, MixerDeviceSink, Player};
+use std::collections::HashMap;
 use std::num::{NonZeroU16, NonZeroU32};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -144,6 +146,95 @@ fn emit_metadata_payloads(app: &AppHandle, payload: MediaMetadataPayload) {
     let _ = app.emit(MEDIA_METADATA_EVENT, payload);
 }
 
+struct CacheRemuxWriter {
+    output_path: String,
+    output_ctx: format::context::Output,
+    stream_mapping: HashMap<usize, usize>,
+}
+
+impl CacheRemuxWriter {
+    fn new(input_ctx: &format::context::Input, output_path: &str) -> Result<Self, String> {
+        let mut output_ctx = format::output(output_path)
+            .map_err(|err| format!("open cache output failed: {err}"))?;
+        let mut stream_mapping = HashMap::new();
+        for stream in input_ctx.streams() {
+            let medium = stream.parameters().medium();
+            if medium != Type::Video && medium != Type::Audio {
+                continue;
+            }
+            let mut out_stream = output_ctx
+                .add_stream(codec::encoder::find(codec::Id::None))
+                .map_err(|err| format!("add output stream failed: {err}"))?;
+            out_stream.set_parameters(stream.parameters());
+            out_stream.set_time_base(stream.time_base());
+            stream_mapping.insert(stream.index(), out_stream.index());
+        }
+        if stream_mapping.is_empty() {
+            return Err("cache recording requires at least one audio/video stream".to_string());
+        }
+        let output_path_lower = output_path.to_ascii_lowercase();
+        let is_ts_output = output_path_lower.ends_with(".ts");
+        if is_ts_output {
+            let mut options = Dictionary::new();
+            options.set("flush_packets", "1");
+            output_ctx
+                .write_header_with(options)
+                .map_err(|err| format!("write cache header failed: {err}"))?;
+        } else {
+            let mut options = Dictionary::new();
+            // Fragmented mp4 allows progressive growth/read while recording.
+            options.set("movflags", "frag_keyframe+empty_moov+default_base_moof");
+            output_ctx
+                .write_header_with(options)
+                .map_err(|err| format!("write cache header failed: {err}"))?;
+        }
+        Ok(Self {
+            output_path: output_path.to_string(),
+            output_ctx,
+            stream_mapping,
+        })
+    }
+
+    fn write_packet(
+        &mut self,
+        input_ctx: &format::context::Input,
+        packet: &Packet,
+    ) -> Result<(), String> {
+        let Some(&out_stream_index) = self.stream_mapping.get(&packet.stream()) else {
+            return Ok(());
+        };
+        let in_stream = input_ctx
+            .stream(packet.stream())
+            .ok_or_else(|| "input stream not found".to_string())?;
+        let out_stream = self
+            .output_ctx
+            .stream(out_stream_index)
+            .ok_or_else(|| "output stream not found".to_string())?;
+        let mut remux_packet = packet.clone();
+        remux_packet.set_stream(out_stream_index);
+        remux_packet.rescale_ts(in_stream.time_base(), out_stream.time_base());
+        remux_packet.set_position(-1);
+        remux_packet
+            .write_interleaved(&mut self.output_ctx)
+            .map_err(|err| format!("write cache packet failed: {err}"))
+    }
+
+    fn finish(&mut self) {
+        let _ = self.output_ctx.write_trailer();
+    }
+}
+
+fn update_cache_session_error(app: &AppHandle, source: &str, message: String) {
+    if let Ok(mut guard) = app.state::<MediaState>().cache_recorder.lock() {
+        if let Some(session) = guard.as_mut() {
+            if session.source == source {
+                session.active = false;
+                session.error_message = Some(message);
+            }
+        }
+    }
+}
+
 pub(super) fn decode_and_emit_stream(
     app: &AppHandle,
     renderer: &RendererState,
@@ -152,6 +243,12 @@ pub(super) fn decode_and_emit_stream(
     audio_controls: &Arc<AudioControls>,
     timing_controls: &Arc<TimingControls>,
 ) -> Result<(), String> {
+    let is_live_m3u8 = source.to_ascii_lowercase().contains(".m3u8");
+    let is_cache_recording_mp4 = {
+        let lower = source.to_ascii_lowercase();
+        lower.ends_with(".mp4") && lower.contains("mediax-cache-")
+    };
+    let should_tail_eof = is_live_m3u8 || is_cache_recording_mp4;
     let media_state = app.state::<MediaState>();
     let (hw_mode, quality_mode) = {
         let playback = media_state
@@ -270,6 +367,10 @@ pub(super) fn decode_and_emit_stream(
     let mut fps_window = FpsWindow::default();
     let mut frame_pipeline = VideoFramePipeline::default();
     let mut process_metrics = ProcessMetricsSampler::new();
+    let mut cache_writer: Option<CacheRemuxWriter> = None;
+    let mut net_window_start = Instant::now();
+    let mut net_window_bytes: u64 = 0;
+    let mut net_read_bps: Option<f64> = None;
     renderer.reset_timeline(0.0, timing_controls.playback_rate() as f64);
     emit_debug(app, "running", "decode loop running");
     loop {
@@ -355,6 +456,63 @@ pub(super) fn decode_and_emit_stream(
         let mut packet = Packet::empty();
         match packet.read(&mut video_ctx.input_ctx) {
             Ok(_) => {
+                // Approximate network read throughput from demuxed packet sizes.
+                // This is best-effort and primarily used for UI feedback on URL playback.
+                net_window_bytes = net_window_bytes.saturating_add(packet.size() as u64);
+                let now = Instant::now();
+                let dt = now.saturating_duration_since(net_window_start);
+                if dt >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS) {
+                    let seconds = dt.as_secs_f64().max(1e-6);
+                    net_read_bps = Some((net_window_bytes as f64 / seconds).max(0.0));
+                    net_window_start = now;
+                    net_window_bytes = 0;
+                }
+                let recording_target = {
+                    let media_state = app.state::<MediaState>();
+                    let guard = media_state
+                        .cache_recorder
+                        .lock()
+                        .map_err(|_| MediaError::state_poisoned_lock("cache recorder").to_string())?;
+                    guard.as_ref().and_then(|session| {
+                        (session.active && session.source == source)
+                            .then(|| session.output_path.clone())
+                    })
+                };
+                match (cache_writer.as_ref(), recording_target.as_ref()) {
+                    (None, Some(target)) => {
+                        match CacheRemuxWriter::new(&video_ctx.input_ctx, target) {
+                            Ok(writer) => {
+                                emit_debug(app, "cache_recording", format!("start remux recording: {target}"));
+                                cache_writer = Some(writer);
+                            }
+                            Err(err) => {
+                                update_cache_session_error(app, source, err.clone());
+                                emit_debug(app, "cache_recording_error", err);
+                            }
+                        }
+                    }
+                    (Some(writer), Some(target)) if writer.output_path != *target => {
+                        if let Some(writer) = cache_writer.as_mut() {
+                            writer.finish();
+                        }
+                        cache_writer = None;
+                    }
+                    (Some(_), None) => {
+                        if let Some(writer) = cache_writer.as_mut() {
+                            writer.finish();
+                        }
+                        cache_writer = None;
+                    }
+                    _ => {}
+                }
+                if let Some(writer) = cache_writer.as_mut() {
+                    if let Err(err) = writer.write_packet(&video_ctx.input_ctx, &packet) {
+                        writer.finish();
+                        cache_writer = None;
+                        update_cache_session_error(app, source, err.clone());
+                        emit_debug(app, "cache_recording_error", err);
+                    }
+                }
                 if packet.stream() == video_ctx.video_stream_index {
                     video_ctx
                         .decoder
@@ -381,6 +539,7 @@ pub(super) fn decode_and_emit_stream(
                         &mut frame_pipeline,
                         &mut process_metrics,
                         audio_allowed_lead_seconds,
+                        net_read_bps,
                     )?;
                     continue;
                 }
@@ -403,9 +562,28 @@ pub(super) fn decode_and_emit_stream(
                     continue;
                 }
             }
-            Err(FfmpegError::Eof) => break,
-            Err(_) => continue,
+            Err(FfmpegError::Eof) => {
+                if stop_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+                if should_tail_eof {
+                    // For live sources (m3u8) and the growing cache-recording mp4, EOF is often
+                    // temporary (no new data yet). Wait a bit and try reading again.
+                    std::thread::sleep(Duration::from_millis(200));
+                    continue;
+                }
+                break
+            }
+            Err(_) => {
+                if should_tail_eof {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                continue
+            }
         }
+    }
+    if let Some(writer) = cache_writer.as_mut() {
+        writer.finish();
     }
     video_ctx
         .decoder
@@ -432,6 +610,7 @@ pub(super) fn decode_and_emit_stream(
         &mut frame_pipeline,
         &mut process_metrics,
         AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT,
+        net_read_bps,
     )?;
     if let Some(audio_state) = audio_pipeline.as_mut() {
         audio_state
@@ -539,6 +718,7 @@ fn drain_frames(
     frame_pipeline: &mut VideoFramePipeline,
     process_metrics: &mut ProcessMetricsSampler,
     audio_allowed_lead_seconds: f64,
+    network_read_bps: Option<f64>,
 ) -> Result<(), String> {
     let mut decoded = frame::Video::empty();
     while decoder.receive_frame(&mut decoded).is_ok() {
@@ -663,6 +843,7 @@ fn drain_frames(
                     render_fps,
                     queue_depth: renderer_metrics.queue_depth,
                     clock_seconds: *current_position_seconds,
+                    network_read_bytes_per_second: network_read_bps,
                     audio_drift_seconds: audio_drift,
                     video_pts_gap_seconds: last_video_pts_seconds.map(|prev| (estimated_pts - prev).max(0.0)),
                     seek_settle_ms: None,

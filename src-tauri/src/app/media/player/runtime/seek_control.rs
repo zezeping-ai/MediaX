@@ -25,6 +25,14 @@ pub fn apply_seek_to_stream(
     audio_pipeline: Option<&mut AudioPipeline>,
 ) -> Result<(), String> {
     let clamped = target_seconds.max(0.0);
+    // Some network streams (notably certain HLS playlists) are non-seekable and can return
+    // EPERM/Operation not permitted. Startup resume commonly schedules a seek-to-zero, which
+    // should behave as a no-op instead of failing playback.
+    if clamped <= f64::EPSILON {
+        playback_clock.reset_to(0.0);
+        *current_position_seconds = 0.0;
+        return Ok(());
+    }
     let ts = (clamped * f64::from(ffmpeg::ffi::AV_TIME_BASE)).round() as i64;
     input_ctx
         .seek(ts, ..)

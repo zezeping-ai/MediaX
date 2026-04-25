@@ -21,6 +21,9 @@ const props = defineProps<{
   volume: number;
   muted: boolean;
   locked: boolean;
+  cacheRecording: boolean;
+  cacheOutputPath: string;
+  durationSecondsOverride: number;
   qualityOptions: PlaybackQualityOption[];
   selectedQuality: string;
   requestPreviewFrame?: (
@@ -41,6 +44,7 @@ const emit = defineEmits<{
   "change-quality": [string];
   "overlay-interaction-change": [boolean];
   "toggle-mute": [];
+  "toggle-cache": [];
   "toggle-lock": [];
 }>();
 
@@ -53,9 +57,17 @@ const { currentTime, commitSeek, previewSeekWhilePaused, cancelPreviewSeek } = u
   onSeek: (seconds) => emit("seek", seconds),
   onSeekPreview: (seconds) => emit("seek-preview", seconds),
 });
-const duration = computed(() => props.playback?.duration_seconds ?? 0);
+const duration = computed(() => {
+  const base = props.playback?.duration_seconds ?? 0;
+  const override = props.durationSecondsOverride ?? 0;
+  const normalizedBase = Number.isFinite(base) ? Math.max(0, base) : 0;
+  const normalizedOverride = Number.isFinite(override) ? Math.max(0, override) : 0;
+  return Math.max(normalizedBase, normalizedOverride);
+});
 const sliderMax = computed(() => Math.max(duration.value, currentTime.value, 1));
 const isPlaying = computed(() => props.playback?.status === "playing");
+const playPauseDisabled = computed(() => props.disabled);
+const playPauseTitle = computed(() => (isPlaying.value ? "暂停播放" : "开始播放"));
 const volumeIcon = computed(() => {
   if (props.muted || props.volume <= 0) {
     return "lucide:volume-x";
@@ -73,6 +85,7 @@ const qualityLabel = computed(() => {
 
 // 线性小图标：比 duotone 更轻，与音量区图标体量接近
 const lockIcon = computed(() => (props.locked ? "lucide:lock" : "lucide:lock-open"));
+const cacheIcon = computed(() => (props.cacheRecording ? "lucide:database-zap" : "lucide:database"));
 const speedDropdownOpen = ref(false);
 const qualityDropdownOpen = ref(false);
 
@@ -176,7 +189,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="mt-1 grid grid-cols-[40px_minmax(0,1fr)_40px] items-center gap-2 max-[720px]:grid-cols-[34px_minmax(0,1fr)_34px]">
+      <div class="mt-1 grid grid-cols-[40px_minmax(0,1fr)_40px_40px] items-center gap-2 max-[720px]:grid-cols-[34px_minmax(0,1fr)_34px_34px]">
         <div aria-hidden="true" />
         <div class="flex justify-center">
           <div :class="[PILL_BASE, 'max-w-full gap-2.5 px-3']">
@@ -210,8 +223,8 @@ onBeforeUnmount(() => {
           <a-button
             size="small"
             shape="circle"
-            :disabled="disabled"
-            :title="isPlaying ? '暂停播放' : '开始播放'"
+            :disabled="playPauseDisabled"
+            :title="playPauseTitle"
             :class="[CIRCLE_BTN_BASE, 'h-11 min-h-11 w-11 min-w-11', CIRCLE_BTN_PRIMARY]"
             @click="isPlaying ? emitPause() : emit('play')"
           >
@@ -327,6 +340,24 @@ onBeforeUnmount(() => {
 
           </div>
         </div>
+
+        <a-button
+          type="text"
+          size="small"
+          shape="circle"
+          class="justify-self-end max-[720px]:h-9 max-[720px]:min-h-9 max-[720px]:w-9 max-[720px]:min-w-9"
+          :class="[CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST, cacheRecording ? 'bg-[#1677ff33] text-[#91caff]' : '']"
+          :title="cacheRecording ? '停止缓存录制' : '开始缓存录制到文件'"
+          @click="emit('toggle-cache')"
+        >
+          <Icon
+            :icon="cacheIcon"
+            width="15"
+            height="15"
+            class="block shrink-0"
+            aria-hidden="true"
+          />
+        </a-button>
 
         <a-button
           type="text"

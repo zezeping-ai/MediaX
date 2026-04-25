@@ -7,6 +7,9 @@ import {
   playbackPreviewFrame,
   playbackResume,
   playbackSeekTo,
+  playbackStartCacheRecording,
+  playbackStopCacheRecording,
+  playbackGetCacheRecordingStatus,
   playbackSetMuted,
   playbackSetQuality,
   playbackSetRate,
@@ -15,6 +18,7 @@ import {
   playbackSyncPosition,
 } from "@/modules/media-player";
 import type {
+  CacheRecordingStatus,
   HardwareDecodeMode,
   MediaSnapshot,
   PlaybackQualityMode,
@@ -38,6 +42,9 @@ export interface MediaCommandSet {
     maxWidth?: number,
     maxHeight?: number,
   ) => Promise<PreviewFrame | null>;
+  getCacheRecordingStatus: () => Promise<CacheRecordingStatus>;
+  startCacheRecording: (outputDir?: string) => Promise<CacheRecordingStatus>;
+  stopCacheRecording: () => Promise<CacheRecordingStatus>;
 }
 
 export function useMediaCommands(): MediaCommandSet {
@@ -60,5 +67,8 @@ export function useMediaCommands(): MediaCommandSet {
       maxHeight = DEFAULT_PREVIEW_FRAME_MAX_HEIGHT,
     ) =>
       playbackPreviewFrame(positionSeconds, maxWidth, maxHeight),
+    getCacheRecordingStatus: () => playbackGetCacheRecordingStatus(),
+    startCacheRecording: (outputDir) => playbackStartCacheRecording(outputDir),
+    stopCacheRecording: () => playbackStopCacheRecording(),
   };
 }

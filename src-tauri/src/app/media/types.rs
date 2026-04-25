@@ -112,3 +112,15 @@ pub struct PreviewFrame {
     pub height: u32,
     pub position_seconds: f64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheRecordingStatus {
+    pub recording: bool,
+    pub source: Option<String>,
+    pub output_path: Option<String>,
+    pub finalized_output_path: Option<String>,
+    pub output_size_bytes: Option<u64>,
+    pub started_at_ms: Option<u64>,
+    pub error_message: Option<String>,
+    pub fallback_transcoding: Option<bool>,
+}

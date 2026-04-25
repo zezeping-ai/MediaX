@@ -6,6 +6,7 @@ import {
 import {
   isMediaSnapshot,
   isPreviewFrame,
+  type CacheRecordingStatus,
   type HardwareDecodeMode,
   type MediaSnapshot,
   type PlaybackQualityMode,
@@ -136,6 +137,20 @@ export function playbackPreviewFrame(
     maxHeight: normalizePreviewEdge(maxHeight),
     },
   );
+}
+
+export function playbackGetCacheRecordingStatus() {
+  return invokeMediaCommand<CacheRecordingStatus>("playback_get_cache_recording_status");
+}
+
+export function playbackStartCacheRecording(outputDir?: string) {
+  return invokeMediaCommand<CacheRecordingStatus>("playback_start_cache_recording", {
+    outputDir: outputDir ?? null,
+  });
+}
+
+export function playbackStopCacheRecording() {
+  return invokeMediaCommand<CacheRecordingStatus>("playback_stop_cache_recording");
 }
 
 // Legacy aliases kept to avoid breaking existing imports while migration is ongoing.

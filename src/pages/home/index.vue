@@ -42,6 +42,7 @@ const {
   currentSource,
   isBusy,
   errorMessage,
+  recordingNoticeMessage,
   debugSnapshot,
   debugTimeline,
   mediaInfoSnapshot,
@@ -51,6 +52,10 @@ const {
   confirmOpenUrlInput,
   urlDialogVisible,
   urlInputValue,
+  urlPlaylist,
+  openUrl,
+  removeUrlFromPlaylist,
+  clearUrlPlaylist,
   play,
   pause,
   stop,
@@ -61,8 +66,29 @@ const {
   setVolume,
   setMuted,
   setQuality,
+  cacheRecording,
+  cacheOutputPath,
+  cacheOutputSizeBytes,
+  cacheWriteSpeedBytesPerSecond,
+  networkReadBytesPerSecond,
+  cacheFinalizedOutputPath,
+  effectiveDurationSeconds,
+  toggleCacheRecording,
   metadataVideoHeight,
 } = useMediaCenter();
+
+function formatOpenedAt(timestamp: number) {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "未知时间";
+  }
+  return new Date(timestamp).toLocaleString();
+}
+
+async function handlePlayFromUrlPlaylist(url: string) {
+  urlInputValue.value = url;
+  await openUrl(url);
+  urlDialogVisible.value = false;
+}
 
 const playbackRate = ref(1);
 const volume = ref(1);
@@ -222,6 +248,11 @@ watch(playback, (value) => {
         :debug-snapshot="debugSnapshot"
         :debug-timeline="debugTimeline"
         :media-info-snapshot="mediaInfoSnapshot"
+        :network-read-bytes-per-second="networkReadBytesPerSecond"
+        :cache-recording="cacheRecording"
+        :cache-output-path="cacheOutputPath"
+        :cache-output-size-bytes="cacheOutputSizeBytes"
+        :cache-write-speed-bytes-per-second="cacheWriteSpeedBytesPerSecond"
         @ended="handleVideoEnded"
         @quick-open-local="openLocalFileByDialog"
         @quick-open-url="requestOpenUrlInput"
@@ -235,6 +266,9 @@ watch(playback, (value) => {
         :volume="volume"
         :muted="muted"
         :locked="controlsLocked"
+        :cache-recording="cacheRecording"
+        :cache-output-path="cacheOutputPath"
+        :duration-seconds-override="effectiveDurationSeconds"
         :quality-options="playbackQualityOptions"
         :selected-quality="selectedQuality"
         :disabled="!currentSource || isBusy"
@@ -252,11 +286,28 @@ watch(playback, (value) => {
         @change-quality="(value) => void changeQuality(value)"
         @overlay-interaction-change="setControlsOverlayInteracting"
         @toggle-mute="() => void toggleMute()"
+        @toggle-cache="toggleCacheRecording"
         @toggle-lock="toggleLock"
       />
       <a-alert
-        v-if="displayErrorMessage"
+        v-if="cacheFinalizedOutputPath"
+        class="absolute left-1/2 top-20 z-40 w-[min(620px,calc(100vw-32px))] -translate-x-1/2"
+        type="success"
+        :message="`缓存已生成：${cacheFinalizedOutputPath}`"
+        show-icon
+        banner
+      />
+      <a-alert
+        v-if="recordingNoticeMessage"
         class="absolute left-1/2 top-4 z-40 w-[min(620px,calc(100vw-32px))] -translate-x-1/2"
+        type="warning"
+        :message="recordingNoticeMessage"
+        show-icon
+        banner
+      />
+      <a-alert
+        v-if="displayErrorMessage"
+        class="absolute left-1/2 top-16 z-40 w-[min(620px,calc(100vw-32px))] -translate-x-1/2"
         type="error"
         :message="displayErrorMessage"
         show-icon
@@ -271,12 +322,68 @@ watch(playback, (value) => {
         @ok="confirmOpenUrlInput"
         @cancel="cancelOpenUrlInput"
       >
-        <a-input
-          v-model:value="urlInputValue"
-          placeholder="请输入视频 URL（http/https）"
-          allow-clear
-          @press-enter="confirmOpenUrlInput"
-        />
+        <a-space direction="vertical" class="w-full" :size="12">
+          <a-input
+            v-model:value="urlInputValue"
+            placeholder="请输入视频 URL（http/https）"
+            allow-clear
+            @press-enter="confirmOpenUrlInput"
+          />
+          <div class="flex items-center justify-between">
+            <span class="text-xs opacity-70">播放列表（最近优先）</span>
+            <a-button
+              v-if="urlPlaylist.length"
+              size="small"
+              danger
+              type="text"
+              @click="clearUrlPlaylist"
+            >
+              一键清空
+            </a-button>
+          </div>
+          <a-empty v-if="!urlPlaylist.length" description="暂无历史 URL" />
+          <a-list v-else size="small" :data-source="urlPlaylist">
+            <template #renderItem="{ item }">
+              <a-list-item class="overflow-hidden">
+                <div class="min-w-0 w-full space-y-1 overflow-hidden">
+                  <button
+                    class="block min-w-0 w-full cursor-pointer bg-transparent p-0 text-left"
+                    type="button"
+                    :title="item.url"
+                    @click="urlInputValue = item.url"
+                  >
+                    <span
+                      class="block min-w-0 w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[rgba(255,255,255,0.85)]"
+                    >
+                      {{ item.url }}
+                    </span>
+                  </button>
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs opacity-70">{{ formatOpenedAt(item.lastOpenedAt) }}</span>
+                    <a-space :size="4">
+                      <a-button
+                        size="small"
+                        type="link"
+                        :disabled="isBusy"
+                        @click="handlePlayFromUrlPlaylist(item.url)"
+                      >
+                        播放
+                      </a-button>
+                      <a-button
+                        size="small"
+                        danger
+                        type="text"
+                        @click="removeUrlFromPlaylist(item.url)"
+                      >
+                        删除
+                      </a-button>
+                    </a-space>
+                  </div>
+                </div>
+              </a-list-item>
+            </template>
+          </a-list>
+        </a-space>
       </a-modal>
     </section>
   </main>

@@ -53,6 +53,7 @@ pub struct MediaTelemetryPayload {
     pub render_fps: f64,
     pub queue_depth: usize,
     pub clock_seconds: f64,
+    pub network_read_bytes_per_second: Option<f64>,
     pub audio_drift_seconds: Option<f64>,
     pub video_pts_gap_seconds: Option<f64>,
     pub seek_settle_ms: Option<u64>,
