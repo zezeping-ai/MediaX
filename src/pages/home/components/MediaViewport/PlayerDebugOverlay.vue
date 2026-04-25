@@ -19,12 +19,33 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-const STATIC_DEBUG_KEYS = ["open", "decoder_ready", "video_stream", "audio"] as const;
+const STATIC_DEBUG_KEYS = [
+  "open",
+  "decoder_ready",
+  "video_stream",
+  "audio",
+  "video_format",
+  "video_codec_profile",
+  "audio_format",
+  "video_frame_format",
+] as const;
 
 function formatMediaInfoLabel(key: string): string {
   switch (key) {
     case "source":
       return "来源";
+    case "video_format":
+      return "视频格式";
+    case "video_codec_profile":
+      return "编码配置";
+    case "audio_format":
+      return "音频格式";
+    case "video_frame_format":
+      return "帧格式/色彩";
+    case "video_stream":
+      return "视频流参数";
+    case "audio":
+      return "音频流";
     case "engine":
       return "引擎";
     case "duration":
@@ -40,14 +61,42 @@ function formatMediaInfoLabel(key: string): string {
   }
 }
 
-const mediaInfoRows = computed(() => {
-  const rows: Array<{ key: string; label: string; value: string }> = [];
+const mediaInfoGroups = computed(() => {
+  const baseRows: Array<{ key: string; label: string; value: string }> = [];
   const record = props.mediaInfoSnapshot || {};
   for (const [key, value] of Object.entries(record)) {
     if (!value) continue;
-    rows.push({ key, label: formatMediaInfoLabel(key), value });
+    baseRows.push({ key, label: formatMediaInfoLabel(key), value });
   }
-  return rows;
+  const videoRows: Array<{ key: string; label: string; value: string }> = [];
+  const audioRows: Array<{ key: string; label: string; value: string }> = [];
+  const videoFormat = props.debugSnapshot?.video_format;
+  const videoCodecProfile = props.debugSnapshot?.video_codec_profile;
+  const videoStream = props.debugSnapshot?.video_stream;
+  const videoFrameFormat = props.debugSnapshot?.video_frame_format;
+  const audioFormat = props.debugSnapshot?.audio_format;
+  const audioStream = props.debugSnapshot?.audio;
+  if (videoFormat) videoRows.push({ key: "video_format", label: formatMediaInfoLabel("video_format"), value: videoFormat });
+  if (videoCodecProfile)
+    videoRows.push({
+      key: "video_codec_profile",
+      label: formatMediaInfoLabel("video_codec_profile"),
+      value: videoCodecProfile,
+    });
+  if (videoStream) videoRows.push({ key: "video_stream", label: formatMediaInfoLabel("video_stream"), value: videoStream });
+  if (videoFrameFormat)
+    videoRows.push({
+      key: "video_frame_format",
+      label: formatMediaInfoLabel("video_frame_format"),
+      value: videoFrameFormat,
+    });
+  if (audioFormat) audioRows.push({ key: "audio_format", label: formatMediaInfoLabel("audio_format"), value: audioFormat });
+  if (audioStream) audioRows.push({ key: "audio", label: formatMediaInfoLabel("audio"), value: audioStream });
+  return [
+    { id: "base", title: "基础", rows: baseRows },
+    { id: "video", title: "视频", rows: videoRows },
+    { id: "audio", title: "音频", rows: audioRows },
+  ].filter((group) => group.rows.length > 0);
 });
 
 const resourceSummary = computed(() => props.debugSnapshot?.telemetry_resources || "");
@@ -102,7 +151,7 @@ const liveBadgeText = computed(() => {
     </div>
 
     <div class="debug-scroll-wrap flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto pr-0.5">
-      <MediaInfoPanel :rows="mediaInfoRows" />
+      <MediaInfoPanel :groups="mediaInfoGroups" />
 
       <div v-if="decodeBanner" class="rounded-[10px] border border-white/12 bg-slate-900/55 px-2 py-1.5">
         <div class="flex items-center gap-2">

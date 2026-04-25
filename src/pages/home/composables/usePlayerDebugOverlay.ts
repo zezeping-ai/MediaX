@@ -2,21 +2,27 @@ import { computed, type Ref } from "vue";
 import type { PlaybackState } from "@/modules/media-types";
 
 const PREFERRED_DEBUG_ORDER = [
-  "telemetry_resources",
   "open",
+  "video_demux",
+  "video_gop",
   "decoder_ready",
-  "video_stream",
-  "audio",
   "running",
-  "video_pipeline",
+  "color_profile",
   "video_integrity",
+  "video_pipeline",
+  "video_fps",
+  "video_gap",
+  "video_timestamps",
+  "video_frame_types",
+  "decode_cost_quantiles",
+  "audio_stats",
+  "audio_output",
+  "av_sync",
+  "audio_resume",
+  "seek",
   "telemetry_timing",
   "telemetry_render",
-  "video_fps",
-  "audio_stats",
-  "video_gap",
-  "seek",
-  "audio_resume",
+  "telemetry_resources",
   "decode_error",
 ] as const;
 
@@ -24,22 +30,31 @@ const DEBUG_LABELS: Record<string, string> = {
   open: "打开",
   stream_start: "流启动",
   decoder_ready: "解码器就绪",
+  video_format: "视频格式",
   color_profile: "色彩配置",
   color_profill: "色彩配置",
   video_stream: "视频流",
+  video_demux: "视频解复用",
+  video_gop: "GOP/场景切换",
+  video_timestamps: "时间戳质量",
+  video_frame_types: "帧类型分布",
+  decode_cost_quantiles: "耗时分位数",
   audio: "音频流",
-  running: "运行状态",
+  running: "播放状态",
   video_pipeline: "视频管线",
-  video_integrity: "完整性",
-  telemetry_timing: "时序指标",
-  telemetry_resources: "资源占用",
-  telemetry_render: "渲染估计",
+  video_integrity: "视频完整性",
+  telemetry_timing: "时序性能",
+  telemetry_resources: "进程资源",
+  telemetry_render: "渲染性能",
   video_fps: "视频帧率",
   audio_stats: "音频统计",
+  audio_output: "音频输出",
+  av_sync: "音视频同步",
   video_gap: "帧间间隔",
   seek: "跳转",
   audio_resume: "音频恢复",
   decode_error: "解码错误",
+  decode_error_detail: "解码错误细节",
   stop: "停止",
 };
 
@@ -67,7 +82,7 @@ export interface DebugGroup {
   rows: DebugRow[];
 }
 
-const DEBUG_GROUP_ORDER = ["decode", "open", "stream", "timing", "error", "other"] as const;
+const DEBUG_GROUP_ORDER = ["input", "decode", "video", "audio", "timing", "error", "other"] as const;
 
 export function usePlayerDebugOverlay(
   playback: Ref<PlaybackState | null>,
@@ -150,22 +165,39 @@ function formatHwModeLabel(mode: string): string {
 }
 
 function detectDebugGroup(key: string): string {
-  if (key === "open") return "open";
-  if (
-    key === "decoder_ready" ||
-    key.startsWith("decode") ||
-    key === "telemetry_resources"
-  ) {
-    return "decode";
-  }
-  if (key === "video_stream" || key === "audio" || key === "audio_stats") return "stream";
+  if (key === "open" || key === "video_demux" || key === "video_gop") return "input";
+  if (key === "decoder_ready" || key.startsWith("decode")) return "decode";
   if (
     key === "running" ||
-    key.startsWith("video_") ||
+    key === "video_pipeline" ||
+    key === "video_integrity" ||
+    key === "video_fps" ||
+    key === "video_gap" ||
+    key === "video_frame_types" ||
+    key === "decode_cost_quantiles" ||
+    key === "color_profile" ||
+    key === "color_profill" ||
+    key === "color_profile_drift" ||
+    key === "hw_frame_transfer" ||
+    key === "nv12_extract"
+  ) {
+    return "video";
+  }
+  if (
+    key === "audio_stats" ||
+    key === "audio_output" ||
+    key === "audio_resume" ||
+    key === "audio_silent"
+  ) {
+    return "audio";
+  }
+  if (
     key === "telemetry_timing" ||
     key === "telemetry_render" ||
+    key === "telemetry_resources" ||
     key === "seek" ||
-    key === "audio_resume"
+    key === "av_sync" ||
+    key === "video_timestamps"
   ) {
     return "timing";
   }
@@ -175,14 +207,16 @@ function detectDebugGroup(key: string): string {
 
 function formatGroupTitle(groupId: string): string {
   switch (groupId) {
-    case "open":
-      return "打开";
+    case "input":
+      return "输入/流";
     case "decode":
       return "解码";
-    case "stream":
-      return "流信息";
+    case "video":
+      return "视频";
+    case "audio":
+      return "音频";
     case "timing":
-      return "播放/时序";
+      return "时序/性能";
     case "error":
       return "异常";
     default:

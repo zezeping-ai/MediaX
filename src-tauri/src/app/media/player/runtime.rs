@@ -18,6 +18,7 @@ use crate::app::media::player::video_frame::{
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::channel_layout::ChannelLayout;
 use ffmpeg_next::codec;
+use ffmpeg_next::ffi;
 use ffmpeg_next::format;
 use ffmpeg_next::format::sample::Type as SampleType;
 use ffmpeg_next::frame;
@@ -238,11 +239,40 @@ pub(super) fn decode_and_emit_stream(
             video_ctx.output_height,
         ),
     );
+    {
+        // SAFETY: decoder pointer is valid while `video_ctx.decoder` is alive; read-only access.
+        let (profile, level, has_b_frames) = unsafe {
+            let raw = &*video_ctx.decoder.as_ptr();
+            (raw.profile, raw.level, raw.has_b_frames)
+        };
+        emit_debug(
+            app,
+            "video_codec_profile",
+            format!(
+                "codec={:?} profile={} level={} has_b_frames={}",
+                video_ctx.decoder.id(),
+                profile,
+                level,
+                has_b_frames
+            ),
+        );
+    }
     if let Some(video_stream) = video_ctx
         .input_ctx
         .streams()
         .find(|stream| stream.index() == video_ctx.video_stream_index)
     {
+        let container_name = video_ctx.input_ctx.format().name().to_string();
+        emit_debug(
+            app,
+            "video_format",
+            format!(
+                "container={} codec={:?} pixel_fmt={:?}",
+                container_name,
+                video_stream.parameters().id(),
+                video_ctx.decoder.format()
+            ),
+        );
         let tb = video_stream.time_base();
         let avg = video_stream.avg_frame_rate();
         let r = video_stream.rate();
@@ -301,6 +331,54 @@ pub(super) fn decode_and_emit_stream(
             None => "no audio stream".to_string(),
         },
     );
+    if let Some(audio_index) = audio_stream_index {
+        if let Some(audio_stream) = video_ctx
+            .input_ctx
+            .streams()
+            .find(|stream| stream.index() == audio_index)
+        {
+            let audio_tb = audio_stream.time_base();
+            let audio_codec = audio_stream.parameters().id();
+            let audio_details = codec::context::Context::from_parameters(audio_stream.parameters())
+                .ok()
+                .and_then(|ctx| ctx.decoder().audio().ok());
+            if let Some(audio_decoder) = audio_details {
+                let channels = audio_decoder.channels();
+                let sample_rate = audio_decoder.rate();
+                let sample_fmt = audio_decoder.format();
+                let channel_layout = if audio_decoder.channel_layout().is_empty() {
+                    format!("{}ch", channels)
+                } else {
+                    format!("{:?}", audio_decoder.channel_layout())
+                };
+                emit_debug(
+                    app,
+                    "audio_format",
+                    format!(
+                        "codec={:?} sample_rate={}Hz channels={} layout={} sample_fmt={:?} tb={}/{}",
+                        audio_codec,
+                        sample_rate,
+                        channels,
+                        channel_layout,
+                        sample_fmt,
+                        audio_tb.numerator(),
+                        audio_tb.denominator()
+                    ),
+                );
+            } else {
+                emit_debug(
+                    app,
+                    "audio_format",
+                    format!(
+                        "codec={:?} tb={}/{}",
+                        audio_codec,
+                        audio_tb.numerator(),
+                        audio_tb.denominator()
+                    ),
+                );
+            }
+        }
+    }
     let mut audio_pipeline = build_audio_pipeline(
         &video_ctx.input_ctx,
         audio_stream_index,
@@ -337,6 +415,26 @@ pub(super) fn decode_and_emit_stream(
     let mut net_window_start = Instant::now();
     let mut net_window_bytes: u64 = 0;
     let mut net_read_bps: Option<f64> = None;
+    let mut video_demux_window_start = Instant::now();
+    let mut video_demux_packets: u64 = 0;
+    let mut video_demux_key_packets: u64 = 0;
+    let mut video_demux_bytes: u64 = 0;
+    let mut video_packets_since_last_key: u64 = 0;
+    let mut video_keyint_ema_packets: f64 = 0.0;
+    let mut video_scene_cut_events: u64 = 0;
+    let mut last_video_key_pts_seconds: Option<f64> = None;
+    let mut video_key_intervals_seconds: Vec<f64> = Vec::new();
+    let mut video_ts_window_start = Instant::now();
+    let mut video_ts_samples: u64 = 0;
+    let mut video_pts_missing: u64 = 0;
+    let mut video_pts_backtrack: u64 = 0;
+    let mut video_pts_jitter_abs_sum_ms: f64 = 0.0;
+    let mut video_pts_jitter_max_ms: f64 = 0.0;
+    let mut video_frame_type_window_start = Instant::now();
+    let mut video_frame_type_i: u64 = 0;
+    let mut video_frame_type_p: u64 = 0;
+    let mut video_frame_type_b: u64 = 0;
+    let mut video_frame_type_other: u64 = 0;
     renderer.reset_timeline(0.0, timing_controls.playback_rate() as f64);
     emit_debug(app, "running", "decode loop running");
     loop {
@@ -487,10 +585,106 @@ pub(super) fn decode_and_emit_stream(
                     }
                 }
                 if packet.stream() == video_ctx.video_stream_index {
-                    video_ctx
-                        .decoder
-                        .send_packet(&packet)
-                        .map_err(|err| format!("send packet failed: {err}"))?;
+                    video_demux_packets = video_demux_packets.saturating_add(1);
+                    video_packets_since_last_key = video_packets_since_last_key.saturating_add(1);
+                    video_demux_bytes =
+                        video_demux_bytes.saturating_add(u64::try_from(packet.size()).unwrap_or(0));
+                    if packet.is_key() {
+                        video_demux_key_packets = video_demux_key_packets.saturating_add(1);
+                        if let Some(pts_seconds) = packet
+                            .pts()
+                            .map(|pts| (pts as f64) * f64::from(video_ctx.video_time_base))
+                            .filter(|v| v.is_finite() && *v >= 0.0)
+                        {
+                            if let Some(last_key_pts) = last_video_key_pts_seconds {
+                                let key_interval = (pts_seconds - last_key_pts).max(0.0);
+                                if key_interval > 0.0 {
+                                    video_key_intervals_seconds.push(key_interval);
+                                }
+                            }
+                            last_video_key_pts_seconds = Some(pts_seconds);
+                        }
+                        let key_gap_packets = video_packets_since_last_key.max(1);
+                        if video_keyint_ema_packets > 0.0
+                            && (key_gap_packets as f64) < video_keyint_ema_packets * 0.6
+                        {
+                            video_scene_cut_events = video_scene_cut_events.saturating_add(1);
+                        }
+                        video_keyint_ema_packets = if video_keyint_ema_packets <= 0.0 {
+                            key_gap_packets as f64
+                        } else {
+                            video_keyint_ema_packets * 0.85 + (key_gap_packets as f64) * 0.15
+                        };
+                        video_packets_since_last_key = 0;
+                    }
+                    let window_elapsed = video_demux_window_start.elapsed();
+                    if window_elapsed >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS) {
+                        let seconds = window_elapsed.as_secs_f64().max(1e-6);
+                        let packet_rate = (video_demux_packets as f64) / seconds;
+                        let bitrate_mbps = ((video_demux_bytes as f64) * 8.0) / seconds / 1_000_000.0;
+                        let key_ratio = if video_demux_packets > 0 {
+                            (video_demux_key_packets as f64) * 100.0 / (video_demux_packets as f64)
+                        } else {
+                            0.0
+                        };
+                        let keyint_est = if video_demux_key_packets > 0 {
+                            (video_demux_packets as f64) / (video_demux_key_packets as f64)
+                        } else {
+                            0.0
+                        };
+                        emit_debug(
+                            app,
+                            "video_demux",
+                            format!(
+                                "packet_rate={:.2}pps bitrate≈{:.3}Mbps key_ratio={:.2}% keyint≈{:.1}pkts packets={} bytes={}",
+                                packet_rate,
+                                bitrate_mbps,
+                                key_ratio,
+                                keyint_est,
+                                video_demux_packets,
+                                video_demux_bytes
+                            ),
+                        );
+                        emit_debug(
+                            app,
+                            "video_gop",
+                            if video_key_intervals_seconds.is_empty() {
+                                format!(
+                                    "keyint_ema≈{:.2}pkts scene_cut_events={} key_packets={} keyint_s_p50=n/a keyint_s_p95=n/a",
+                                    video_keyint_ema_packets,
+                                    video_scene_cut_events,
+                                    video_demux_key_packets
+                                )
+                            } else {
+                                let mut sorted_intervals = video_key_intervals_seconds.clone();
+                                sorted_intervals
+                                    .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                                let p50 = percentile_from_sorted(&sorted_intervals, 50.0);
+                                let p95 = percentile_from_sorted(&sorted_intervals, 95.0);
+                                format!(
+                                    "keyint_ema≈{:.2}pkts scene_cut_events={} key_packets={} keyint_s_p50={:.3}s keyint_s_p95={:.3}s samples={}",
+                                    video_keyint_ema_packets,
+                                    video_scene_cut_events,
+                                    video_demux_key_packets,
+                                    p50,
+                                    p95,
+                                    sorted_intervals.len()
+                                )
+                            },
+                        );
+                        video_demux_window_start = Instant::now();
+                        video_demux_packets = 0;
+                        video_demux_key_packets = 0;
+                        video_demux_bytes = 0;
+                    }
+                    if let Err(err) = video_ctx.decoder.send_packet(&packet) {
+                        emit_debug(
+                            app,
+                            "decode_error_detail",
+                            format!("video_send_packet_failed err={err}"),
+                        );
+                        return Err(format!("send packet failed: {err}"));
+                    }
                     let mut drain_ctx = DrainFramesContext {
                         app,
                         renderer,
@@ -513,16 +707,31 @@ pub(super) fn decode_and_emit_stream(
                         process_metrics: &mut process_metrics,
                         audio_allowed_lead_seconds,
                         network_read_bps: net_read_bps,
+                        video_ts_window_start: &mut video_ts_window_start,
+                        video_ts_samples: &mut video_ts_samples,
+                        video_pts_missing: &mut video_pts_missing,
+                        video_pts_backtrack: &mut video_pts_backtrack,
+                        video_pts_jitter_abs_sum_ms: &mut video_pts_jitter_abs_sum_ms,
+                        video_pts_jitter_max_ms: &mut video_pts_jitter_max_ms,
+                        video_frame_type_window_start: &mut video_frame_type_window_start,
+                        video_frame_type_i: &mut video_frame_type_i,
+                        video_frame_type_p: &mut video_frame_type_p,
+                        video_frame_type_b: &mut video_frame_type_b,
+                        video_frame_type_other: &mut video_frame_type_other,
                     };
                     drain_frames(&mut drain_ctx)?;
                     continue;
                 }
                 if let Some(audio_state) = audio_pipeline.as_mut() {
                     if packet.stream() == audio_state.stream_index {
-                        audio_state
-                            .decoder
-                            .send_packet(&packet)
-                            .map_err(|err| format!("send audio packet failed: {err}"))?;
+                        if let Err(err) = audio_state.decoder.send_packet(&packet) {
+                            emit_debug(
+                                app,
+                                "decode_error_detail",
+                                format!("audio_send_packet_failed err={err}"),
+                            );
+                            return Err(format!("send audio packet failed: {err}"));
+                        }
                         drain_audio_frames(
                             app,
                             audio_state,
@@ -585,6 +794,17 @@ pub(super) fn decode_and_emit_stream(
         process_metrics: &mut process_metrics,
         audio_allowed_lead_seconds: AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT,
         network_read_bps: net_read_bps,
+        video_ts_window_start: &mut video_ts_window_start,
+        video_ts_samples: &mut video_ts_samples,
+        video_pts_missing: &mut video_pts_missing,
+        video_pts_backtrack: &mut video_pts_backtrack,
+        video_pts_jitter_abs_sum_ms: &mut video_pts_jitter_abs_sum_ms,
+        video_pts_jitter_max_ms: &mut video_pts_jitter_max_ms,
+        video_frame_type_window_start: &mut video_frame_type_window_start,
+        video_frame_type_i: &mut video_frame_type_i,
+        video_frame_type_p: &mut video_frame_type_p,
+        video_frame_type_b: &mut video_frame_type_b,
+        video_frame_type_other: &mut video_frame_type_other,
     };
     drain_frames(&mut drain_ctx)?;
     if let Some(audio_state) = audio_pipeline.as_mut() {
@@ -697,17 +917,45 @@ struct DrainFramesContext<'a> {
     process_metrics: &'a mut ProcessMetricsSampler,
     audio_allowed_lead_seconds: f64,
     network_read_bps: Option<f64>,
+    video_ts_window_start: &'a mut Instant,
+    video_ts_samples: &'a mut u64,
+    video_pts_missing: &'a mut u64,
+    video_pts_backtrack: &'a mut u64,
+    video_pts_jitter_abs_sum_ms: &'a mut f64,
+    video_pts_jitter_max_ms: &'a mut f64,
+    video_frame_type_window_start: &'a mut Instant,
+    video_frame_type_i: &'a mut u64,
+    video_frame_type_p: &'a mut u64,
+    video_frame_type_b: &'a mut u64,
+    video_frame_type_other: &'a mut u64,
 }
 
 fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), String> {
     let mut decoded = frame::Video::empty();
-    while ctx.decoder.receive_frame(&mut decoded).is_ok() {
+    while let Ok(()) = ctx.decoder.receive_frame(&mut decoded) {
         let frame_cost_start = Instant::now();
         if ctx.stop_flag.load(Ordering::Relaxed) {
             return Ok(());
         }
+        let pict_type = {
+            // SAFETY: decoded frame pointer is valid while `decoded` is alive; read-only access.
+            unsafe { (*decoded.as_ptr()).pict_type }
+        };
+        if pict_type == ffi::AVPictureType::AV_PICTURE_TYPE_I {
+            *ctx.video_frame_type_i = ctx.video_frame_type_i.saturating_add(1);
+        } else if pict_type == ffi::AVPictureType::AV_PICTURE_TYPE_P {
+            *ctx.video_frame_type_p = ctx.video_frame_type_p.saturating_add(1);
+        } else if pict_type == ffi::AVPictureType::AV_PICTURE_TYPE_B {
+            *ctx.video_frame_type_b = ctx.video_frame_type_b.saturating_add(1);
+        } else {
+            *ctx.video_frame_type_other = ctx.video_frame_type_other.saturating_add(1);
+        }
         let hinted_seconds =
             timestamp_to_seconds(decoded.timestamp(), decoded.pts(), ctx.video_time_base);
+        *ctx.video_ts_samples = ctx.video_ts_samples.saturating_add(1);
+        if decoded.pts().is_none() {
+            *ctx.video_pts_missing = ctx.video_pts_missing.saturating_add(1);
+        }
         let hinted_valid = hinted_seconds.filter(|v| v.is_finite() && *v >= 0.0);
         if let (Some(target), Some(hint)) = (*ctx.active_seek_target_seconds, hinted_valid) {
             // FFmpeg seek usually lands on/near keyframe before target; drop preroll frames.
@@ -776,6 +1024,16 @@ fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), String> {
         if let Some(prev) = *ctx.last_video_pts_seconds {
             let gap = estimated_pts - prev;
             let expected = ctx.playback_clock.frame_duration.as_secs_f64();
+            if gap < 0.0 {
+                *ctx.video_pts_backtrack = ctx.video_pts_backtrack.saturating_add(1);
+            }
+            if expected > 0.0 {
+                let jitter_ms = ((gap - expected).abs()) * 1000.0;
+                *ctx.video_pts_jitter_abs_sum_ms += jitter_ms;
+                if jitter_ms > *ctx.video_pts_jitter_max_ms {
+                    *ctx.video_pts_jitter_max_ms = jitter_ms;
+                }
+            }
             if gap.is_finite() && gap > expected * 1.8 {
                 emit_debug(
                     ctx.app,
@@ -816,9 +1074,22 @@ fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), String> {
             let audio_drift = audio_now.map(|a| estimated_pts - a);
             emit_debug(
                 ctx.app,
+                "av_sync",
+                format!(
+                    "a_minus_v={:.3}ms audio_clock={} video_pts={:.3}s queue_depth={}",
+                    audio_drift.unwrap_or(0.0) * 1000.0,
+                    audio_now
+                        .map(|v| format!("{v:.3}s"))
+                        .unwrap_or_else(|| "n/a".to_string()),
+                    estimated_pts.max(0.0),
+                    renderer_metrics.queue_depth
+                ),
+            );
+            emit_debug(
+                ctx.app,
                 "video_pipeline",
                 format!(
-                    "pts={:.3}s queue_depth={} clock={:.3}s rate={:.2} output={}x{} decode_avg={:.2}ms decode_max={:.2}ms samples={}",
+                    "pts={:.3}s queue_depth={} clock={:.3}s rate={:.2} output={}x{} decode_avg={:.2}ms decode_max={:.2}ms decode_p50={:.2}ms decode_p95={:.2}ms decode_p99={:.2}ms samples={}",
                     estimated_pts.max(0.0),
                     renderer_metrics.queue_depth,
                     *ctx.current_position_seconds,
@@ -827,9 +1098,75 @@ fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), String> {
                     ctx.output_height,
                     perf_snapshot.as_ref().map(|v| v.avg_ms).unwrap_or(0.0),
                     perf_snapshot.as_ref().map(|v| v.max_ms).unwrap_or(0.0),
+                    perf_snapshot.as_ref().map(|v| v.p50_ms).unwrap_or(0.0),
+                    perf_snapshot.as_ref().map(|v| v.p95_ms).unwrap_or(0.0),
+                    perf_snapshot.as_ref().map(|v| v.p99_ms).unwrap_or(0.0),
                     perf_snapshot.as_ref().map(|v| v.samples).unwrap_or(0),
                 ),
             );
+            emit_debug(
+                ctx.app,
+                "decode_cost_quantiles",
+                format!(
+                    "p50={:.3}ms p95={:.3}ms p99={:.3}ms avg={:.3}ms max={:.3}ms samples={}",
+                    perf_snapshot.as_ref().map(|v| v.p50_ms).unwrap_or(0.0),
+                    perf_snapshot.as_ref().map(|v| v.p95_ms).unwrap_or(0.0),
+                    perf_snapshot.as_ref().map(|v| v.p99_ms).unwrap_or(0.0),
+                    perf_snapshot.as_ref().map(|v| v.avg_ms).unwrap_or(0.0),
+                    perf_snapshot.as_ref().map(|v| v.max_ms).unwrap_or(0.0),
+                    perf_snapshot.as_ref().map(|v| v.samples).unwrap_or(0),
+                ),
+            );
+            let ts_elapsed = ctx.video_ts_window_start.elapsed();
+            if ts_elapsed >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS) {
+                let samples = (*ctx.video_ts_samples).max(1);
+                let missing_ratio = (*ctx.video_pts_missing as f64) * 100.0 / (samples as f64);
+                let avg_jitter_ms = *ctx.video_pts_jitter_abs_sum_ms / (samples as f64);
+                emit_debug(
+                    ctx.app,
+                    "video_timestamps",
+                    format!(
+                        "samples={} pts_missing={:.2}% backtrack={} jitter_avg={:.3}ms jitter_max={:.3}ms",
+                        samples,
+                        missing_ratio,
+                        *ctx.video_pts_backtrack,
+                        avg_jitter_ms,
+                        *ctx.video_pts_jitter_max_ms
+                    ),
+                );
+                *ctx.video_ts_window_start = Instant::now();
+                *ctx.video_ts_samples = 0;
+                *ctx.video_pts_missing = 0;
+                *ctx.video_pts_backtrack = 0;
+                *ctx.video_pts_jitter_abs_sum_ms = 0.0;
+                *ctx.video_pts_jitter_max_ms = 0.0;
+            }
+            let frame_type_elapsed = ctx.video_frame_type_window_start.elapsed();
+            if frame_type_elapsed >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS) {
+                let total = *ctx.video_frame_type_i
+                    + *ctx.video_frame_type_p
+                    + *ctx.video_frame_type_b
+                    + *ctx.video_frame_type_other;
+                if total > 0 {
+                    emit_debug(
+                        ctx.app,
+                        "video_frame_types",
+                        format!(
+                            "I={:.1}% P={:.1}% B={:.1}% other={:.1}% samples={}",
+                            (*ctx.video_frame_type_i as f64) * 100.0 / (total as f64),
+                            (*ctx.video_frame_type_p as f64) * 100.0 / (total as f64),
+                            (*ctx.video_frame_type_b as f64) * 100.0 / (total as f64),
+                            (*ctx.video_frame_type_other as f64) * 100.0 / (total as f64),
+                            total
+                        ),
+                    );
+                }
+                *ctx.video_frame_type_window_start = Instant::now();
+                *ctx.video_frame_type_i = 0;
+                *ctx.video_frame_type_p = 0;
+                *ctx.video_frame_type_b = 0;
+                *ctx.video_frame_type_other = 0;
+            }
             emit_telemetry_payloads(
                 ctx.app,
                 MediaTelemetryPayload {
@@ -894,6 +1231,7 @@ struct AudioStats {
     packets: u64,
     decoded_frames: u64,
     queued_samples: u64,
+    underrun_count: u64,
     last_debug_instant: Option<Instant>,
 }
 
@@ -918,11 +1256,15 @@ struct VideoPerfWindow {
     samples: u64,
     total_micros: u128,
     max_micros: u64,
+    cost_samples_ms: Vec<f64>,
 }
 
 struct VideoPerfSnapshot {
     avg_ms: f64,
     max_ms: f64,
+    p50_ms: f64,
+    p95_ms: f64,
+    p99_ms: f64,
     samples: u64,
 }
 
@@ -987,6 +1329,9 @@ impl VideoFramePipeline {
             .perf_window
             .max_micros
             .max(u64::try_from(micros).unwrap_or(u64::MAX));
+        self.perf_window
+            .cost_samples_ms
+            .push((micros as f64) / 1000.0);
     }
 
     fn take_perf_snapshot(&mut self) -> Option<VideoPerfSnapshot> {
@@ -996,10 +1341,18 @@ impl VideoFramePipeline {
         let samples = self.perf_window.samples;
         let avg_micros = (self.perf_window.total_micros as f64) / (samples as f64);
         let max_micros = self.perf_window.max_micros as f64;
+        let mut sorted_costs_ms = self.perf_window.cost_samples_ms.clone();
+        sorted_costs_ms.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let p50_ms = percentile_from_sorted(&sorted_costs_ms, 50.0);
+        let p95_ms = percentile_from_sorted(&sorted_costs_ms, 95.0);
+        let p99_ms = percentile_from_sorted(&sorted_costs_ms, 99.0);
         self.perf_window = VideoPerfWindow::default();
         Some(VideoPerfSnapshot {
             avg_ms: avg_micros / 1000.0,
             max_ms: max_micros / 1000.0,
+            p50_ms,
+            p95_ms,
+            p99_ms,
             samples,
         })
     }
@@ -1043,6 +1396,51 @@ impl VideoFramePipeline {
                 app,
                 "color_profile",
                 "lock color profile from first frame".to_string(),
+            );
+            emit_debug(
+                app,
+                "video_frame_format",
+                {
+                    let (sar_num, sar_den, interlaced, top_field_first) = {
+                        // SAFETY: frame pointer is valid while `frame` is alive; read-only access.
+                        let raw = unsafe { &*frame.as_ptr() };
+                        (
+                            raw.sample_aspect_ratio.num,
+                            raw.sample_aspect_ratio.den,
+                            raw.interlaced_frame != 0,
+                            raw.top_field_first != 0,
+                        )
+                    };
+                    let sar = if sar_num > 0 && sar_den > 0 {
+                        format!("{sar_num}:{sar_den}")
+                    } else {
+                        "n/a".to_string()
+                    };
+                    let dar = if sar_num > 0 && sar_den > 0 && frame.height() > 0 {
+                        ((frame.width() as f64) * (sar_num as f64) / (sar_den as f64))
+                            / (frame.height() as f64)
+                    } else if frame.height() > 0 {
+                        (frame.width() as f64) / (frame.height() as f64)
+                    } else {
+                        0.0
+                    };
+                    let scan_type = if interlaced {
+                        if top_field_first { "interlaced_tff" } else { "interlaced_bff" }
+                    } else {
+                        "progressive"
+                    };
+                    format!(
+                        "pix_fmt={:?} color_space={:?} color_range={:?} sar={} dar≈{:.3} scan={} size={}x{}",
+                        frame.format(),
+                        frame.color_space(),
+                        frame.color_range(),
+                        sar,
+                        dar,
+                        scan_type,
+                        frame.width(),
+                        frame.height()
+                    )
+                },
             );
             current_profile
         }
@@ -1230,6 +1628,9 @@ fn drain_audio_frames(
             .output
             .player
             .set_speed(clamp_playback_rate(timing_controls.playback_rate()));
+        if audio_state.output.player.len() == 0 {
+            audio_state.stats.underrun_count = audio_state.stats.underrun_count.saturating_add(1);
+        }
         if audio_state.output.player.is_paused() {
             audio_state.output.player.play();
             emit_debug(
@@ -1281,12 +1682,25 @@ fn drain_audio_frames(
             audio_state.stats.last_debug_instant = Some(now);
             emit_debug(
                 app,
+                "audio_output",
+                format!(
+                    "volume={:.2} muted={} rate={:.2} queue_sources={}",
+                    audio_state.output.controls.volume(),
+                    audio_state.output.controls.muted(),
+                    timing_controls.playback_rate(),
+                    audio_state.output.player.len()
+                ),
+            );
+            emit_debug(
+                app,
                 "audio_stats",
                 format!(
-                    "packets={} frames={} queued_samples={} rate={:.2} channels={} samples_per_ch={} bytes={} pts={}",
+                    "packets={} frames={} queued_samples={} underruns={} queue_sources={} rate={:.2} channels={} samples_per_ch={} bytes={} pts={}",
                     audio_state.stats.packets,
                     audio_state.stats.decoded_frames,
                     audio_state.stats.queued_samples,
+                    audio_state.stats.underrun_count,
+                    audio_state.output.player.len(),
                     timing_controls.playback_rate(),
                     channels,
                     samples_per_channel,
@@ -1301,4 +1715,19 @@ fn drain_audio_frames(
         }
     }
     Ok(())
+}
+
+fn percentile_from_sorted(sorted: &[f64], percentile: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let p = percentile.clamp(0.0, 100.0) / 100.0;
+    let pos = p * ((sorted.len() - 1) as f64);
+    let lower = pos.floor() as usize;
+    let upper = pos.ceil() as usize;
+    if lower == upper {
+        return sorted[lower];
+    }
+    let weight = pos - (lower as f64);
+    sorted[lower] * (1.0 - weight) + sorted[upper] * weight
 }
