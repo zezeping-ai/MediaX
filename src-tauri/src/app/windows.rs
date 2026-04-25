@@ -24,7 +24,7 @@ pub fn show_preferences_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         PREFERENCES_WINDOW_LABEL,
         tauri::WebviewUrl::App("/#/preferences".into()),
     )
-    .title("偏好设置")
+    .title("系统设置")
     .inner_size(520.0, 420.0)
     .resizable(true)
     .visible(true)
