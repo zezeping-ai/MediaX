@@ -64,9 +64,6 @@ const mediaInfoGroups = computed(() => {
   ].filter((group) => group.rows.length > 0);
 });
 
-const resourceSummary = computed(() => props.debugSnapshot?.telemetry_resources || "");
-const renderSummary = computed(() => props.debugSnapshot?.telemetry_render || "");
-
 const realtimeDebugSnapshot = computed<Record<string, string>>(() => {
   const snapshot = props.debugSnapshot || {};
   const record: Record<string, string> = {};
@@ -84,9 +81,9 @@ const {
   decodeBanner,
   debugGroups,
   currentFrameSections,
-  overviewGroups,
-  streamGroups,
-  timingGroups,
+  overviewSections,
+  streamSections,
+  timingSections,
   processStages,
 } = usePlayerDebugOverlay(
   toRef(props, "playback"),
@@ -164,13 +161,11 @@ watch(
           :mode="decodeBanner.mode"
           :mode-label="decodeBanner.modeLabel"
           :error="decodeBanner.error"
-          :resource-summary="resourceSummary"
-          :render-summary="renderSummary"
         />
         <DebugGroupSections
-          title="输出与运行概览"
-          :groups="overviewGroups"
-          empty-text="等待输出与运行概览数据..."
+          title="会话与解码概览"
+          :groups="overviewSections"
+          empty-text="等待会话与解码概览数据..."
         />
       </template>
 
@@ -180,16 +175,16 @@ watch(
 
       <template v-else-if="activeTab === 'stream'">
         <DebugGroupSections
-          title="输入源 / 流信息 / 解码链"
-          :groups="streamGroups"
+          title="输入源 / 流结构 / 解码链"
+          :groups="streamSections"
           empty-text="等待输入源与解码链数据..."
         />
       </template>
 
       <template v-else-if="activeTab === 'timing'">
         <DebugGroupSections
-          title="时序 / 同步 / 风险"
-          :groups="timingGroups"
+          title="同步质量 / 帧节奏 / 性能预算"
+          :groups="timingSections"
           empty-text="等待时序与同步风险数据..."
         />
       </template>

@@ -4,11 +4,7 @@ defineProps<{
   mode: string;
   modeLabel: string;
   error: string | null | undefined;
-  resourceSummary: string;
-  renderSummary: string;
 }>();
-
-import ResourcesPanel from "./ResourcesPanel.vue";
 </script>
 
 <template>
@@ -20,6 +16,5 @@ import ResourcesPanel from "./ResourcesPanel.vue";
       <span class="text-slate-100/95">{{ modeLabel }} ({{ mode }})</span>
       <span v-if="error" class="text-rose-200">err: {{ error }}</span>
     </div>
-    <ResourcesPanel :resource-summary="resourceSummary" :render-summary="renderSummary" />
   </div>
 </template>

@@ -106,6 +106,12 @@ export interface CurrentFrameSection {
   rows: DebugRow[];
 }
 
+export interface DebugSection {
+  id: string;
+  title: string;
+  rows: DebugRow[];
+}
+
 const DEBUG_GROUP_ORDER = ["input", "stream", "decode", "video", "audio", "timing", "error", "other"] as const;
 
 export function usePlayerDebugOverlay(
@@ -167,31 +173,204 @@ export function usePlayerDebugOverlay(
     })).filter((group) => group.rows.length > 0);
   });
 
-  const groupsById = computed(() => {
-    const map = new Map<string, DebugGroup>();
-    for (const group of debugGroups.value) {
-      map.set(group.id, group);
+  const overviewSections = computed((): DebugSection[] => {
+    const telemetry = latestTelemetry?.value;
+    const snapshot = debugSnapshot.value;
+    const sessionRows: DebugRow[] = [];
+    const decodeRows: DebugRow[] = [];
+    const transferRows: DebugRow[] = [];
+
+    const status = playback.value?.status;
+    if (status) {
+      sessionRows.push({ key: "status", label: "status", value: status });
     }
-    return map;
+    const positionSeconds = playback.value?.position_seconds;
+    if (isFiniteNumber(positionSeconds)) {
+      sessionRows.push({
+        key: "position_seconds",
+        label: "position",
+        value: `${positionSeconds.toFixed(3)}s`,
+      });
+    }
+    const sourceFps = telemetry?.source_fps;
+    if (isFiniteNumber(sourceFps) && sourceFps > 0) {
+      sessionRows.push({
+        key: "source_fps",
+        label: "source fps",
+        value: `${sourceFps.toFixed(2)}fps`,
+      });
+    }
+
+    decodeRows.push({
+      key: "decode_mode",
+      label: "mode",
+      value: formatHwModeLabel(playback.value?.hw_decode_mode || "auto"),
+    });
+    decodeRows.push({
+      key: "decode_active",
+      label: "active",
+      value: playback.value?.hw_decode_active ? "hardware" : "software",
+    });
+    if (playback.value?.hw_decode_backend) {
+      decodeRows.push({
+        key: "hw_decode_backend",
+        label: "backend",
+        value: playback.value.hw_decode_backend,
+      });
+    }
+    if (snapshot.hw_decode_decision) {
+      decodeRows.push({
+        key: "hw_decode_decision",
+        label: "decision",
+        value: snapshot.hw_decode_decision,
+      });
+    }
+    if (snapshot.hw_decode_fallback) {
+      decodeRows.push({
+        key: "hw_decode_fallback",
+        label: "fallback",
+        value: snapshot.hw_decode_fallback,
+      });
+    }
+    if (playback.value?.hw_decode_error) {
+      decodeRows.push({
+        key: "hw_decode_error",
+        label: "reason",
+        value: playback.value.hw_decode_error,
+      });
+    }
+
+    const networkRead = telemetry?.network_read_bytes_per_second;
+    if (isFiniteNumber(networkRead)) {
+      transferRows.push({
+        key: "network_read_bytes_per_second",
+        label: "read",
+        value: formatBytesPerSecond(networkRead),
+      });
+    }
+    const requiredRead = telemetry?.media_required_bytes_per_second;
+    if (isFiniteNumber(requiredRead) && requiredRead > 0) {
+      transferRows.push({
+        key: "media_required_bytes_per_second",
+        label: "required",
+        value: formatBytesPerSecond(requiredRead),
+      });
+    }
+    const sustainRatio = telemetry?.network_sustain_ratio;
+    if (isFiniteNumber(sustainRatio)) {
+      transferRows.push({
+        key: "network_sustain_ratio",
+        label: "sustain",
+        value: `${sustainRatio.toFixed(2)}x`,
+      });
+    }
+    const processCpu = telemetry?.process_cpu_percent;
+    if (isFiniteNumber(processCpu)) {
+      transferRows.push({
+        key: "process_cpu_percent",
+        label: "cpu",
+        value: `${processCpu.toFixed(1)}%`,
+      });
+    }
+    const processMemory = telemetry?.process_memory_mb;
+    if (isFiniteNumber(processMemory)) {
+      transferRows.push({
+        key: "process_memory_mb",
+        label: "memory",
+        value: `${processMemory.toFixed(1)}MB`,
+      });
+    }
+
+    return [
+      { id: "session", title: "会话", rows: sessionRows },
+      { id: "decode", title: "解码策略", rows: decodeRows },
+      { id: "transfer", title: "传输与进程", rows: transferRows },
+    ].filter((section) => section.rows.length > 0);
   });
 
-  const overviewGroups = computed(() =>
-    ["video", "audio"]
-      .map((id) => groupsById.value.get(id))
-      .filter((group): group is DebugGroup => Boolean(group)),
-  );
+  const streamSections = computed((): DebugSection[] => {
+    const snapshot = debugSnapshot.value;
+    const inputRows: DebugRow[] = [];
+    const videoRows: DebugRow[] = [];
+    const audioRows: DebugRow[] = [];
 
-  const streamGroups = computed(() =>
-    ["input", "stream", "decode"]
-      .map((id) => groupsById.value.get(id))
-      .filter((group): group is DebugGroup => Boolean(group)),
-  );
+    pushSnapshotRow(inputRows, snapshot, "open", "source");
+    pushSnapshotRow(inputRows, snapshot, "video_demux", "demux");
+    pushSnapshotRow(inputRows, snapshot, "video_gop", "gop");
 
-  const timingGroups = computed(() =>
-    ["timing", "error"]
-      .map((id) => groupsById.value.get(id))
-      .filter((group): group is DebugGroup => Boolean(group)),
-  );
+    pushSnapshotRow(videoRows, snapshot, "video_format", "container");
+    pushSnapshotRow(videoRows, snapshot, "video_codec_profile", "codec");
+    pushSnapshotRow(videoRows, snapshot, "video_stream", "stream");
+    pushSnapshotRow(videoRows, snapshot, "video_frame_format", "frame fmt");
+    pushSnapshotRow(videoRows, snapshot, "decoder_ready", "decoder");
+    pushSnapshotRow(videoRows, snapshot, "color_profile", "color");
+
+    pushSnapshotRow(audioRows, snapshot, "audio", "stream");
+    pushSnapshotRow(audioRows, snapshot, "audio_format", "format");
+    pushSnapshotRow(audioRows, snapshot, "audio_pipeline_ready", "pipeline");
+    pushSnapshotRow(audioRows, snapshot, "audio_output", "output");
+
+    return [
+      { id: "input", title: "输入与探测", rows: inputRows },
+      { id: "video-chain", title: "视频链路", rows: videoRows },
+      { id: "audio-chain", title: "音频链路", rows: audioRows },
+    ].filter((section) => section.rows.length > 0);
+  });
+
+  const timingSections = computed((): DebugSection[] => {
+    const telemetry = latestTelemetry?.value;
+    const snapshot = debugSnapshot.value;
+    const syncRows: DebugRow[] = [];
+    const cadenceRows: DebugRow[] = [];
+    const perfRows: DebugRow[] = [];
+
+    pushSnapshotRow(syncRows, snapshot, "av_sync", "av sync");
+    pushSnapshotRow(syncRows, snapshot, "video_timestamps", "timestamps");
+    if (isFiniteNumber(telemetry?.audio_drift_seconds)) {
+      syncRows.push({
+        key: "audio_drift_seconds_window",
+        label: "drift now",
+        value: `${((telemetry?.audio_drift_seconds ?? 0) * 1000).toFixed(2)}ms`,
+      });
+    }
+
+    pushSnapshotRow(cadenceRows, snapshot, "video_fps", "render fps");
+    pushSnapshotRow(cadenceRows, snapshot, "video_gap", "gap");
+    pushSnapshotRow(cadenceRows, snapshot, "video_frame_types", "frame mix");
+    if (isFiniteNumber(telemetry?.source_fps) && telemetry!.source_fps > 0) {
+      cadenceRows.push({
+        key: "frame_budget_ms",
+        label: "frame budget",
+        value: `${(1000 / telemetry!.source_fps).toFixed(2)}ms`,
+      });
+    }
+
+    pushSnapshotRow(perfRows, snapshot, "decode_cost_quantiles", "decode");
+    pushSnapshotRow(perfRows, snapshot, "telemetry_render", "render");
+    pushSnapshotRow(perfRows, snapshot, "telemetry_resources", "resources");
+    if (isFiniteNumber(telemetry?.decode_avg_frame_cost_ms) && isFiniteNumber(telemetry?.source_fps) && telemetry!.source_fps > 0) {
+      const budgetMs = 1000 / telemetry!.source_fps;
+      perfRows.push({
+        key: "decode_headroom_ms",
+        label: "decode room",
+        value: `${(budgetMs - (telemetry?.decode_avg_frame_cost_ms ?? 0)).toFixed(2)}ms`,
+      });
+    }
+    if (isFiniteNumber(telemetry?.render_estimated_cost_ms) && isFiniteNumber(telemetry?.source_fps) && telemetry!.source_fps > 0) {
+      const budgetMs = 1000 / telemetry!.source_fps;
+      perfRows.push({
+        key: "render_headroom_ms",
+        label: "render room",
+        value: `${(budgetMs - (telemetry?.render_estimated_cost_ms ?? 0)).toFixed(2)}ms`,
+      });
+    }
+
+    return [
+      { id: "sync", title: "同步质量", rows: syncRows },
+      { id: "cadence", title: "节奏与帧型", rows: cadenceRows },
+      { id: "perf", title: "预算与性能", rows: perfRows },
+    ].filter((section) => section.rows.length > 0);
+  });
 
   const currentFrameSections = computed((): CurrentFrameSection[] => {
     const telemetry = latestTelemetry?.value;
@@ -421,15 +600,37 @@ export function usePlayerDebugOverlay(
     resourceSummary,
     debugGroups,
     currentFrameSections,
-    overviewGroups,
-    streamGroups,
-    timingGroups,
+    overviewSections,
+    streamSections,
+    timingSections,
     processStages,
   };
 }
 
 function isFiniteNumber(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function pushSnapshotRow(rows: DebugRow[], snapshot: Record<string, string>, key: string, label = key) {
+  const value = snapshot[key];
+  if (!value) {
+    return;
+  }
+  rows.push({ key, label, value });
+}
+
+function formatBytesPerSecond(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 B/s";
+  }
+  const units = ["B/s", "KB/s", "MB/s", "GB/s"];
+  let size = value;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toFixed(size >= 100 ? 0 : size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
 function formatDebugLabel(key: string): string {
