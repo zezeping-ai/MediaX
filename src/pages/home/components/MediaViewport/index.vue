@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { type PlaybackState } from "@/modules/media-types";
+import { type MediaTelemetryPayload, type PlaybackState } from "@/modules/media-types";
 import { usePreferences } from "@/modules/preferences";
 import TransferStatusOverlay from "./TransferStatusOverlay.vue";
 import LoadingProcessOverlay from "./PlayerDebugOverlay/LoadingProcessOverlay.vue";
@@ -13,7 +13,9 @@ const props = defineProps<{
   playback: PlaybackState | null;
   debugSnapshot: Record<string, string>;
   debugTimeline: Array<{ stage: string; message: string; at_ms: number }>;
+  debugStageSnapshot: Record<string, { message: string; at_ms: number }>;
   firstFrameAtMs: number | null;
+  latestTelemetry: MediaTelemetryPayload | null;
   mediaInfoSnapshot: Record<string, string>;
   networkReadBytesPerSecond: number | null;
   networkSustainRatio: number | null;
@@ -59,12 +61,6 @@ const shouldShowLoadingProcessOverlay = computed(
     && Boolean(overlaySource.value)
     && isWaitingForFirstFrame.value,
 );
-const activeDebugTimeline = computed(() => {
-  if (!props.firstFrameAtMs) {
-    return [];
-  }
-  return props.debugTimeline.filter((item) => item.at_ms >= props.firstFrameAtMs!);
-});
 watch(
   () => props.source,
   (nextSource) => {
@@ -102,7 +98,9 @@ watch(
       :source="source"
       :playback="playback"
       :debug-snapshot="debugSnapshot"
-      :debug-timeline="activeDebugTimeline"
+      :debug-timeline="debugTimeline"
+      :debug-stage-snapshot="debugStageSnapshot"
+      :latest-telemetry="latestTelemetry"
       :media-info-snapshot="mediaInfoSnapshot"
       @close="debugOverlayOpen = false"
     />

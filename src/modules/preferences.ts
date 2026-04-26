@@ -1,5 +1,6 @@
 import { computed, watchEffect } from "vue";
 import { usePreferredDark, useStorage } from "@vueuse/core";
+import type { HardwareDecodeMode } from "./media-types";
 
 export type ThemePreference = "system" | "dark" | "light";
 export type PlayerVideoScaleMode = "contain" | "cover";
@@ -7,7 +8,7 @@ export type PlayerVideoScaleMode = "contain" | "cover";
 export type Preferences = {
   theme: ThemePreference;
   player: {
-    hwDecodeEnabled: boolean;
+    hwDecodeMode: HardwareDecodeMode;
     parseDebugEnabled: boolean;
     alwaysOnTop: boolean;
     videoScaleMode: PlayerVideoScaleMode;
@@ -19,7 +20,7 @@ export type Preferences = {
 const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
   player: {
-    hwDecodeEnabled: true,
+    hwDecodeMode: "auto",
     // 默认打开：方便定位“打开/解析/解码”阶段的问题
     parseDebugEnabled: true,
     alwaysOnTop: true,
@@ -58,7 +59,7 @@ export function usePreferences() {
       preferences.value = {
         ...preferences.value,
         player: {
-          hwDecodeEnabled: player?.hwDecodeEnabled ?? DEFAULT_PREFERENCES.player.hwDecodeEnabled,
+          hwDecodeMode: resolveStoredHwDecodeMode(player),
           parseDebugEnabled:
             player?.parseDebugEnabled ?? DEFAULT_PREFERENCES.player.parseDebugEnabled,
           alwaysOnTop: player?.alwaysOnTop ?? DEFAULT_PREFERENCES.player.alwaysOnTop,
@@ -96,12 +97,12 @@ export function usePreferences() {
         preferences.value = { ...preferences.value, theme: v };
       },
     }),
-    playerHwDecodeEnabled: computed({
-      get: () => preferences.value.player.hwDecodeEnabled,
-      set: (v: boolean) => {
+    playerHwDecodeMode: computed({
+      get: () => preferences.value.player.hwDecodeMode,
+      set: (v: HardwareDecodeMode) => {
         preferences.value = {
           ...preferences.value,
-          player: { ...preferences.value.player, hwDecodeEnabled: v },
+          player: { ...preferences.value.player, hwDecodeMode: v },
         };
       },
     }),
@@ -151,4 +152,21 @@ export function usePreferences() {
       },
     }),
   };
+}
+
+type LegacyStoredPlayerPreferences = Partial<Preferences["player"]> & {
+  hwDecodeEnabled?: boolean;
+};
+
+function resolveStoredHwDecodeMode(
+  player: Preferences["player"] | LegacyStoredPlayerPreferences | undefined,
+): HardwareDecodeMode {
+  const mode = player?.hwDecodeMode;
+  if (mode === "auto" || mode === "on" || mode === "off") {
+    return mode;
+  }
+  if (player && "hwDecodeEnabled" in player && typeof player.hwDecodeEnabled === "boolean") {
+    return player.hwDecodeEnabled ? "auto" : "off";
+  }
+  return DEFAULT_PREFERENCES.player.hwDecodeMode;
 }

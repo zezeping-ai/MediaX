@@ -20,12 +20,14 @@ pub(crate) struct VideoDecodeContext {
     pub(crate) hw_decode_active: bool,
     pub(crate) hw_decode_backend: Option<String>,
     pub(crate) hw_decode_error: Option<String>,
+    pub(crate) hw_decode_decision: String,
 }
 
 pub(crate) fn open_video_decode_context(
     source: &str,
     hw_mode: HardwareDecodeMode,
     quality_mode: PlaybackQualityMode,
+    software_fallback_reason: Option<&str>,
 ) -> Result<VideoDecodeContext, String> {
     ffmpeg::init().map_err(|err| format!("ffmpeg init failed: {err}"))?;
     let input_ctx = format::input(source).map_err(|err| format!("open media failed: {err}"))?;
@@ -49,17 +51,67 @@ pub(crate) fn open_video_decode_context(
     };
     let mut codec_context = codec::context::Context::from_parameters(input_stream.parameters())
         .map_err(|err| format!("decoder context failed: {err}"))?;
-    let hw_status = configure_hw_decode(&mut codec_context, source, hw_mode)?;
-    let decoder = codec_context
-        .decoder()
-        .video()
-        .map_err(|err| format!("video decoder create failed: {err}"))?;
+    let hw_status = configure_hw_decode(&mut codec_context, hw_mode, software_fallback_reason)?;
+    let decoder = match codec_context.decoder().video() {
+        Ok(decoder) => decoder,
+        Err(err) if hw_mode == HardwareDecodeMode::Auto && hw_status.active => {
+            let fallback_reason =
+                format!("auto fallback to software after decoder open failed: {err}");
+            let mut software_context =
+                codec::context::Context::from_parameters(input_stream.parameters())
+                    .map_err(|ctx_err| format!("decoder context failed: {ctx_err}"))?;
+            let software_status = configure_hw_decode(
+                &mut software_context,
+                HardwareDecodeMode::Off,
+                Some(&fallback_reason),
+            )?;
+            let decoder = software_context
+                .decoder()
+                .video()
+                .map_err(|decode_err| format!("video decoder create failed after fallback: {decode_err}"))?;
+            return finalize_video_decode_context(
+                input_ctx,
+                video_stream_index,
+                stream_time_base,
+                fps_value,
+                duration_seconds,
+                quality_mode,
+                decoder,
+                software_status,
+            );
+        }
+        Err(err) => {
+            return Err(format!("video decoder create failed: {err}"));
+        }
+    };
+    finalize_video_decode_context(
+        input_ctx,
+        video_stream_index,
+        stream_time_base,
+        fps_value,
+        duration_seconds,
+        quality_mode,
+        decoder,
+        hw_status,
+    )
+}
+
+fn finalize_video_decode_context(
+    input_ctx: format::context::Input,
+    video_stream_index: usize,
+    video_time_base: ffmpeg::Rational,
+    fps_value: f64,
+    duration_seconds: f64,
+    quality_mode: PlaybackQualityMode,
+    decoder: ffmpeg::decoder::Video,
+    hw_status: HwDecodeStatus,
+) -> Result<VideoDecodeContext, String> {
     let (output_width, output_height) =
         compute_output_size(decoder.width(), decoder.height(), quality_mode);
     Ok(VideoDecodeContext {
         input_ctx,
         video_stream_index,
-        video_time_base: stream_time_base,
+        video_time_base,
         decoder,
         fps_value,
         duration_seconds,
@@ -68,6 +120,7 @@ pub(crate) fn open_video_decode_context(
         hw_decode_active: hw_status.active,
         hw_decode_backend: hw_status.backend,
         hw_decode_error: hw_status.error,
+        hw_decode_decision: hw_status.decision,
     })
 }
 
@@ -75,6 +128,7 @@ struct HwDecodeStatus {
     active: bool,
     backend: Option<String>,
     error: Option<String>,
+    decision: String,
 }
 
 fn preferred_hw_backends() -> &'static [&'static str] {
@@ -94,21 +148,19 @@ fn preferred_hw_backends() -> &'static [&'static str] {
 
 fn configure_hw_decode(
     codec_context: &mut codec::context::Context,
-    source: &str,
     hw_mode: HardwareDecodeMode,
+    software_fallback_reason: Option<&str>,
 ) -> Result<HwDecodeStatus, String> {
     if hw_mode == HardwareDecodeMode::Off {
         return Ok(HwDecodeStatus {
             active: false,
             backend: None,
-            error: None,
-        });
-    }
-    if should_prefer_software_decode(source, hw_mode) {
-        return Ok(HwDecodeStatus {
-            active: false,
-            backend: None,
-            error: Some("prefer software decode for network HLS source".to_string()),
+            error: software_fallback_reason.map(ToOwned::to_owned),
+            decision: if let Some(reason) = software_fallback_reason {
+                format!("software decode selected: {reason}")
+            } else {
+                "software decode selected by preference".to_string()
+            },
         });
     }
     let mut last_error: Option<String> = None;
@@ -119,6 +171,7 @@ fn configure_hw_decode(
                     active: true,
                     backend: Some((*backend).to_string()),
                     error: None,
+                    decision: format!("hardware decode selected via backend={backend}"),
                 });
             }
             Err(err) => {
@@ -127,31 +180,18 @@ fn configure_hw_decode(
         }
     }
     if hw_mode == HardwareDecodeMode::On {
-        return Err("hardware decode forced but no supported backend available".to_string());
+        let reason = last_error.unwrap_or_else(|| "no supported backend available".to_string());
+        return Err(format!("hardware decode forced but unavailable: {reason}"));
     }
     Ok(HwDecodeStatus {
         active: false,
         backend: None,
-        error: last_error,
+        error: last_error.clone(),
+        decision: match last_error {
+            Some(err) => format!("auto fallback to software before playback start: {err}"),
+            None => "auto fallback to software before playback start".to_string(),
+        },
     })
-}
-
-fn should_prefer_software_decode(source: &str, hw_mode: HardwareDecodeMode) -> bool {
-    if hw_mode != HardwareDecodeMode::Auto {
-        return false;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let normalized = source.trim().to_ascii_lowercase();
-        let is_network = normalized.starts_with("http://") || normalized.starts_with("https://");
-        let is_hls = normalized.contains(".m3u8");
-        return is_network && is_hls;
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = source;
-        false
-    }
 }
 
 fn try_bind_hw_device(

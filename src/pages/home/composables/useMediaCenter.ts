@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useStorage } from "@vueuse/core";
 import { usePreferences } from "@/modules/preferences";
 import { getPlaybackSnapshot } from "@/modules/media-player";
-import type { MediaSnapshot, PlaybackQualityMode } from "@/modules/media-types";
+import type { HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode } from "@/modules/media-types";
 import { useMediaCommands } from "./useMediaCommands";
 import { useMediaErrorMap } from "./useMediaErrorMap";
 import { usePlaybackSettings } from "./usePlaybackSettings";
@@ -18,13 +18,15 @@ type UrlPlaylistItem = {
 };
 
 export function useMediaCenter() {
-  const { playerHwDecodeEnabled, playerAlwaysOnTop, playerVideoScaleMode } = usePreferences();
+  const { playerHwDecodeMode, playerAlwaysOnTop, playerVideoScaleMode } = usePreferences();
   const {
     snapshot,
     currentSource,
     debugSnapshot,
     debugTimeline,
+    debugStageSnapshot,
     firstFrameAtMs,
+    latestTelemetry,
     networkReadBytesPerSecond,
     networkSustainRatio,
     metadataDurationSeconds,
@@ -97,12 +99,11 @@ export function useMediaCenter() {
     updateSnapshot(await getPlaybackSnapshot());
   }
 
-  async function applyHwDecodePreference(enabled: boolean) {
-    const expectedMode = enabled ? "auto" : "off";
-    if (playback.value?.hw_decode_mode === expectedMode) {
+  async function applyHwDecodePreference(mode: HardwareDecodeMode) {
+    if (playback.value?.hw_decode_mode === mode) {
       return;
     }
-    const next = await playbackSettings.applyHwDecode(enabled);
+    const next = await playbackSettings.applyHwDecode(mode);
     if (next) {
       updateSnapshot(next);
     }
@@ -456,7 +457,7 @@ export function useMediaCenter() {
   onMounted(async () => {
     await withBusyState(refreshSnapshot);
     // Ensure backend matches persisted preference.
-    await applyHwDecodePreference(playerHwDecodeEnabled.value);
+    await applyHwDecodePreference(playerHwDecodeMode.value);
     await applyAlwaysOnTopPreference(playerAlwaysOnTop.value);
     await applyVideoScaleModePreference(playerVideoScaleMode.value);
     await refreshCacheRecordingStatus();
@@ -492,9 +493,9 @@ export function useMediaCenter() {
   });
 
   watch(
-    playerHwDecodeEnabled,
-    (enabled) => {
-      void applyHwDecodePreference(enabled);
+    playerHwDecodeMode,
+    (mode) => {
+      void applyHwDecodePreference(mode);
     },
     { immediate: false },
   );
@@ -546,7 +547,9 @@ export function useMediaCenter() {
     recordingNoticeMessage,
     debugSnapshot,
     debugTimeline,
+    debugStageSnapshot,
     firstFrameAtMs,
+    latestTelemetry,
     mediaInfoSnapshot,
     metadataVideoHeight,
     openLocalFileByDialog: () => withBusyState(openLocalFileByDialog),

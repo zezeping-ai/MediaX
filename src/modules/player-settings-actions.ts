@@ -3,10 +3,9 @@ import type { PlayerVideoScaleMode } from "./preferences";
 import type { HardwareDecodeMode, MediaSnapshot } from "./media-types";
 
 export async function applyHwDecodePreference(
-  enabled: boolean,
+  mode: HardwareDecodeMode,
   configureDecoderMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>,
 ) {
-  const mode: HardwareDecodeMode = enabled ? "auto" : "off";
   try {
     return await configureDecoderMode(mode);
   } catch {

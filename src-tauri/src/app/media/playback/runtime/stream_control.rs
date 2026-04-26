@@ -1,4 +1,5 @@
 use crate::app::media::error::MediaErrorCode;
+use crate::app::media::model::HardwareDecodeMode;
 use crate::app::media::playback::events::{
     MediaErrorPayload, MediaEventEnvelope, MEDIA_PLAYBACK_ERROR_EVENT, MEDIA_PROTOCOL_VERSION,
 };
@@ -90,8 +91,16 @@ pub fn start_decode_stream(
     let audio_controls: Arc<AudioControls> = state.audio_controls.clone();
     let timing_controls: Arc<TimingControls> = state.timing_controls.clone();
     let app_handle = app.clone();
+    let requested_hw_mode = {
+        let media_state = app_handle.state::<MediaState>();
+        let playback = media_state
+            .playback
+            .lock()
+            .map_err(|_| "playback state poisoned".to_string())?;
+        playback.hw_decode_mode()
+    };
     let handle = thread::spawn(move || {
-        if let Err(err) = super::decode_and_emit_stream(
+        if let Err(err) = run_decode_stream_with_auto_fallback(
             &app_handle,
             &renderer,
             &source,
@@ -99,6 +108,7 @@ pub fn start_decode_stream(
             &audio_controls,
             &timing_controls,
             stream_generation,
+            requested_hw_mode,
         ) {
             if let Ok(mut playback) = app_handle.state::<MediaState>().playback.lock() {
                 playback.update_hw_decode_status(false, None, Some(err.clone()));
@@ -112,6 +122,69 @@ pub fn start_decode_stream(
         .install_decode_stream_handle(stop_flag, handle)
         .map_err(|err| err.to_string())?;
     Ok(())
+}
+
+fn run_decode_stream_with_auto_fallback(
+    app: &AppHandle,
+    renderer: &RendererState,
+    source: &str,
+    stop_flag: &Arc<AtomicBool>,
+    audio_controls: &Arc<AudioControls>,
+    timing_controls: &Arc<TimingControls>,
+    stream_generation: u32,
+    requested_hw_mode: HardwareDecodeMode,
+) -> Result<(), String> {
+    match super::decode_and_emit_stream(
+        app,
+        renderer,
+        source,
+        stop_flag,
+        audio_controls,
+        timing_controls,
+        stream_generation,
+        requested_hw_mode,
+        None,
+    ) {
+        Ok(()) => Ok(()),
+        Err(err)
+            if requested_hw_mode == HardwareDecodeMode::Auto
+                && should_retry_as_software(app, source, stream_generation) =>
+        {
+            super::emit_debug(
+                app,
+                "hw_decode_fallback",
+                format!("runtime fallback to software decode: {err}"),
+            );
+            super::decode_and_emit_stream(
+                app,
+                renderer,
+                source,
+                stop_flag,
+                audio_controls,
+                timing_controls,
+                stream_generation,
+                HardwareDecodeMode::Off,
+                Some(format!("auto fallback after hardware runtime failure: {err}")),
+            )
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn should_retry_as_software(app: &AppHandle, source: &str, stream_generation: u32) -> bool {
+    if !app
+        .state::<MediaState>()
+        .stream
+        .is_generation_current(stream_generation)
+    {
+        return false;
+    }
+    let media_state = app.state::<MediaState>();
+    let Ok(mut playback) = media_state.playback.lock() else {
+        return false;
+    };
+    let state = playback.state();
+    state.current_path.as_deref() == Some(source) && state.hw_decode_active
 }
 
 pub fn write_latest_stream_position(

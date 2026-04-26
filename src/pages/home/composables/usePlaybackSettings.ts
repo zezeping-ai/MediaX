@@ -20,8 +20,8 @@ interface UsePlaybackSettingsArgs {
 }
 
 export function usePlaybackSettings({ configureDecoderMode, requestPreviewFrame }: UsePlaybackSettingsArgs) {
-  async function applyHwDecode(enabled: boolean) {
-    return applyHwDecodePreference(enabled, configureDecoderMode);
+  async function applyHwDecode(mode: HardwareDecodeMode) {
+    return applyHwDecodePreference(mode, configureDecoderMode);
   }
 
   async function applyAlwaysOnTop(enabled: boolean) {

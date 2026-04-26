@@ -5,9 +5,10 @@ import {
   applyAlwaysOnTopPreference,
   applyVideoScaleModePreference,
 } from "@/modules/player-settings-actions";
+import type { HardwareDecodeMode } from "@/modules/media-types";
 
 const {
-  playerHwDecodeEnabled,
+  playerHwDecodeMode,
   playerParseDebugEnabled,
   playerAlwaysOnTop,
   playerVideoScaleMode,
@@ -15,9 +16,7 @@ const {
   playerShowUplinkSpeed,
 } = usePreferences();
 
-async function applyHwDecode(enabled: boolean) {
-  // “开”使用 auto：尽可能启用硬解，失败则自动回退。
-  const mode = enabled ? "auto" : "off";
+async function applyHwDecode(mode: HardwareDecodeMode) {
   try {
     await playbackConfigureDecoderMode(mode);
   } catch {
@@ -47,12 +46,17 @@ async function applyVideoScaleMode(mode: "contain" | "cover") {
           <div class="flex min-w-0 flex-col gap-1">
             <div class="font-semibold">硬件解码</div>
             <div class="text-xs text-black/55 dark:text-white/55">
-              开启后会优先尝试使用系统硬解加速（不支持时自动回退）。
+              Auto 会尽量优先使用硬解，失败时自动回退软解，并在重新起流时再次尝试。
             </div>
           </div>
-          <a-switch
-            v-model:checked="playerHwDecodeEnabled"
-            @change="(checked: boolean) => void applyHwDecode(checked)"
+          <a-segmented
+            v-model:value="playerHwDecodeMode"
+            :options="[
+              { label: 'Auto', value: 'auto' },
+              { label: 'On', value: 'on' },
+              { label: 'Off', value: 'off' },
+            ]"
+            @change="(value: string | number) => void applyHwDecode(value as HardwareDecodeMode)"
           />
         </div>
       </a-space>

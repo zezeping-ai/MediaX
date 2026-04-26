@@ -34,6 +34,7 @@ pub(super) struct VideoFramePipeline {
     locked_color_profile: Option<ColorProfile>,
     integrity: VideoIntegrityStats,
     perf_window: VideoPerfWindow,
+    first_frame_emitted: bool,
 }
 
 #[derive(Default)]
@@ -273,6 +274,20 @@ impl VideoFramePipeline {
         frame: &frame::Video,
         pts: f64,
     ) -> Option<VideoFrame> {
+        if !self.first_frame_emitted {
+            self.first_frame_emitted = true;
+            emit_debug(
+                app,
+                "first_frame",
+                format!(
+                    "first frame ready pts={:.3}s size={}x{} fmt={:?}",
+                    pts.max(0.0),
+                    frame.width(),
+                    frame.height(),
+                    frame.format(),
+                ),
+            );
+        }
         let profile = self.resolve_color_profile(app, frame);
         let render_frame =
             match video_frame_to_nv12_planes_from_yuv420p(frame, Some(pts), Some(profile)) {
@@ -560,6 +575,12 @@ pub(super) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
                     render_fps,
                     queue_depth: renderer_metrics.queue_depth,
                     clock_seconds: *ctx.current_position_seconds,
+                    current_video_pts_seconds: Some(estimated_pts.max(0.0)),
+                    current_audio_clock_seconds: audio_now,
+                    current_frame_type: Some(picture_type_label(pict_type).to_string()),
+                    current_frame_width: Some(nv12_frame.width()),
+                    current_frame_height: Some(nv12_frame.height()),
+                    playback_rate: Some(ctx.playback_clock.playback_rate()),
                     network_read_bytes_per_second: ctx.network_read_bps,
                     media_required_bytes_per_second: ctx.media_required_bps,
                     network_sustain_ratio: match (ctx.network_read_bps, ctx.media_required_bps) {
@@ -601,6 +622,19 @@ pub(super) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
         }
     }
     Ok(())
+}
+
+fn picture_type_label(pict_type: ffi::AVPictureType) -> &'static str {
+    match pict_type {
+        ffi::AVPictureType::AV_PICTURE_TYPE_I => "I",
+        ffi::AVPictureType::AV_PICTURE_TYPE_P => "P",
+        ffi::AVPictureType::AV_PICTURE_TYPE_B => "B",
+        ffi::AVPictureType::AV_PICTURE_TYPE_S => "S",
+        ffi::AVPictureType::AV_PICTURE_TYPE_SI => "SI",
+        ffi::AVPictureType::AV_PICTURE_TYPE_SP => "SP",
+        ffi::AVPictureType::AV_PICTURE_TYPE_BI => "BI",
+        _ => "Other",
+    }
 }
 
 pub(super) fn percentile_from_sorted(sorted: &[f64], percentile: f64) -> f64 {

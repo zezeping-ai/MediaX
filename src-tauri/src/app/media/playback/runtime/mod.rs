@@ -1,4 +1,5 @@
 use crate::app::media::error::MediaError;
+use crate::app::media::model::HardwareDecodeMode;
 use crate::app::media::playback::decode_context::{open_video_decode_context, VideoDecodeContext};
 use crate::app::media::playback::events::{
     MediaDebugPayload, MediaEventEnvelope, MediaMetadataPayload, MediaTelemetryPayload,
@@ -118,9 +119,19 @@ pub(super) fn decode_and_emit_stream(
     audio_controls: &Arc<AudioControls>,
     timing_controls: &Arc<TimingControls>,
     stream_generation: u32,
+    hw_mode_override: HardwareDecodeMode,
+    software_fallback_reason: Option<String>,
 ) -> Result<(), String> {
     let mut runtime =
-        create_decode_runtime(app, renderer, source, audio_controls, timing_controls)?;
+        create_decode_runtime(
+            app,
+            renderer,
+            source,
+            audio_controls,
+            timing_controls,
+            hw_mode_override,
+            software_fallback_reason.as_deref(),
+        )?;
     run_decode_loop(
         app,
         renderer,
@@ -146,6 +157,8 @@ fn create_decode_runtime(
     source: &str,
     audio_controls: &Arc<AudioControls>,
     timing_controls: &Arc<TimingControls>,
+    hw_mode_override: HardwareDecodeMode,
+    software_fallback_reason: Option<&str>,
 ) -> Result<DecodeRuntime, String> {
     let is_live_m3u8 = source.to_ascii_lowercase().contains(".m3u8");
     let is_cache_recording_mp4 = {
@@ -154,20 +167,35 @@ fn create_decode_runtime(
     };
     let should_tail_eof = is_live_m3u8 || is_cache_recording_mp4;
     let media_state = app.state::<MediaState>();
-    let (hw_mode, quality_mode) = {
+    let quality_mode = {
         let playback = media_state
             .playback
             .lock()
             .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())?;
-        (playback.hw_decode_mode(), playback.quality_mode())
+        playback.quality_mode()
     };
-    emit_debug(app, "open", "open decode context");
-    let video_ctx = open_video_decode_context(source, hw_mode, quality_mode)?;
+    emit_debug(
+        app,
+        "open",
+        format!(
+            "source={} hw_mode={hw_mode_override:?} quality_mode={quality_mode:?}",
+            source
+        ),
+    );
+    let video_ctx = open_video_decode_context(
+        source,
+        hw_mode_override,
+        quality_mode,
+        software_fallback_reason,
+    )?;
     emit_debug(
         app,
         "decoder_ready",
         format!(
-            "video: {}x{} fps={:.3} duration={:.3}s output={}x{}",
+            "decoder={:?} hw_active={} hw_backend={} input={}x{} fps={:.3} duration={:.3}s output={}x{}",
+            video_ctx.decoder.id(),
+            video_ctx.hw_decode_active,
+            video_ctx.hw_decode_backend.as_deref().unwrap_or("software"),
             video_ctx.decoder.width(),
             video_ctx.decoder.height(),
             video_ctx.fps_value,
@@ -176,6 +204,7 @@ fn create_decode_runtime(
             video_ctx.output_height,
         ),
     );
+    emit_debug(app, "hw_decode_decision", video_ctx.hw_decode_decision.clone());
     {
         // SAFETY: decoder pointer is valid while `video_ctx.decoder` is alive; read-only access.
         let (profile, level, has_b_frames) = unsafe {
@@ -321,6 +350,20 @@ fn create_decode_runtime(
         audio_controls,
         timing_controls,
     )?;
+    emit_debug(
+        app,
+        "audio_pipeline_ready",
+        match audio_pipeline.as_ref() {
+            Some(pipeline) => format!(
+                "stream={} decoder_rate={}Hz decoder_channels={} decoder_fmt={:?} output=rodio/i16-packed",
+                pipeline.stream_index,
+                pipeline.decoder.rate(),
+                pipeline.decoder.channels(),
+                pipeline.decoder.format(),
+            ),
+            None => "audio pipeline skipped (no audio stream)".to_string(),
+        },
+    );
     emit_metadata_payloads(
         app,
         MediaMetadataPayload {
@@ -329,6 +372,18 @@ fn create_decode_runtime(
             fps: video_ctx.fps_value,
             duration_seconds: video_ctx.duration_seconds,
         },
+    );
+    emit_debug(
+        app,
+        "metadata_ready",
+        format!(
+            "container={} width={} height={} fps={:.3} duration={:.3}s",
+            video_ctx.input_ctx.format().name(),
+            video_ctx.output_width,
+            video_ctx.output_height,
+            video_ctx.fps_value,
+            video_ctx.duration_seconds,
+        ),
     );
     renderer.reset_timeline(0.0, timing_controls.playback_rate() as f64);
     emit_debug(app, "running", "decode loop running");

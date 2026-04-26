@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, toRef } from "vue";
-import type { PlaybackState } from "@/modules/media-types";
+import { computed, ref, toRef, watch } from "vue";
+import type { MediaTelemetryPayload, PlaybackState } from "@/modules/media-types";
 import { usePlayerDebugOverlay } from "../../../composables/usePlayerDebugOverlay";
+import DebugGroupSections from "./DebugGroupSections.vue";
+import CurrentFramePanel from "./CurrentFramePanel.vue";
 import MediaInfoPanel from "./MediaInfoPanel.vue";
 import DecodeStatusBanner from "./DecodeStatusBanner.vue";
-import RealtimeStatusPanel from "./RealtimeStatusPanel.vue";
 import ParseProcessPanel from "./ParseProcessPanel.vue";
+import ProcessStagePanel from "./ProcessStagePanel.vue";
 import {
   STATIC_DEBUG_KEYS,
   formatMediaInfoLabel,
@@ -15,6 +17,8 @@ const props = defineProps<{
   playback: PlaybackState | null;
   debugSnapshot: Record<string, string>;
   debugTimeline: Array<{ stage: string; message: string; at_ms: number }>;
+  debugStageSnapshot: Record<string, { message: string; at_ms: number }>;
+  latestTelemetry: MediaTelemetryPayload | null;
   mediaInfoSnapshot: Record<string, string>;
 }>();
 
@@ -76,10 +80,22 @@ const realtimeDebugSnapshot = computed<Record<string, string>>(() => {
   return record;
 });
 
-const { decodeBanner, debugGroups } = usePlayerDebugOverlay(
+const {
+  decodeBanner,
+  debugGroups,
+  currentFrameSections,
+  overviewGroups,
+  streamGroups,
+  timingGroups,
+  processStages,
+} = usePlayerDebugOverlay(
   toRef(props, "playback"),
   realtimeDebugSnapshot,
+  toRef(props, "debugTimeline"),
+  toRef(props, "debugStageSnapshot"),
+  toRef(props, "latestTelemetry"),
 );
+const activeTab = ref<"process" | "overview" | "current-frame" | "stream" | "timing" | "runtime">("process");
 
 const liveBadgeClass = computed(() => {
   if (!decodeBanner.value) return "border-blue-500/45 bg-blue-500/20 text-emerald-100";
@@ -92,6 +108,22 @@ const liveBadgeText = computed(() => {
   if (!decodeBanner.value) return "LIVE";
   return decodeBanner.value.isHardware ? "硬解" : "软解";
 });
+
+const tabOptions = [
+  { label: "过程", value: "process" },
+  { label: "概览", value: "overview" },
+  { label: "当前帧", value: "current-frame" },
+  { label: "流", value: "stream" },
+  { label: "时序", value: "timing" },
+  { label: "运行态", value: "runtime" },
+] as const;
+
+watch(
+  () => props.source,
+  () => {
+    activeTab.value = "process";
+  },
+);
 </script>
 
 <template>
@@ -111,21 +143,64 @@ const liveBadgeText = computed(() => {
       <a-button class="debug-close-btn" size="mini" type="text" @click="emit('close')">关闭</a-button>
     </div>
 
+    <a-segmented
+      v-model:value="activeTab"
+      :options="tabOptions"
+      size="small"
+      class="debug-tab-nav"
+    />
+
     <div class="debug-scroll-wrap flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto pr-0.5">
-      <MediaInfoPanel :groups="mediaInfoGroups" />
+      <template v-if="activeTab === 'process'">
+        <ProcessStagePanel :stages="processStages" />
+        <ParseProcessPanel :timeline="debugTimeline" />
+      </template>
 
-      <DecodeStatusBanner
-        v-if="decodeBanner"
-        :backend="decodeBanner.backend"
-        :mode="decodeBanner.mode"
-        :mode-label="decodeBanner.modeLabel"
-        :error="decodeBanner.error"
-        :resource-summary="resourceSummary"
-        :render-summary="renderSummary"
-      />
+      <template v-else-if="activeTab === 'overview'">
+        <MediaInfoPanel :groups="mediaInfoGroups" />
+        <DecodeStatusBanner
+          v-if="decodeBanner"
+          :backend="decodeBanner.backend"
+          :mode="decodeBanner.mode"
+          :mode-label="decodeBanner.modeLabel"
+          :error="decodeBanner.error"
+          :resource-summary="resourceSummary"
+          :render-summary="renderSummary"
+        />
+        <DebugGroupSections
+          title="输出与运行概览"
+          :groups="overviewGroups"
+          empty-text="等待输出与运行概览数据..."
+        />
+      </template>
 
-      <RealtimeStatusPanel :groups="debugGroups" />
-      <ParseProcessPanel :timeline="debugTimeline" />
+      <template v-else-if="activeTab === 'current-frame'">
+        <CurrentFramePanel :sections="currentFrameSections" />
+      </template>
+
+      <template v-else-if="activeTab === 'stream'">
+        <DebugGroupSections
+          title="输入源 / 流信息 / 解码链"
+          :groups="streamGroups"
+          empty-text="等待输入源与解码链数据..."
+        />
+      </template>
+
+      <template v-else-if="activeTab === 'timing'">
+        <DebugGroupSections
+          title="时序 / 同步 / 风险"
+          :groups="timingGroups"
+          empty-text="等待时序与同步风险数据..."
+        />
+      </template>
+
+      <template v-else>
+        <DebugGroupSections
+          title="运行态全量视图"
+          :groups="debugGroups"
+          empty-text="等待运行态数据..."
+        />
+      </template>
     </div>
   </div>
 </template>
@@ -171,5 +246,9 @@ const liveBadgeText = computed(() => {
 .debug-close-btn:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.12);
+}
+
+.debug-tab-nav :deep(.arco-segmented) {
+  background: rgba(255, 255, 255, 0.05);
 }
 </style>

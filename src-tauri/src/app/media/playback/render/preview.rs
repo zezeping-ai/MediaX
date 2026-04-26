@@ -37,6 +37,7 @@ where
         source,
         HardwareDecodeMode::Auto,
         PlaybackQualityMode::Source,
+        None,
     )?;
     let mut scaler: Option<ScalingContext> = None;
     let input_ctx = &mut video_ctx.input_ctx;
@@ -124,6 +125,7 @@ where
         source,
         HardwareDecodeMode::Auto,
         PlaybackQualityMode::Source,
+        None,
     )?;
     let input_ctx = &mut video_ctx.input_ctx;
     let video_stream_index = video_ctx.video_stream_index;

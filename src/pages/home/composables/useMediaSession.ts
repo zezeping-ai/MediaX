@@ -21,6 +21,8 @@ export function useMediaSession() {
   const currentSource = ref("");
   const debugSnapshot = ref<Record<string, string>>({});
   const debugTimeline = ref<Array<{ stage: string; message: string; at_ms: number }>>([]);
+  const debugStageSnapshot = ref<Record<string, { message: string; at_ms: number }>>({});
+  const latestTelemetry = ref<MediaTelemetryPayload | null>(null);
   const firstFrameAtMs = ref<number | null>(null);
   const metadataDurationSeconds = ref<number | null>(null);
   const metadataVideoWidth = ref<number | null>(null);
@@ -42,7 +44,9 @@ export function useMediaSession() {
   function resetTransientMediaState() {
     debugSnapshot.value = {};
     debugTimeline.value = [];
+    debugStageSnapshot.value = {};
     firstFrameAtMs.value = null;
+    latestTelemetry.value = null;
     metadataDurationSeconds.value = null;
     metadataVideoWidth.value = null;
     metadataVideoHeight.value = null;
@@ -114,9 +118,20 @@ export function useMediaSession() {
         ...debugSnapshot.value,
         [stage]: msg || "-",
       };
+      debugStageSnapshot.value = {
+        ...debugStageSnapshot.value,
+        [stage]: {
+          message: msg || "-",
+          at_ms: atMs,
+        },
+      };
       if (
         firstFrameAtMs.value === null
-        && (stage === "video_frame_format" || stage === "video_pipeline" || stage === "video_fps")
+        && (
+          stage === "first_frame"
+          || stage === "video_frame_format"
+          || stage === "video_fps"
+        )
       ) {
         firstFrameAtMs.value = atMs;
       }
@@ -133,6 +148,7 @@ export function useMediaSession() {
       MEDIA_PLAYBACK_TELEMETRY_EVENT,
       (event) => {
         const p = resolvePayload(event.payload);
+        latestTelemetry.value = p;
         lastTelemetryAtMs.value = Date.now();
         const decodeAvg = p.decode_avg_frame_cost_ms ?? 0;
         const decodeMax = p.decode_max_frame_cost_ms ?? 0;
@@ -220,7 +236,9 @@ export function useMediaSession() {
     currentSource,
     debugSnapshot,
     debugTimeline,
+    debugStageSnapshot,
     firstFrameAtMs,
+    latestTelemetry,
     networkReadBytesPerSecond,
     networkSustainRatio,
     metadataDurationSeconds,

@@ -22,9 +22,11 @@ const {
   currentSource,
   debugSnapshot,
   debugTimeline,
+  debugStageSnapshot,
   displayErrorMessage,
   effectiveDurationSeconds,
   firstFrameAtMs,
+  latestTelemetry,
   handlePause,
   handlePlay,
   handlePlayFromUrlPlaylist,
@@ -81,7 +83,9 @@ async function handleVideoEnded() {
         :loading="isBusy"
         :debug-snapshot="debugSnapshot"
         :debug-timeline="debugTimeline"
+        :debug-stage-snapshot="debugStageSnapshot"
         :first-frame-at-ms="firstFrameAtMs"
+        :latest-telemetry="latestTelemetry"
         :media-info-snapshot="mediaInfoSnapshot"
         :network-read-bytes-per-second="networkReadBytesPerSecond"
         :network-sustain-ratio="networkSustainRatio"

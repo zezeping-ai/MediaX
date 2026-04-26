@@ -112,6 +112,12 @@ export interface MediaTelemetryPayload {
   render_fps: number;
   queue_depth: number;
   clock_seconds: number;
+  current_video_pts_seconds?: number | null;
+  current_audio_clock_seconds?: number | null;
+  current_frame_type?: string | null;
+  current_frame_width?: number | null;
+  current_frame_height?: number | null;
+  playback_rate?: number | null;
   network_read_bytes_per_second?: number | null;
   media_required_bytes_per_second?: number | null;
   network_sustain_ratio?: number | null;
