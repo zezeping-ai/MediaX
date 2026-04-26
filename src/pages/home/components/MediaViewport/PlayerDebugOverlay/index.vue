@@ -1,11 +1,7 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, toRef, watch } from "vue";
+import { defineAsyncComponent, toRef } from "vue";
 import type { MediaTelemetryPayload, PlaybackState } from "@/modules/media-types";
-import { usePlayerDebugOverlay } from "../../../composables/usePlayerDebugOverlay";
-import {
-  STATIC_DEBUG_KEYS,
-  formatMediaInfoLabel,
-} from "./playerDebugOverlay.utils";
+import { usePlayerDebugPanelViewModel } from "./usePlayerDebugPanelViewModel";
 
 const ProcessTab = defineAsyncComponent({
   loader: () => import("./tabs/ProcessTab.vue"),
@@ -46,104 +42,30 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-const mediaInfoGroups = computed(() => {
-  const baseRows: Array<{ key: string; label: string; value: string }> = [];
-  const record = props.mediaInfoSnapshot || {};
-  for (const [key, value] of Object.entries(record)) {
-    if (!value) continue;
-    baseRows.push({ key, label: formatMediaInfoLabel(key), value });
-  }
-  const videoRows: Array<{ key: string; label: string; value: string }> = [];
-  const audioRows: Array<{ key: string; label: string; value: string }> = [];
-  const videoFormat = props.debugSnapshot?.video_format;
-  const videoCodecProfile = props.debugSnapshot?.video_codec_profile;
-  const videoStream = props.debugSnapshot?.video_stream;
-  const videoFrameFormat = props.debugSnapshot?.video_frame_format;
-  const audioFormat = props.debugSnapshot?.audio_format;
-  const audioStream = props.debugSnapshot?.audio;
-  if (videoFormat) videoRows.push({ key: "video_format", label: formatMediaInfoLabel("video_format"), value: videoFormat });
-  if (videoCodecProfile)
-    videoRows.push({
-      key: "video_codec_profile",
-      label: formatMediaInfoLabel("video_codec_profile"),
-      value: videoCodecProfile,
-    });
-  if (videoStream) videoRows.push({ key: "video_stream", label: formatMediaInfoLabel("video_stream"), value: videoStream });
-  if (videoFrameFormat)
-    videoRows.push({
-      key: "video_frame_format",
-      label: formatMediaInfoLabel("video_frame_format"),
-      value: videoFrameFormat,
-    });
-  if (audioFormat) audioRows.push({ key: "audio_format", label: formatMediaInfoLabel("audio_format"), value: audioFormat });
-  if (audioStream) audioRows.push({ key: "audio", label: formatMediaInfoLabel("audio"), value: audioStream });
-  return [
-    { id: "base", title: "基础", rows: baseRows },
-    { id: "video", title: "视频", rows: videoRows },
-    { id: "audio", title: "音频", rows: audioRows },
-  ].filter((group) => group.rows.length > 0);
-});
-
-const realtimeDebugSnapshot = computed<Record<string, string>>(() => {
-  const snapshot = props.debugSnapshot || {};
-  const record: Record<string, string> = {};
-  for (const [key, value] of Object.entries(snapshot)) {
-    if (!value) continue;
-    if (STATIC_DEBUG_KEYS.includes(key as (typeof STATIC_DEBUG_KEYS)[number])) continue;
-    if (key === "telemetry_resources") continue;
-    if (key === "telemetry_render") continue;
-    record[key] = value;
-  }
-  return record;
-});
-
 const {
+  activeTab,
   decodeBanner,
   debugGroups,
   currentFrameSections,
   hardwareDecisionTimeline,
+  liveBadgeClass,
+  liveBadgeText,
+  mediaInfoGroups,
   overviewSections,
   pipelineSections,
   streamSections,
+  tabOptions,
   timingSections,
   processStages,
-} = usePlayerDebugOverlay(
-  toRef(props, "playback"),
-  realtimeDebugSnapshot,
-  toRef(props, "debugTimeline"),
-  toRef(props, "debugStageSnapshot"),
-  toRef(props, "latestTelemetry"),
-);
-const activeTab = ref<"process" | "overview" | "pipeline" | "current-frame" | "stream" | "timing" | "runtime">("process");
-
-const liveBadgeClass = computed(() => {
-  if (!decodeBanner.value) return "border-blue-500/45 bg-blue-500/20 text-emerald-100";
-  return decodeBanner.value.isHardware
-    ? "border-emerald-400/55 bg-emerald-500/20 text-emerald-50"
-    : "border-amber-300/55 bg-amber-500/20 text-orange-50";
+} = usePlayerDebugPanelViewModel({
+  source: toRef(props, "source"),
+  playback: toRef(props, "playback"),
+  debugSnapshot: toRef(props, "debugSnapshot"),
+  debugTimeline: toRef(props, "debugTimeline"),
+  debugStageSnapshot: toRef(props, "debugStageSnapshot"),
+  latestTelemetry: toRef(props, "latestTelemetry"),
+  mediaInfoSnapshot: toRef(props, "mediaInfoSnapshot"),
 });
-
-const liveBadgeText = computed(() => {
-  if (!decodeBanner.value) return "LIVE";
-  return decodeBanner.value.isHardware ? "硬解" : "软解";
-});
-
-const tabOptions = [
-  { label: "过程", value: "process" },
-  { label: "概览", value: "overview" },
-  { label: "管线", value: "pipeline" },
-  { label: "当前帧", value: "current-frame" },
-  { label: "流", value: "stream" },
-  { label: "时序", value: "timing" },
-  { label: "运行态", value: "runtime" },
-] as const;
-
-watch(
-  () => props.source,
-  () => {
-    activeTab.value = "process";
-  },
-);
 </script>
 
 <template>

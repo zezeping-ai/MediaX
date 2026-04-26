@@ -27,6 +27,9 @@ const emit = defineEmits<PlaybackControlsEmit>();
 const {
   cacheIcon,
   currentTime,
+  decodeBadgeClass,
+  decodeBadgeLabel,
+  decodeBadgeTitle,
   duration,
   handleProgressCommit,
   handleProgressPreviewUpdate,
@@ -57,6 +60,9 @@ const {
       <PlaybackTimeline
         :current-time="currentTime"
         :duration="duration"
+        :decode-badge-class="decodeBadgeClass"
+        :decode-badge-label="decodeBadgeLabel"
+        :decode-badge-title="decodeBadgeTitle"
         :slider-max="sliderMax"
         :timeline-disabled="timelineDisabled"
         :timeline-title="timelineTitle"
@@ -71,8 +77,6 @@ const {
       >
         <div aria-hidden="true" />
         <PlaybackCenterControls
-          :current-time="currentTime"
-          :duration="duration"
           :disabled="disabled"
           :is-playing="isPlaying"
           :playback-rate="playbackRate"

@@ -8,11 +8,9 @@ import {
   SPEED_OPTIONS,
   TINY_PILL_BTN,
 } from "./playbackControls.constants";
-import { formatSeconds, type PlaybackQualityOption } from "./playbackControlsUtils";
+import { type PlaybackQualityOption } from "./playbackControlsUtils";
 
 defineProps<{
-  currentTime: number;
-  duration: number;
   disabled: boolean;
   isPlaying: boolean;
   playbackRate: number;
@@ -43,16 +41,6 @@ defineEmits<{
 <template>
   <div class="flex justify-center">
     <div :class="[PILL_BASE, 'max-w-full gap-2.5 px-3']">
-      <div
-        class="flex items-baseline gap-1.5 text-[11px] text-white/70 [font-variant-numeric:tabular-nums]"
-      >
-        <span class="text-white/85">{{ formatSeconds(currentTime) }}</span>
-        <span class="text-white/35">/</span>
-        <span class="text-white/60">{{ formatSeconds(duration) }}</span>
-      </div>
-
-      <span class="h-5 w-px bg-white/10" aria-hidden="true" />
-
       <a-button
         size="small"
         shape="circle"

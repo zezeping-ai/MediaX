@@ -10,6 +10,25 @@ export interface PlaybackQualityOption {
   label: string;
 }
 
+export function formatDecodeBadgeLabel(hwDecodeActive: boolean) {
+  return hwDecodeActive ? "硬解" : "软解";
+}
+
+export function formatDecodeBadgeTitle(
+  hwDecodeActive: boolean,
+  backend?: string | null,
+  error?: string | null,
+) {
+  const lines = [`当前解码：${hwDecodeActive ? "硬件解码" : "软件解码"}`];
+  if (backend) {
+    lines.push(`后端：${backend}`);
+  }
+  if (!hwDecodeActive && error) {
+    lines.push(`最近回退：${error}`);
+  }
+  return lines.join("\n");
+}
+
 function sourceQualityLabel(sourceHeight: number | null) {
   const normalized =
     typeof sourceHeight === "number" && Number.isFinite(sourceHeight) && sourceHeight > 0
@@ -18,7 +37,7 @@ function sourceQualityLabel(sourceHeight: number | null) {
   if (!normalized) {
     return "原画";
   }
-  return `${normalized}P（原画）`;
+  return `${normalized}P`;
 }
 
 export function buildPlaybackQualityOptions(
@@ -62,4 +81,3 @@ export function buildPlaybackQualityOptions(
 
   return options;
 }
-

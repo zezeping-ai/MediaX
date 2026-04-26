@@ -1,0 +1,2 @@
+export const MAX_DEBUG_TIMELINE_SIZE = 200;
+export const MAX_TELEMETRY_HISTORY_SIZE = 36;

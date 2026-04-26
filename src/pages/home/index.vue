@@ -1,20 +1,11 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from "vue";
 import MediaViewport from "./components/MediaViewport/index.vue";
 import StatusAlerts from "./components/StatusAlerts.vue";
-import { useHomePlaybackController } from "./composables/useHomePlaybackController";
-
-const PlaybackControls = defineAsyncComponent({
-  loader: () => import("./components/PlaybackControls/index.vue"),
-  delay: 120,
-});
-
-const OpenUrlModal = defineAsyncComponent({
-  loader: () => import("./components/OpenUrlModal/index.vue"),
-  delay: 120,
-});
+import { useHomePageViewModel } from "./useHomePageViewModel";
 
 const {
+  PlaybackControls,
+  OpenUrlModal,
   cacheFinalizedOutputPath,
   cacheOutputPath,
   cacheOutputSizeBytes,
@@ -41,6 +32,7 @@ const {
   handlePlay,
   handlePlayFromUrlPlaylist,
   handleStop,
+  handleVideoEnded,
   hasSource,
   hideControlsImmediately,
   isBusy,
@@ -64,7 +56,6 @@ const {
   seekPreview,
   selectedQuality,
   setControlsOverlayInteracting,
-  stop,
   toggleCacheRecording,
   toggleLock,
   toggleMute,
@@ -72,11 +63,7 @@ const {
   urlInputValue,
   urlPlaylist,
   volume,
-} = useHomePlaybackController();
-
-async function handleVideoEnded() {
-  await stop();
-}
+} = useHomePageViewModel();
 </script>
 
 <template>
@@ -89,6 +76,7 @@ async function handleVideoEnded() {
       <MediaViewport
         :source="currentSource"
         :pending-source="pendingSource"
+        :controls-visible="controlsVisible"
         :playback="playback"
         :loading="isBusy"
         :debug-snapshot="debugSnapshot"

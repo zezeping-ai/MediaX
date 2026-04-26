@@ -1,55 +1,38 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { open } from "@tauri-apps/plugin-dialog";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { usePreferences } from "@/modules/preferences";
-import { getPlaybackSnapshot } from "@/modules/media-player";
-import type { HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode } from "@/modules/media-types";
+import type { HardwareDecodeMode, PlaybackQualityMode } from "@/modules/media-types";
 import { useCacheRecordingController } from "./useCacheRecordingController";
+import { createMediaInfoSnapshot } from "./createMediaInfoSnapshot";
+import { createPlaybackCommandRunner } from "./createPlaybackCommandRunner";
+import { useMediaCenterBusyState } from "./useMediaCenterBusyState";
+import { useMediaCenterLifecycle } from "./useMediaCenterLifecycle";
+import { usePlayerPreferenceSync } from "./usePlayerPreferenceSync";
 import { useMediaCommands } from "../useMediaCommands";
 import { useMediaErrorMap } from "../useMediaErrorMap";
-import { useMediaUrlInputController } from "./useMediaUrlInputController";
-import { usePlaybackSettings } from "../usePlaybackSettings";
 import { useMediaSession } from "../useMediaSession";
-const DEV_SEEK_LOG = import.meta.env.DEV;
+import { usePlaybackSettings } from "../usePlaybackSettings";
+import { useMediaUrlInputController } from "./useMediaUrlInputController";
 
 export function useMediaCenter() {
   const { playerHwDecodeMode, playerAlwaysOnTop, playerVideoScaleMode } = usePreferences();
-  const {
-    snapshot,
-    currentSource,
-    debugSnapshot,
-    debugTimeline,
-    debugStageSnapshot,
-    firstFrameAtMs,
-    latestTelemetry,
-    telemetryHistory,
-    networkReadBytesPerSecond,
-    networkSustainRatio,
-    metadataDurationSeconds,
-    metadataVideoWidth,
-    metadataVideoHeight,
-    metadataVideoFps,
-    playbackErrorMessage,
-    mount,
-    unmount,
-    updateSnapshot,
-  } = useMediaSession();
+  const mediaSession = useMediaSession();
   const commands = useMediaCommands();
   const { toUserErrorMessage } = useMediaErrorMap();
   const playbackSettings = usePlaybackSettings({
     configureDecoderMode: commands.configureDecoderMode,
     requestPreviewFrame: commands.requestPreviewFrame,
   });
-  const isBusy = ref(false);
-  const errorMessage = ref("");
+
+  const { errorMessage, isBusy, withBusyState } = useMediaCenterBusyState(toUserErrorMessage);
   const recordingNoticeMessage = ref("");
   const lastSyncedSecond = ref(-1);
   const pendingSource = ref("");
+  const playback = computed(() => mediaSession.snapshot.value?.playback ?? null);
 
-  const playback = computed(() => snapshot.value?.playback ?? null);
   const cacheRecordingController = useCacheRecordingController({
     commands,
-    currentSource,
-    metadataDurationSeconds,
+    currentSource: mediaSession.currentSource,
+    metadataDurationSeconds: mediaSession.metadataDurationSeconds,
     playback,
     onErrorMessage: (message) => {
       errorMessage.value = message;
@@ -59,36 +42,26 @@ export function useMediaCenter() {
     },
   });
 
-  const mediaInfoSnapshot = computed<Record<string, string>>(() => {
-    const playbackState = playback.value;
-    const source = currentSource.value;
-    const duration =
-      playbackState?.duration_seconds ||
-      metadataDurationSeconds.value ||
-      0;
-    const width = metadataVideoWidth.value || 0;
-    const height = metadataVideoHeight.value || 0;
-    const fps = metadataVideoFps.value || 0;
-
-    const record: Record<string, string> = {};
-    if (source) record.source = source;
-    if (playbackState?.engine) record.engine = playbackState.engine;
-    if (duration > 0) record.duration = `${duration.toFixed(3)}s`;
-    if (width > 0 && height > 0) record.resolution = `${width}x${height}`;
-    if (fps > 0) record.fps = `${fps.toFixed(3)}fps`;
-    if (playbackState?.quality_mode) record.quality = playbackState.quality_mode;
-    return record;
+  const mediaInfoSnapshot = createMediaInfoSnapshot({
+    playback,
+    currentSource: mediaSession.currentSource,
+    metadataDurationSeconds: mediaSession.metadataDurationSeconds,
+    metadataVideoWidth: mediaSession.metadataVideoWidth,
+    metadataVideoHeight: mediaSession.metadataVideoHeight,
+    metadataVideoFps: mediaSession.metadataVideoFps,
   });
 
-  async function runPlaybackCommand(command: () => Promise<MediaSnapshot>) {
-    const next = await command();
-    updateSnapshot(next);
-    return next;
-  }
-
-  async function refreshSnapshot() {
-    updateSnapshot(await getPlaybackSnapshot());
-  }
+  const playbackRunner = createPlaybackCommandRunner({
+    commands,
+    playback,
+    pendingSource,
+    errorMessage,
+    recordingNoticeMessage,
+    lastSyncedSecond,
+    toUserErrorMessage,
+    updateSnapshot: mediaSession.updateSnapshot,
+    refreshCacheRecordingStatus: cacheRecordingController.refreshCacheRecordingStatus,
+  });
 
   async function applyHwDecodePreference(mode: HardwareDecodeMode) {
     if (playback.value?.hw_decode_mode === mode) {
@@ -96,7 +69,7 @@ export function useMediaCenter() {
     }
     const next = await playbackSettings.applyHwDecode(mode);
     if (next) {
-      updateSnapshot(next);
+      mediaSession.updateSnapshot(next);
     }
   }
 
@@ -108,86 +81,6 @@ export function useMediaCenter() {
     await playbackSettings.applyVideoScaleMode(mode);
   }
 
-  async function openLocalFileByDialog() {
-    const selected = await open({
-      title: "选择本地视频文件",
-      multiple: false,
-      filters: [
-        {
-          name: "Video",
-          extensions: ["mp4", "mkv", "mov", "avi", "webm", "m4v", "mpeg", "mpg", "ts"],
-        },
-      ],
-    });
-    if (!selected || Array.isArray(selected)) {
-      return;
-    }
-    await openPath(selected);
-  }
-
-  async function openPath(path: string) {
-    pendingSource.value = path;
-    try {
-      await runPlaybackCommand(() => commands.openPath(path));
-      await runPlaybackCommand(commands.play);
-      await cacheRecordingController.refreshCacheRecordingStatus();
-      recordingNoticeMessage.value = "";
-      errorMessage.value = "";
-    } finally {
-      pendingSource.value = "";
-    }
-  }
-  const urlInputController = useMediaUrlInputController({
-    openUrl: openPath,
-  });
-
-  async function play() {
-    await runPlaybackCommand(commands.play);
-  }
-
-  async function pause() {
-    await runPlaybackCommand(commands.pause);
-  }
-
-  async function stop() {
-    await runPlaybackCommand(commands.stop);
-    await cacheRecordingController.refreshCacheRecordingStatus();
-  }
-
-  async function seek(positionSeconds: number) {
-    const status = playback.value?.status ?? "unknown";
-    const forceRender = status === "paused";
-    logSeekDecision("seek", positionSeconds, forceRender, status);
-    await runPlaybackCommand(() => commands.seek(positionSeconds, forceRender));
-  }
-
-  async function seekPreview(positionSeconds: number) {
-    // Scrubbing preview should stay responsive and not lock controls with busy state.
-    try {
-      const status = playback.value?.status ?? "unknown";
-      logSeekDecision("seekPreview", positionSeconds, false, status);
-      await runPlaybackCommand(() => commands.seek(positionSeconds, false));
-    } catch (error) {
-      errorMessage.value = toUserErrorMessage(error);
-    }
-  }
-
-  async function setRate(playbackRate: number) {
-    await runPlaybackCommand(() => commands.setRate(playbackRate));
-  }
-
-  async function setVolume(volume: number) {
-    await runPlaybackCommand(() => commands.setVolume(volume));
-  }
-
-  async function setMuted(muted: boolean) {
-    await runPlaybackCommand(() => commands.setMuted(muted));
-  }
-
-  async function setQuality(mode: PlaybackQualityMode) {
-    await runPlaybackCommand(() => commands.setQuality(mode));
-  }
-
   async function requestPreviewFrame(positionSeconds: number, maxWidth = 160, maxHeight = 90) {
     try {
       return await playbackSettings.requestTimelinePreview(positionSeconds, maxWidth, maxHeight);
@@ -196,80 +89,41 @@ export function useMediaCenter() {
     }
   }
 
-  async function syncPosition(positionSeconds: number, durationSeconds: number) {
-    const second = Math.floor(positionSeconds);
-    if (second === lastSyncedSecond.value) {
-      return;
-    }
-    lastSyncedSecond.value = second;
-    await runPlaybackCommand(() => commands.syncPosition(positionSeconds, durationSeconds));
-  }
+  const urlInputController = useMediaUrlInputController({
+    openUrl: playbackRunner.openPath,
+  });
 
-  async function withBusyState(action: () => Promise<void>) {
-    isBusy.value = true;
-    try {
-      await action();
-    } catch (error) {
-      errorMessage.value = toUserErrorMessage(error);
-    } finally {
-      isBusy.value = false;
-    }
-  }
+  const mediaCenterLifecycle = useMediaCenterLifecycle({
+    withBusyState,
+    mediaSession,
+    cacheRecordingController,
+    playbackRunner,
+    urlInputController,
+  });
 
-  onMounted(async () => {
-    await withBusyState(refreshSnapshot);
-    // Ensure backend matches persisted preference.
-    await applyHwDecodePreference(playerHwDecodeMode.value);
-    await applyAlwaysOnTopPreference(playerAlwaysOnTop.value);
-    await applyVideoScaleModePreference(playerVideoScaleMode.value);
-    await cacheRecordingController.refreshCacheRecordingStatus();
-    if (cacheRecordingController.cacheRecording.value) {
-      cacheRecordingController.startRecordingClock();
-      cacheRecordingController.startCacheStatusPoll();
-    }
-    await mount((action) => {
-      if (action === "open_local") {
-        void withBusyState(openLocalFileByDialog);
-      }
-      if (action === "open_url") {
-        urlInputController.requestOpenUrlInput();
-      }
-    }, getPlaybackSnapshot);
+  usePlayerPreferenceSync({
+    playerHwDecodeMode,
+    playerAlwaysOnTop,
+    playerVideoScaleMode,
+    applyHwDecodePreference,
+    applyAlwaysOnTopPreference,
+    applyVideoScaleModePreference,
+    onReady: async () => {
+      await mediaCenterLifecycle.mountMediaCenter();
+    },
   });
 
   onBeforeUnmount(() => {
-    unmount();
+    mediaSession.unmount();
   });
 
-  watch(
-    playerHwDecodeMode,
-    (mode) => {
-      void applyHwDecodePreference(mode);
-    },
-    { immediate: false },
-  );
-  watch(
-    playerAlwaysOnTop,
-    (enabled) => {
-      void applyAlwaysOnTopPreference(enabled);
-    },
-    { immediate: false },
-  );
-  watch(
-    playerVideoScaleMode,
-    (mode) => {
-      void applyVideoScaleModePreference(mode);
-    },
-    { immediate: false },
-  );
-
-  watch(metadataDurationSeconds, (duration) => {
+  watch(mediaSession.metadataDurationSeconds, (duration) => {
     if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) {
-      void syncPosition(0, duration);
+      void playbackRunner.syncPosition(0, duration);
     }
   });
 
-  watch(playbackErrorMessage, (message) => {
+  watch(mediaSession.playbackErrorMessage, (message) => {
     if (message) {
       errorMessage.value = message;
     }
@@ -277,7 +131,7 @@ export function useMediaCenter() {
 
   return {
     playback,
-    currentSource,
+    currentSource: mediaSession.currentSource,
     pendingSource,
     effectiveDurationSeconds: cacheRecordingController.effectiveDurationSeconds,
     urlInputValue: urlInputController.urlInputValue,
@@ -289,20 +143,25 @@ export function useMediaCenter() {
     cacheFinalizedOutputPath: cacheRecordingController.cacheFinalizedOutputPath,
     cacheOutputSizeBytes: cacheRecordingController.cacheOutputSizeBytes,
     cacheWriteSpeedBytesPerSecond: cacheRecordingController.cacheWriteSpeedBytesPerSecond,
-    networkReadBytesPerSecond,
-    networkSustainRatio,
+    networkReadBytesPerSecond: mediaSession.networkReadBytesPerSecond,
+    networkSustainRatio: mediaSession.networkSustainRatio,
     cacheOutputDir: cacheRecordingController.cacheOutputDir,
     errorMessage,
     recordingNoticeMessage,
-    debugSnapshot,
-    debugTimeline,
-    debugStageSnapshot,
-    firstFrameAtMs,
-    latestTelemetry,
-    telemetryHistory,
+    debugSnapshot: mediaSession.debugSnapshot,
+    debugTimeline: mediaSession.debugTimeline,
+    debugStageSnapshot: mediaSession.debugStageSnapshot,
+    firstFrameAtMs: mediaSession.firstFrameAtMs,
+    latestTelemetry: mediaSession.latestTelemetry,
+    telemetryHistory: mediaSession.telemetryHistory,
     mediaInfoSnapshot,
-    metadataVideoHeight,
-    openLocalFileByDialog: () => withBusyState(openLocalFileByDialog),
+    metadataVideoHeight: mediaSession.metadataVideoHeight,
+    openLocalFileByDialog: () => withBusyState(async () => {
+      const selectedPath = await playbackRunner.openLocalFileByDialog();
+      if (selectedPath) {
+        await playbackRunner.openPath(selectedPath);
+      }
+    }),
     openUrl: (url: string) => withBusyState(async () => {
       await urlInputController.submitUrl(url);
     }),
@@ -311,42 +170,21 @@ export function useMediaCenter() {
     confirmOpenUrlInput: () => withBusyState(urlInputController.confirmOpenUrlInput),
     removeUrlFromPlaylist: urlInputController.removeUrlFromPlaylist,
     clearUrlPlaylist: urlInputController.clearUrlPlaylist,
-    play: () => withBusyState(play),
-    pause: () => withBusyState(pause),
-    stop: () => withBusyState(stop),
-    seek: (seconds: number) => seek(seconds).catch((error) => {
-      errorMessage.value = toUserErrorMessage(error);
-    }),
-    seekPreview: (seconds: number) => seekPreview(seconds),
-    setRate: (rate: number) => setRate(rate).catch((error) => {
-      errorMessage.value = toUserErrorMessage(error);
-    }),
-    setVolume: (volume: number) => setVolume(volume).catch((error) => {
-      errorMessage.value = toUserErrorMessage(error);
-    }),
-    setMuted: (muted: boolean) => setMuted(muted).catch((error) => {
-      errorMessage.value = toUserErrorMessage(error);
-    }),
-    setQuality: (mode: PlaybackQualityMode) => withBusyState(() => setQuality(mode)),
+    play: () => withBusyState(playbackRunner.play),
+    pause: () => withBusyState(playbackRunner.pause),
+    stop: () => withBusyState(playbackRunner.stop),
+    seek: (seconds: number) => playbackRunner.runWithoutBusyLock(() => playbackRunner.seek(seconds)),
+    seekPreview: (seconds: number) => playbackRunner.seekPreview(seconds),
+    setRate: (rate: number) => playbackRunner.runWithoutBusyLock(() => playbackRunner.setRate(rate)),
+    setVolume: (volume: number) =>
+      playbackRunner.runWithoutBusyLock(() => playbackRunner.setVolume(volume)),
+    setMuted: (muted: boolean) =>
+      playbackRunner.runWithoutBusyLock(() => playbackRunner.setMuted(muted)),
+    setQuality: (mode: PlaybackQualityMode) => withBusyState(() => playbackRunner.setQuality(mode)),
     toggleCacheRecording: () => withBusyState(cacheRecordingController.toggleCacheRecording),
     requestPreviewFrame: (positionSeconds: number, maxWidth?: number, maxHeight?: number) =>
       requestPreviewFrame(positionSeconds, maxWidth, maxHeight),
     syncPosition: (positionSeconds: number, durationSeconds: number) =>
-      withBusyState(() => syncPosition(positionSeconds, durationSeconds)),
+      withBusyState(() => playbackRunner.syncPosition(positionSeconds, durationSeconds)),
   };
-}
-
-function logSeekDecision(
-  action: "seek" | "seekPreview",
-  positionSeconds: number,
-  forceRender: boolean,
-  status: string,
-) {
-  if (!DEV_SEEK_LOG) {
-    return;
-  }
-  const seconds = Number.isFinite(positionSeconds) ? positionSeconds.toFixed(3) : String(positionSeconds);
-  console.debug(
-    `[media-seek] action=${action} status=${status} target=${seconds}s forceRender=${forceRender}`,
-  );
 }

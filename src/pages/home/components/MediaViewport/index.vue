@@ -13,6 +13,7 @@ const PlayerDebugOverlay = defineAsyncComponent({
 const props = defineProps<{
   source: string;
   pendingSource: string;
+  controlsVisible: boolean;
   loading: boolean;
   playback: PlaybackState | null;
   debugSnapshot: Record<string, string>;
@@ -39,13 +40,13 @@ const emit = defineEmits<{
 const { playerParseDebugEnabled } = usePreferences();
 const debugOverlayOpen = ref(true);
 
-const shouldShowDebugOverlay = computed(
-  () =>
-    Boolean(props.source)
-    && playerParseDebugEnabled.value
-    && debugOverlayOpen.value
-    && Boolean(props.firstFrameAtMs),
-);
+const shouldShowDebugOverlay = computed(() => (
+  Boolean(props.source)
+  && props.controlsVisible
+  && playerParseDebugEnabled.value
+  && debugOverlayOpen.value
+  && Boolean(props.firstFrameAtMs)
+));
 const overlaySource = computed(() => props.pendingSource || props.source);
 const hasPresentedFirstFrame = computed(() =>
   Boolean(
@@ -54,18 +55,17 @@ const hasPresentedFirstFrame = computed(() =>
     || props.debugSnapshot.video_pipeline,
   ),
 );
-const isWaitingForFirstFrame = computed(
-  () =>
-    Boolean(overlaySource.value)
-    && !hasPresentedFirstFrame.value
-    && props.playback?.status !== "stopped",
-);
-const shouldShowLoadingProcessOverlay = computed(
-  () =>
-    playerParseDebugEnabled.value
-    && Boolean(overlaySource.value)
-    && isWaitingForFirstFrame.value,
-);
+const isWaitingForFirstFrame = computed(() => (
+  Boolean(overlaySource.value)
+  && !hasPresentedFirstFrame.value
+  && props.playback?.status !== "stopped"
+));
+const shouldShowLoadingProcessOverlay = computed(() => (
+  props.controlsVisible
+  && playerParseDebugEnabled.value
+  && Boolean(overlaySource.value)
+  && isWaitingForFirstFrame.value
+));
 watch(
   () => props.source,
   (nextSource) => {

@@ -1,16 +1,12 @@
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
 import { useMediaCenter } from "../useMediaCenter";
+import { useHomePlaybackActions } from "./useHomePlaybackActions";
 import { usePlaybackQualityController } from "./usePlaybackQualityController";
 import { usePlaybackTransportController } from "./usePlaybackTransportController";
 import { usePlayerOverlayControls } from "./usePlayerOverlayControls";
 
 export function useHomePlaybackController() {
   const mediaCenter = useMediaCenter();
-  const playerErrorMessage = ref("");
-
-  const displayErrorMessage = computed(
-    () => playerErrorMessage.value || mediaCenter.errorMessage.value,
-  );
   const hasSource = computed(() => Boolean(mediaCenter.currentSource.value));
   const overlayControls = usePlayerOverlayControls({
     hasSource,
@@ -32,20 +28,13 @@ export function useHomePlaybackController() {
     setVolume: mediaCenter.setVolume,
     setMuted: mediaCenter.setMuted,
   });
-
-  async function handlePlay() {
-    await transportController.handlePlay();
-    playerErrorMessage.value = "";
-  }
-
-  async function handlePlayFromUrlPlaylist(url: string) {
-    mediaCenter.urlInputValue.value = url;
-    await mediaCenter.openUrl(url);
-    mediaCenter.urlDialogVisible.value = false;
-  }
-
-  watch(mediaCenter.currentSource, () => {
-    playerErrorMessage.value = "";
+  const playbackActions = useHomePlaybackActions({
+    currentSource: mediaCenter.currentSource,
+    errorMessage: mediaCenter.errorMessage,
+    urlInputValue: mediaCenter.urlInputValue,
+    urlDialogVisible: mediaCenter.urlDialogVisible,
+    openUrl: mediaCenter.openUrl,
+    handleTransportPlay: transportController.handlePlay,
   });
 
   return {
@@ -53,9 +42,7 @@ export function useHomePlaybackController() {
     ...overlayControls,
     ...qualityController,
     ...transportController,
-    handlePlay,
+    ...playbackActions,
     hasSource,
-    displayErrorMessage,
-    handlePlayFromUrlPlaylist,
   };
 }
