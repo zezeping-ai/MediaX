@@ -61,6 +61,7 @@ pub(super) struct DrainFramesContext<'a> {
     pub video_frame_type_p: &'a mut u64,
     pub video_frame_type_b: &'a mut u64,
     pub video_frame_type_other: &'a mut u64,
+    pub video_packet_soft_error_count: &'a mut u64,
     pub stream_generation: u32,
 }
 
@@ -117,7 +118,7 @@ pub(super) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
                 continue;
             }
         };
-        ensure_scaler(
+        if let Err(err) = ensure_scaler(
             ctx.scaler,
             ScalerSpec {
                 src_format: frame_for_scale.format(),
@@ -128,12 +129,17 @@ pub(super) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
                 dst_height: ctx.output_height,
                 flags: Flags::BILINEAR,
             },
-        )?;
+        ) {
+            ctx.frame_pipeline.on_scale_failed(ctx.app, &err);
+            continue;
+        }
         let mut nv12_frame = frame::Video::empty();
         if let Some(scaler) = ctx.scaler.as_mut() {
-            scaler
-                .run(&frame_for_scale, &mut nv12_frame)
-                .map_err(|err| format!("scale frame failed: {err}"))?;
+            if let Err(err) = scaler.run(&frame_for_scale, &mut nv12_frame) {
+                ctx.frame_pipeline
+                    .on_scale_failed(ctx.app, &format!("scale frame failed: {err}"));
+                continue;
+            }
         }
         let _ = ctx.frame_pipeline.resolve_color_profile(ctx.app, &nv12_frame);
         let audio_now_seconds = ctx.audio_clock.map(|clock| clock.now_seconds());
@@ -204,6 +210,7 @@ pub(super) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
         if ctx.last_progress_emit.elapsed() >= Duration::from_millis(200) {
             update_playback_progress(
                 ctx.app,
+                ctx.stream_generation,
                 *ctx.current_position_seconds,
                 ctx.duration_seconds,
                 false,
@@ -231,13 +238,14 @@ fn emit_video_telemetry(
         ctx.app,
         "av_sync",
         format!(
-            "a_minus_v={:.3}ms audio_clock={} video_pts={:.3}s queue_depth={}",
+            "a_minus_v={:.3}ms audio_clock={} video_pts={:.3}s queue_depth={} lead_target={:.3}ms",
             audio_drift.unwrap_or(0.0) * 1000.0,
             audio_now
                 .map(|value| format!("{value:.3}s"))
                 .unwrap_or_else(|| "n/a".to_string()),
             estimated_pts.max(0.0),
-            renderer_metrics.queue_depth
+            renderer_metrics.queue_depth,
+            ctx.audio_allowed_lead_seconds * 1000.0,
         ),
     );
     emit_debug(
@@ -282,6 +290,11 @@ fn emit_video_telemetry(
         p95_ms: value.p95_ms,
         p99_ms: value.p99_ms,
     });
+    let integrity_snapshot = ctx.frame_pipeline.integrity_snapshot();
+    let total_frame_drops = integrity_snapshot
+        .dropped_hw_transfer
+        .saturating_add(integrity_snapshot.dropped_scale)
+        .saturating_add(integrity_snapshot.dropped_nv12_extract);
     let (process_cpu_percent, process_memory_mb) = process_snapshot.unwrap_or((0.0, 0.0));
     emit_telemetry_payloads(
         ctx.app,
@@ -327,6 +340,11 @@ fn emit_video_telemetry(
             ),
             render_estimated_cost_ms: Some(renderer_metrics.last_render_cost_ms),
             render_present_lag_ms: Some(renderer_metrics.last_present_lag_ms),
+            video_packet_soft_error_count: Some(*ctx.video_packet_soft_error_count),
+            video_frame_drop_count: Some(total_frame_drops),
+            video_hw_transfer_drop_count: Some(integrity_snapshot.dropped_hw_transfer),
+            video_nv12_drop_count: Some(integrity_snapshot.dropped_nv12_extract),
+            video_scale_drop_count: Some(integrity_snapshot.dropped_scale),
         },
     );
 }

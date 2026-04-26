@@ -17,6 +17,7 @@ pub(super) fn restart_active_playback(
 
     let resume_position = resolve_restart_position(state)?;
     super::set_pending_seek(state, resume_position)?;
+    state.stream.advance_generation();
     stop_decode_stream_blocking(state)?;
     start_decode_stream(app, state, source)?;
     Ok(())

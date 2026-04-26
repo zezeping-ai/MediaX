@@ -1,11 +1,13 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
+  MEDIA_PLAYBACK_AUDIO_METER_EVENT,
   MEDIA_MENU_EVENT,
   MEDIA_PLAYBACK_DEBUG_EVENT,
   MEDIA_PLAYBACK_ERROR_EVENT,
   MEDIA_PLAYBACK_METADATA_EVENT,
   MEDIA_PLAYBACK_STATE_EVENT,
   MEDIA_PLAYBACK_TELEMETRY_EVENT,
+  type MediaAudioMeterPayload,
   type MediaDebugPayload,
   type MediaErrorPayload,
   type MediaEventEnvelope,
@@ -21,6 +23,7 @@ interface SessionEventBindings {
   onError: (payload: MediaErrorPayload) => void;
   onDebug: (payload: MediaDebugPayload) => void;
   onTelemetry: (payload: MediaTelemetryPayload) => void;
+  onAudioMeter: (payload: MediaAudioMeterPayload) => void;
 }
 
 export async function registerSessionEvents(bindings: SessionEventBindings) {
@@ -52,6 +55,11 @@ export async function registerSessionEvents(bindings: SessionEventBindings) {
   >(MEDIA_PLAYBACK_TELEMETRY_EVENT, (event) => {
     bindings.onTelemetry(resolvePayload(event.payload));
   });
+  const unlistenPlaybackAudioMeterEvent = await listen<
+    MediaEventEnvelope<MediaAudioMeterPayload> | MediaAudioMeterPayload
+  >(MEDIA_PLAYBACK_AUDIO_METER_EVENT, (event) => {
+    bindings.onAudioMeter(resolvePayload(event.payload));
+  });
 
   return [
     unlistenPlaybackStateEvent,
@@ -60,6 +68,7 @@ export async function registerSessionEvents(bindings: SessionEventBindings) {
     unlistenPlaybackErrorEvent,
     unlistenPlaybackDebugEvent,
     unlistenPlaybackTelemetryEvent,
+    unlistenPlaybackAudioMeterEvent,
   ] satisfies UnlistenFn[];
 }
 

@@ -4,10 +4,14 @@ use ffmpeg_next::codec;
 use tauri::AppHandle;
 
 pub(super) fn emit_video_stream_diagnostics(app: &AppHandle, video_ctx: &VideoDecodeContext) {
+    let Some(decoder) = video_ctx.decoder.as_ref() else {
+        emit_debug(app, "video", "no video stream");
+        return;
+    };
     {
         // SAFETY: decoder pointer is valid while `video_ctx.decoder` is alive; read-only access.
         let (profile, level, has_b_frames) = unsafe {
-            let raw = &*video_ctx.decoder.as_ptr();
+            let raw = &*decoder.as_ptr();
             (raw.profile, raw.level, raw.has_b_frames)
         };
         emit_debug(
@@ -15,18 +19,19 @@ pub(super) fn emit_video_stream_diagnostics(app: &AppHandle, video_ctx: &VideoDe
             "video_codec_profile",
             format!(
                 "codec={:?} profile={} level={} has_b_frames={}",
-                video_ctx.decoder.id(),
+                decoder.id(),
                 profile,
                 level,
                 has_b_frames
             ),
         );
     }
-    if let Some(video_stream) = video_ctx
-        .input_ctx
-        .streams()
-        .find(|stream| stream.index() == video_ctx.video_stream_index)
-    {
+    if let Some(video_stream_index) = video_ctx.video_stream_index {
+        if let Some(video_stream) = video_ctx
+            .input_ctx
+            .streams()
+            .find(|stream| stream.index() == video_stream_index)
+        {
         let container_name = video_ctx.input_ctx.format().name().to_string();
         emit_debug(
             app,
@@ -35,7 +40,7 @@ pub(super) fn emit_video_stream_diagnostics(app: &AppHandle, video_ctx: &VideoDe
                 "container={} codec={:?} pixel_fmt={:?}",
                 container_name,
                 video_stream.parameters().id(),
-                video_ctx.decoder.format()
+                decoder.format()
             ),
         );
         let tb = video_stream.time_base();
@@ -70,6 +75,7 @@ pub(super) fn emit_video_stream_diagnostics(app: &AppHandle, video_ctx: &VideoDe
                 video_stream.start_time()
             ),
         );
+        }
     }
 }
 

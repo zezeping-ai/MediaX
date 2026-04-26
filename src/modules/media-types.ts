@@ -1,16 +1,19 @@
 export type PlaybackStatus = "idle" | "playing" | "paused" | "stopped";
 export type HardwareDecodeMode = "auto" | "on" | "off";
 export type PlaybackQualityMode = "source" | "auto" | "1080p" | "720p" | "480p" | "320p";
+export type PlaybackMediaKind = "video" | "audio";
 export const MEDIA_PLAYBACK_STATE_EVENT = "media://playback/state";
 export const MEDIA_PLAYBACK_METADATA_EVENT = "media://playback/metadata";
 export const MEDIA_PLAYBACK_ERROR_EVENT = "media://playback/error";
 export const MEDIA_PLAYBACK_DEBUG_EVENT = "media://playback/debug";
 export const MEDIA_PLAYBACK_TELEMETRY_EVENT = "media://playback/telemetry";
+export const MEDIA_PLAYBACK_AUDIO_METER_EVENT = "media://playback/audio-meter";
 export const MEDIA_MENU_EVENT = "media://menu-action";
 
 export interface PlaybackState {
   engine: string;
   status: PlaybackStatus;
+  media_kind: PlaybackMediaKind;
   current_path: string | null;
   position_seconds: number;
   duration_seconds: number;
@@ -22,6 +25,12 @@ export interface PlaybackState {
   hw_decode_error: string | null;
   quality_mode: PlaybackQualityMode;
   adaptive_quality_supported: boolean;
+  volume: number;
+  muted: boolean;
+  left_channel_volume: number;
+  right_channel_volume: number;
+  left_channel_muted: boolean;
+  right_channel_muted: boolean;
 }
 
 export interface MediaItem {
@@ -50,6 +59,20 @@ export interface PreviewFrame {
   width: number;
   height: number;
   position_seconds: number;
+}
+
+export interface MediaLyricLine {
+  time_seconds: number;
+  text: string;
+}
+
+export interface MediaAudioMeterPayload {
+  sample_rate: number;
+  channels: number;
+  left_peak: number;
+  right_peak: number;
+  left_spectrum: number[];
+  right_spectrum: number[];
 }
 
 export interface CacheRecordingStatus {
@@ -163,13 +186,24 @@ export interface MediaTelemetryPayload {
   gpu_queue_utilization: number | null;
   render_estimated_cost_ms: number | null;
   render_present_lag_ms: number | null;
+  video_packet_soft_error_count?: number | null;
+  video_frame_drop_count?: number | null;
+  video_hw_transfer_drop_count?: number | null;
+  video_nv12_drop_count?: number | null;
+  video_scale_drop_count?: number | null;
 }
 
 export interface MediaMetadataPayload {
+  media_kind: PlaybackMediaKind;
   width: number;
   height: number;
   fps: number;
   duration_seconds: number;
+  title?: string | null;
+  artist?: string | null;
+  album?: string | null;
+  has_cover_art?: boolean;
+  lyrics?: MediaLyricLine[];
 }
 
 export interface MediaErrorPayload {

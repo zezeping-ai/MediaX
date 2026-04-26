@@ -1,7 +1,10 @@
-import { ref } from "vue";
+import { ref, shallowRef } from "vue";
 import type {
+  MediaAudioMeterPayload,
   MediaErrorPayload,
+  MediaLyricLine,
   MediaMetadataPayload,
+  PlaybackMediaKind,
   MediaSnapshot,
   MediaTelemetryPayload,
 } from "@/modules/media-types";
@@ -15,13 +18,20 @@ export function useMediaSessionState() {
   const debugSnapshot = ref<Record<string, string>>({});
   const debugTimeline = ref<Array<{ stage: string; message: string; at_ms: number }>>([]);
   const debugStageSnapshot = ref<Record<string, { message: string; at_ms: number }>>({});
-  const latestTelemetry = ref<MediaTelemetryPayload | null>(null);
+  const latestTelemetry = shallowRef<MediaTelemetryPayload | null>(null);
+  const latestAudioMeter = shallowRef<MediaAudioMeterPayload | null>(null);
   const telemetryHistory = ref<Array<{ at_ms: number; telemetry: MediaTelemetryPayload }>>([]);
   const firstFrameAtMs = ref<number | null>(null);
   const metadataDurationSeconds = ref<number | null>(null);
+  const metadataMediaKind = ref<PlaybackMediaKind>("video");
   const metadataVideoWidth = ref<number | null>(null);
   const metadataVideoHeight = ref<number | null>(null);
   const metadataVideoFps = ref<number | null>(null);
+  const metadataTitle = ref("");
+  const metadataArtist = ref("");
+  const metadataAlbum = ref("");
+  const metadataHasCoverArt = ref(false);
+  const metadataLyrics = ref<MediaLyricLine[]>([]);
   const playbackErrorMessage = ref("");
   const networkReadBytesPerSecond = ref<number | null>(null);
   const networkSustainRatio = ref<number | null>(null);
@@ -33,11 +43,18 @@ export function useMediaSessionState() {
     debugStageSnapshot.value = {};
     firstFrameAtMs.value = null;
     latestTelemetry.value = null;
+    latestAudioMeter.value = null;
     telemetryHistory.value = [];
     metadataDurationSeconds.value = null;
+    metadataMediaKind.value = "video";
     metadataVideoWidth.value = null;
     metadataVideoHeight.value = null;
     metadataVideoFps.value = null;
+    metadataTitle.value = "";
+    metadataArtist.value = "";
+    metadataAlbum.value = "";
+    metadataHasCoverArt.value = false;
+    metadataLyrics.value = [];
     networkReadBytesPerSecond.value = null;
     networkSustainRatio.value = null;
     lastTelemetryAtMs.value = 0;
@@ -54,10 +71,16 @@ export function useMediaSessionState() {
   }
 
   function applyMetadataPayload(payload: MediaMetadataPayload) {
+    metadataMediaKind.value = payload.media_kind;
     metadataDurationSeconds.value = payload.duration_seconds;
     metadataVideoWidth.value = payload.width;
     metadataVideoHeight.value = payload.height;
     metadataVideoFps.value = payload.fps;
+    metadataTitle.value = payload.title ?? "";
+    metadataArtist.value = payload.artist ?? "";
+    metadataAlbum.value = payload.album ?? "";
+    metadataHasCoverArt.value = Boolean(payload.has_cover_art);
+    metadataLyrics.value = payload.lyrics ?? [];
   }
 
   function applyErrorPayload(payload: MediaErrorPayload) {
@@ -70,6 +93,7 @@ export function useMediaSessionState() {
     debugTimeline,
     debugStageSnapshot,
     latestTelemetry,
+    latestAudioMeter,
     telemetryHistory,
     firstFrameAtMs,
     networkReadBytesPerSecond,
@@ -83,12 +107,17 @@ export function useMediaSessionState() {
     debugTimeline,
     debugStageSnapshot,
     latestTelemetry,
+    latestAudioMeter,
     telemetryHistory,
     firstFrameAtMs,
     networkReadBytesPerSecond,
     networkSustainRatio,
     lastTelemetryAtMs,
   });
+
+  function applyAudioMeterPayload(payload: MediaAudioMeterPayload) {
+    latestAudioMeter.value = payload;
+  }
 
   function markTelemetryStaleIfNeeded() {
     if (!currentSource.value) {
@@ -105,6 +134,7 @@ export function useMediaSessionState() {
 
   return {
     applyDebugPayload,
+    applyAudioMeterPayload,
     applyErrorPayload,
     applyMetadataPayload,
     applyTelemetryPayload,
@@ -114,8 +144,15 @@ export function useMediaSessionState() {
     debugTimeline,
     firstFrameAtMs,
     latestTelemetry,
+    latestAudioMeter,
     markTelemetryStaleIfNeeded,
     metadataDurationSeconds,
+    metadataMediaKind,
+    metadataTitle,
+    metadataArtist,
+    metadataAlbum,
+    metadataHasCoverArt,
+    metadataLyrics,
     metadataVideoFps,
     metadataVideoHeight,
     metadataVideoWidth,

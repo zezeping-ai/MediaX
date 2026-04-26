@@ -74,7 +74,7 @@ const {
   >
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-1.5">
-        <div class="font-bold tracking-[0.2px]">解析 Debug</div>
+        <div class="font-bold tracking-[0.2px]">调试面板</div>
         <span
           class="inline-flex h-4 items-center justify-center rounded-full border px-1.5 text-[10px]"
           :class="liveBadgeClass"

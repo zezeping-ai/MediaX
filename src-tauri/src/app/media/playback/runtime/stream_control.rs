@@ -144,6 +144,7 @@ fn run_decode_stream_with_auto_fallback(
         stream_generation,
         requested_hw_mode,
         None,
+        false,
     ) {
         Ok(()) => Ok(()),
         Err(err)
@@ -165,6 +166,7 @@ fn run_decode_stream_with_auto_fallback(
                 stream_generation,
                 HardwareDecodeMode::Off,
                 Some(format!("auto fallback after hardware runtime failure: {err}")),
+                false,
             )
         }
         Err(err) => Err(err),
@@ -186,6 +188,7 @@ fn should_retry_as_software(app: &AppHandle, source: &str, stream_generation: u3
     let state = playback.state();
     state.current_path.as_deref() == Some(source) && state.hw_decode_active
 }
+
 
 pub fn write_latest_stream_position(
     state: &State<'_, MediaState>,

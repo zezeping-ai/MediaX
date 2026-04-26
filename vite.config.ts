@@ -31,6 +31,9 @@ export default defineConfig(async () => ({
           if (id.includes("@iconify")) {
             return "iconify";
           }
+          if (id.includes("/echarts/")) {
+            return "viz-echarts";
+          }
           if (id.includes("@vueuse") || id.includes("lodash-es")) {
             return "app-utils";
           }

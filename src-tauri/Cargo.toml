@@ -29,7 +29,7 @@ walkdir = "2"
 wgpu = "29.0.1"
 pollster = "0.4.0"
 rodio = "0.22.2"
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 base64 = "0.22"
 sysinfo = "0.38.4"
 
@@ -49,4 +49,3 @@ ffmpeg-next = { version = "7", default-features = false, features = [
     "software-resampling",
     "software-scaling",
 ] }
-

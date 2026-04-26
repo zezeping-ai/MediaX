@@ -54,6 +54,7 @@ pub(crate) struct DecodeLoopState {
     pub video_frame_type_p: u64,
     pub video_frame_type_b: u64,
     pub video_frame_type_other: u64,
+    pub video_packet_soft_error_count: u64,
 }
 
 impl DecodeLoopState {
@@ -104,6 +105,7 @@ impl DecodeLoopState {
             video_frame_type_p: 0,
             video_frame_type_b: 0,
             video_frame_type_other: 0,
+            video_packet_soft_error_count: 0,
         }
     }
 

@@ -27,6 +27,7 @@ const {
   effectiveDurationSeconds,
   firstFrameAtMs,
   latestTelemetry,
+  latestAudioMeter,
   telemetryHistory,
   handlePause,
   handlePlay,
@@ -38,6 +39,12 @@ const {
   isBusy,
   markMouseActive,
   mediaInfoSnapshot,
+  metadataAlbum,
+  metadataArtist,
+  metadataHasCoverArt,
+  metadataLyrics,
+  metadataMediaKind,
+  metadataTitle,
   muted,
   networkReadBytesPerSecond,
   networkSustainRatio,
@@ -56,6 +63,10 @@ const {
   seekPreview,
   selectedQuality,
   setControlsOverlayInteracting,
+  setLeftChannelMuted,
+  setLeftChannelVolume,
+  setRightChannelMuted,
+  setRightChannelVolume,
   toggleCacheRecording,
   toggleLock,
   toggleMute,
@@ -84,8 +95,19 @@ const {
         :debug-stage-snapshot="debugStageSnapshot"
         :first-frame-at-ms="firstFrameAtMs"
         :latest-telemetry="latestTelemetry"
+        :latest-audio-meter="latestAudioMeter"
         :telemetry-history="telemetryHistory"
         :media-info-snapshot="mediaInfoSnapshot"
+        :metadata-album="metadataAlbum"
+        :metadata-artist="metadataArtist"
+        :metadata-has-cover-art="metadataHasCoverArt"
+        :metadata-lyrics="metadataLyrics"
+        :metadata-media-kind="metadataMediaKind"
+        :metadata-title="metadataTitle"
+        :set-left-channel-muted="setLeftChannelMuted"
+        :set-left-channel-volume="setLeftChannelVolume"
+        :set-right-channel-muted="setRightChannelMuted"
+        :set-right-channel-volume="setRightChannelVolume"
         :network-read-bytes-per-second="networkReadBytesPerSecond"
         :network-sustain-ratio="networkSustainRatio"
         :cache-recording="cacheRecording"

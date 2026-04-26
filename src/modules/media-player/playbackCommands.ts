@@ -78,6 +78,38 @@ export function playbackSetMuted(muted: boolean) {
   return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>("playback_set_muted", isMediaSnapshot, { muted });
 }
 
+export function playbackSetLeftChannelVolume(volume: number) {
+  return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
+    "playback_set_left_channel_volume",
+    isMediaSnapshot,
+    { volume: normalizeUnitInterval(volume, "volume") },
+  );
+}
+
+export function playbackSetRightChannelVolume(volume: number) {
+  return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
+    "playback_set_right_channel_volume",
+    isMediaSnapshot,
+    { volume: normalizeUnitInterval(volume, "volume") },
+  );
+}
+
+export function playbackSetLeftChannelMuted(muted: boolean) {
+  return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
+    "playback_set_left_channel_muted",
+    isMediaSnapshot,
+    { muted },
+  );
+}
+
+export function playbackSetRightChannelMuted(muted: boolean) {
+  return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
+    "playback_set_right_channel_muted",
+    isMediaSnapshot,
+    { muted },
+  );
+}
+
 export function playbackConfigureDecoderMode(mode: HardwareDecodeMode) {
   return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
     "playback_configure_decoder_mode",

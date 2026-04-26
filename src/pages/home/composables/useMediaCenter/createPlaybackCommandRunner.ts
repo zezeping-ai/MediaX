@@ -13,6 +13,10 @@ type CreatePlaybackCommandRunnerOptions = {
     setRate: (rate: number) => Promise<MediaSnapshot>;
     setVolume: (volume: number) => Promise<MediaSnapshot>;
     setMuted: (muted: boolean) => Promise<MediaSnapshot>;
+    setLeftChannelVolume: (volume: number) => Promise<MediaSnapshot>;
+    setRightChannelVolume: (volume: number) => Promise<MediaSnapshot>;
+    setLeftChannelMuted: (muted: boolean) => Promise<MediaSnapshot>;
+    setRightChannelMuted: (muted: boolean) => Promise<MediaSnapshot>;
     setQuality: (mode: PlaybackQualityMode) => Promise<MediaSnapshot>;
     syncPosition: (positionSeconds: number, durationSeconds: number) => Promise<MediaSnapshot>;
   };
@@ -35,12 +39,17 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
 
   async function openLocalFileByDialog() {
     const selected = await open({
-      title: "选择本地视频文件",
+      title: "选择本地媒体文件",
       multiple: false,
       filters: [
         {
-          name: "Video",
-          extensions: ["mp4", "mkv", "mov", "avi", "webm", "m4v", "mpeg", "mpg", "ts"],
+          name: "Media",
+          extensions: [
+            "mp4", "mkv", "mov", "avi", "webm", "flv", "m4v", "wmv", "mpeg", "mpg", "ts", "m2ts",
+            "mts", "mxf", "rm", "rmvb", "3gp", "3g2", "ogv", "asf", "vob", "f4v", "divx",
+            "mp3", "flac", "wav", "aac", "m4a", "ogg", "opus", "wma", "aif", "aiff", "ape",
+            "alac", "amr", "ac3", "dts", "mp2", "mka",
+          ],
         },
       ],
     });
@@ -105,6 +114,22 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     await run(() => options.commands.setMuted(muted));
   }
 
+  async function setLeftChannelVolume(volume: number) {
+    await run(() => options.commands.setLeftChannelVolume(volume));
+  }
+
+  async function setRightChannelVolume(volume: number) {
+    await run(() => options.commands.setRightChannelVolume(volume));
+  }
+
+  async function setLeftChannelMuted(muted: boolean) {
+    await run(() => options.commands.setLeftChannelMuted(muted));
+  }
+
+  async function setRightChannelMuted(muted: boolean) {
+    await run(() => options.commands.setRightChannelMuted(muted));
+  }
+
   async function setQuality(mode: PlaybackQualityMode) {
     await run(() => options.commands.setQuality(mode));
   }
@@ -136,8 +161,12 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     seek,
     seekPreview,
     setMuted,
+    setLeftChannelMuted,
+    setLeftChannelVolume,
     setQuality,
     setRate,
+    setRightChannelMuted,
+    setRightChannelVolume,
     setVolume,
     stop,
     syncPosition,

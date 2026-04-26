@@ -16,7 +16,7 @@ pub fn take_pending_seek_seconds(app: &AppHandle) -> Result<Option<f64>, String>
 
 pub fn apply_seek_to_stream(
     input_ctx: &mut format::context::Input,
-    decoder: &mut ffmpeg::decoder::Video,
+    decoder: Option<&mut ffmpeg::decoder::Video>,
     target_seconds: f64,
     playback_clock: &mut PlaybackClock,
     current_position_seconds: &mut f64,
@@ -35,7 +35,9 @@ pub fn apply_seek_to_stream(
     input_ctx
         .seek(ts, ..)
         .map_err(|err| format!("seek stream failed: {err}"))?;
-    decoder.flush();
+    if let Some(decoder) = decoder {
+        decoder.flush();
+    }
     if let Some(audio_state) = audio_pipeline {
         audio_state.decoder.flush();
         audio_state.output.player.clear();

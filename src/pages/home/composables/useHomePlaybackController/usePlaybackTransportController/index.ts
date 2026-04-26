@@ -28,9 +28,13 @@ export function usePlaybackTransportController(options: UsePlaybackTransportCont
   watch(options.playback, (value) => {
     if (!value) {
       playbackRate.value = 1;
+      volume.value = 1;
+      muted.value = false;
       return;
     }
     playbackRate.value = value.playback_rate ?? 1;
+    volume.value = value.volume ?? 1;
+    muted.value = value.muted ?? false;
   });
 
   return {

@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from "vue";
-import { type MediaTelemetryPayload, type PlaybackState } from "@/modules/media-types";
+import {
+  type MediaAudioMeterPayload,
+  type MediaLyricLine,
+  type MediaTelemetryPayload,
+  type PlaybackState,
+} from "@/modules/media-types";
 import { usePreferences } from "@/modules/preferences";
+import AudioLyricsOverlay from "./AudioLyricsOverlay.vue";
 import TransferStatusOverlay from "./TransferStatusOverlay.vue";
 import LoadingProcessOverlay from "./PlayerDebugOverlay/LoadingProcessOverlay.vue";
 
@@ -21,8 +27,19 @@ const props = defineProps<{
   debugStageSnapshot: Record<string, { message: string; at_ms: number }>;
   firstFrameAtMs: number | null;
   latestTelemetry: MediaTelemetryPayload | null;
+  latestAudioMeter: MediaAudioMeterPayload | null;
   telemetryHistory: Array<{ at_ms: number; telemetry: MediaTelemetryPayload }>;
   mediaInfoSnapshot: Record<string, string>;
+  metadataMediaKind: "video" | "audio";
+  metadataTitle: string;
+  metadataArtist: string;
+  metadataAlbum: string;
+  metadataHasCoverArt: boolean;
+  metadataLyrics: MediaLyricLine[];
+  setLeftChannelVolume: (volume: number) => Promise<void>;
+  setRightChannelVolume: (volume: number) => Promise<void>;
+  setLeftChannelMuted: (muted: boolean) => Promise<void>;
+  setRightChannelMuted: (muted: boolean) => Promise<void>;
   networkReadBytesPerSecond: number | null;
   networkSustainRatio: number | null;
   cacheRecording: boolean;
@@ -50,7 +67,9 @@ const shouldShowDebugOverlay = computed(() => (
 const overlaySource = computed(() => props.pendingSource || props.source);
 const hasPresentedFirstFrame = computed(() =>
   Boolean(
-    props.debugSnapshot.video_frame_format
+    props.metadataMediaKind === "audio"
+    || props.debugSnapshot.audio_pipeline_ready
+    || props.debugSnapshot.video_frame_format
     || props.debugSnapshot.video_fps
     || props.debugSnapshot.video_pipeline,
   ),
@@ -97,6 +116,20 @@ watch(
       v-if="shouldShowLoadingProcessOverlay"
       :source="overlaySource"
       :timeline="debugTimeline"
+    />
+    <AudioLyricsOverlay
+      :media-kind="metadataMediaKind"
+      :playback="playback"
+      :audio-meter="latestAudioMeter"
+      :lyrics="metadataLyrics"
+      :title="metadataTitle"
+      :artist="metadataArtist"
+      :album="metadataAlbum"
+      :has-cover-art="metadataHasCoverArt"
+      :set-left-channel-volume="setLeftChannelVolume"
+      :set-right-channel-volume="setRightChannelVolume"
+      :set-left-channel-muted="setLeftChannelMuted"
+      :set-right-channel-muted="setRightChannelMuted"
     />
     <PlayerDebugOverlay
       v-if="shouldShowDebugOverlay"

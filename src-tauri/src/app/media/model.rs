@@ -36,10 +36,20 @@ pub enum PlaybackQualityMode {
     P320,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum PlaybackMediaKind {
+    #[default]
+    Video,
+    Audio,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaybackState {
     pub engine: String,
     pub status: PlaybackStatus,
+    pub media_kind: PlaybackMediaKind,
     pub current_path: Option<String>,
     pub position_seconds: f64,
     pub duration_seconds: f64,
@@ -51,6 +61,12 @@ pub struct PlaybackState {
     pub hw_decode_error: Option<String>,
     pub quality_mode: PlaybackQualityMode,
     pub adaptive_quality_supported: bool,
+    pub volume: f64,
+    pub muted: bool,
+    pub left_channel_volume: f64,
+    pub right_channel_volume: f64,
+    pub left_channel_muted: bool,
+    pub right_channel_muted: bool,
 }
 
 impl Default for PlaybackState {
@@ -58,6 +74,7 @@ impl Default for PlaybackState {
         Self {
             engine: "mpv".to_string(),
             status: PlaybackStatus::Idle,
+            media_kind: PlaybackMediaKind::Video,
             current_path: None,
             position_seconds: 0.0,
             duration_seconds: 0.0,
@@ -69,6 +86,12 @@ impl Default for PlaybackState {
             hw_decode_error: None,
             quality_mode: PlaybackQualityMode::Source,
             adaptive_quality_supported: false,
+            volume: 1.0,
+            muted: false,
+            left_channel_volume: 1.0,
+            right_channel_volume: 1.0,
+            left_channel_muted: false,
+            right_channel_muted: false,
         }
     }
 }
@@ -103,6 +126,12 @@ pub struct PreviewFrame {
     pub width: u32,
     pub height: u32,
     pub position_seconds: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaLyricLine {
+    pub time_seconds: f64,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

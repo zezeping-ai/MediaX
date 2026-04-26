@@ -21,6 +21,7 @@ export function useMediaSession() {
       onError: state.applyErrorPayload,
       onDebug: state.applyDebugPayload,
       onTelemetry: state.applyTelemetryPayload,
+      onAudioMeter: state.applyAudioMeterPayload,
     });
     timerDisposer = startSessionTimers({
       getSnapshot: async () => {
@@ -45,10 +46,17 @@ export function useMediaSession() {
     debugStageSnapshot: state.debugStageSnapshot,
     firstFrameAtMs: state.firstFrameAtMs,
     latestTelemetry: state.latestTelemetry,
+    latestAudioMeter: state.latestAudioMeter,
     telemetryHistory: state.telemetryHistory,
     networkReadBytesPerSecond: state.networkReadBytesPerSecond,
     networkSustainRatio: state.networkSustainRatio,
     metadataDurationSeconds: state.metadataDurationSeconds,
+    metadataMediaKind: state.metadataMediaKind,
+    metadataTitle: state.metadataTitle,
+    metadataArtist: state.metadataArtist,
+    metadataAlbum: state.metadataAlbum,
+    metadataHasCoverArt: state.metadataHasCoverArt,
+    metadataLyrics: state.metadataLyrics,
     metadataVideoWidth: state.metadataVideoWidth,
     metadataVideoHeight: state.metadataVideoHeight,
     metadataVideoFps: state.metadataVideoFps,

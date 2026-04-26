@@ -153,8 +153,15 @@ export function useMediaCenter() {
     debugStageSnapshot: mediaSession.debugStageSnapshot,
     firstFrameAtMs: mediaSession.firstFrameAtMs,
     latestTelemetry: mediaSession.latestTelemetry,
+    latestAudioMeter: mediaSession.latestAudioMeter,
     telemetryHistory: mediaSession.telemetryHistory,
     mediaInfoSnapshot,
+    metadataMediaKind: mediaSession.metadataMediaKind,
+    metadataTitle: mediaSession.metadataTitle,
+    metadataArtist: mediaSession.metadataArtist,
+    metadataAlbum: mediaSession.metadataAlbum,
+    metadataHasCoverArt: mediaSession.metadataHasCoverArt,
+    metadataLyrics: mediaSession.metadataLyrics,
     metadataVideoHeight: mediaSession.metadataVideoHeight,
     openLocalFileByDialog: () => withBusyState(async () => {
       const selectedPath = await playbackRunner.openLocalFileByDialog();
@@ -180,6 +187,14 @@ export function useMediaCenter() {
       playbackRunner.runWithoutBusyLock(() => playbackRunner.setVolume(volume)),
     setMuted: (muted: boolean) =>
       playbackRunner.runWithoutBusyLock(() => playbackRunner.setMuted(muted)),
+    setLeftChannelVolume: (volume: number) =>
+      playbackRunner.runWithoutBusyLock(() => playbackRunner.setLeftChannelVolume(volume)),
+    setRightChannelVolume: (volume: number) =>
+      playbackRunner.runWithoutBusyLock(() => playbackRunner.setRightChannelVolume(volume)),
+    setLeftChannelMuted: (muted: boolean) =>
+      playbackRunner.runWithoutBusyLock(() => playbackRunner.setLeftChannelMuted(muted)),
+    setRightChannelMuted: (muted: boolean) =>
+      playbackRunner.runWithoutBusyLock(() => playbackRunner.setRightChannelMuted(muted)),
     setQuality: (mode: PlaybackQualityMode) => withBusyState(() => playbackRunner.setQuality(mode)),
     toggleCacheRecording: () => withBusyState(cacheRecordingController.toggleCacheRecording),
     requestPreviewFrame: (positionSeconds: number, maxWidth?: number, maxHeight?: number) =>

@@ -8,11 +8,15 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub fn update_playback_progress(
     app: &AppHandle,
+    stream_generation: u32,
     position_seconds: f64,
     duration_seconds: f64,
     finalize: bool,
 ) -> Result<(), String> {
     let state = app.state::<MediaState>();
+    if !state.stream.is_generation_current(stream_generation) {
+        return Ok(());
+    }
     let snapshot = {
         let library = state
             .library

@@ -55,6 +55,10 @@ export function createCurrentFrameSections(
   if (isFiniteNumber(decodeMax)) decodeRows.push({ key: "decode_max_frame_cost_ms", label: "decode max", value: `${decodeMax.toFixed(2)}ms` });
   const decodeSamples = telemetry?.decode_samples;
   if (typeof decodeSamples === "number" && decodeSamples > 0) decodeRows.push({ key: "decode_samples", label: "window", value: `${decodeSamples} frames` });
+  const packetSoftErrors = telemetry?.video_packet_soft_error_count;
+  if (typeof packetSoftErrors === "number") decodeRows.push({ key: "video_packet_soft_error_count", label: "packet soft err", value: String(packetSoftErrors) });
+  const frameDrops = telemetry?.video_frame_drop_count;
+  if (typeof frameDrops === "number") decodeRows.push({ key: "video_frame_drop_count", label: "frame drops", value: String(frameDrops) });
   const integrity = snapshot.video_integrity;
   if (integrity) decodeRows.push({ key: "video_integrity", label: "integrity", value: integrity });
 

@@ -7,11 +7,13 @@ use crate::app::media::playback::runtime::session::{
 };
 use crate::app::media::playback::runtime::video_pipeline::{drain_frames, DrainFramesContext};
 use crate::app::media::playback::render::renderer::RendererState;
+use crate::app::media::playback::runtime::{progress::update_playback_progress, write_latest_stream_position};
 use crate::app::media::state::TimingControls;
 use ffmpeg_next::Packet;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use tauri::AppHandle;
+use std::time::Duration;
+use tauri::{AppHandle, Manager};
 
 pub(super) fn handle_packet(
     app: &AppHandle,
@@ -25,7 +27,10 @@ pub(super) fn handle_packet(
 ) -> Result<(), String> {
     runtime.loop_state.update_network_window(packet.size());
     let audio_stream_index = runtime.audio_pipeline.as_ref().map(|audio| audio.stream_index);
-    if packet.stream() == runtime.video_ctx.video_stream_index
+    if runtime
+        .video_ctx
+        .video_stream_index
+        .is_some_and(|index| packet.stream() == index)
         || audio_stream_index.is_some_and(|index| packet.stream() == index)
     {
         runtime
@@ -33,26 +38,57 @@ pub(super) fn handle_packet(
             .update_media_required_window(packet.size());
     }
     update_cache_recording(app, source, runtime, &packet)?;
-    if packet.stream() == runtime.video_ctx.video_stream_index {
+    if runtime
+        .video_ctx
+        .video_stream_index
+        .is_some_and(|index| packet.stream() == index)
+    {
+        let Some(video_time_base) = runtime.video_ctx.video_time_base else {
+            return Ok(());
+        };
+        let Some(decoder) = runtime.video_ctx.decoder.as_mut() else {
+            return Ok(());
+        };
         runtime
             .loop_state
-            .record_video_packet(app, &packet, runtime.video_ctx.video_time_base);
-        runtime.video_ctx.decoder.send_packet(&packet).map_err(|err| {
+            .record_video_packet(app, &packet, video_time_base);
+        if let Err(err) = decoder.send_packet(&packet) {
+            runtime.loop_state.video_packet_soft_error_count =
+                runtime.loop_state.video_packet_soft_error_count.saturating_add(1);
             emit_debug(
                 app,
                 "decode_error_detail",
                 format!("video_send_packet_failed err={err}"),
             );
-            format!("send packet failed: {err}")
-        })?;
-        drain_video_frames(
+            emit_debug(
+                app,
+                "decode_recovery",
+                "video send_packet soft error ignored; preserving decoder state for later frames",
+            );
+            return Ok(());
+        }
+        if let Err(err) = drain_video_frames(
             app,
             renderer,
             stop_flag,
             runtime,
             current_audio_allowed_lead_seconds(runtime),
             stream_generation,
-        )?;
+        ) {
+            runtime.loop_state.video_packet_soft_error_count =
+                runtime.loop_state.video_packet_soft_error_count.saturating_add(1);
+            emit_debug(
+                app,
+                "decode_error_detail",
+                format!("video_drain_failed err={err}"),
+            );
+            emit_debug(
+                app,
+                "decode_recovery",
+                "video drain soft error ignored; preserving decoder state for later frames",
+            );
+            runtime.loop_state.last_video_pts_seconds = None;
+        }
         return Ok(());
     }
     if let Some(audio_state) = runtime.audio_pipeline.as_mut() {
@@ -74,6 +110,9 @@ pub(super) fn handle_packet(
                 &mut runtime.loop_state.audio_queue_depth_sources,
                 &mut runtime.loop_state.active_seek_target_seconds,
             )?;
+            if runtime.video_ctx.video_stream_index.is_none() {
+                update_audio_only_progress(app, renderer, timing_controls, runtime, stream_generation)?;
+            }
         }
     }
     Ok(())
@@ -87,11 +126,17 @@ pub(super) fn drain_video_frames(
     audio_allowed_lead_seconds: f64,
     stream_generation: u32,
 ) -> Result<(), String> {
+    let Some(decoder) = runtime.video_ctx.decoder.as_mut() else {
+        return Ok(());
+    };
+    let Some(video_time_base) = runtime.video_ctx.video_time_base else {
+        return Ok(());
+    };
     let mut drain_ctx = DrainFramesContext {
         app,
         renderer,
-        decoder: &mut runtime.video_ctx.decoder,
-        video_time_base: runtime.video_ctx.video_time_base,
+        decoder,
+        video_time_base,
         scaler: &mut runtime.scaler,
         duration_seconds: runtime.video_ctx.duration_seconds,
         output_width: runtime.video_ctx.output_width,
@@ -121,9 +166,45 @@ pub(super) fn drain_video_frames(
         video_frame_type_p: &mut runtime.loop_state.video_frame_type_p,
         video_frame_type_b: &mut runtime.loop_state.video_frame_type_b,
         video_frame_type_other: &mut runtime.loop_state.video_frame_type_other,
+        video_packet_soft_error_count: &mut runtime.loop_state.video_packet_soft_error_count,
         stream_generation,
     };
     drain_frames(&mut drain_ctx)
+}
+
+fn update_audio_only_progress(
+    app: &AppHandle,
+    renderer: &RendererState,
+    timing_controls: &Arc<TimingControls>,
+    runtime: &mut DecodeRuntime,
+    stream_generation: u32,
+) -> Result<(), String> {
+    let duration_seconds = runtime.video_ctx.duration_seconds.max(0.0);
+    let mut position_seconds = runtime
+        .loop_state
+        .audio_clock
+        .map(|clock| clock.now_seconds())
+        .unwrap_or(runtime.loop_state.current_position_seconds);
+    if duration_seconds > 0.0 {
+        position_seconds = position_seconds.min(duration_seconds);
+    }
+    runtime.loop_state.current_position_seconds = position_seconds.max(0.0);
+    renderer.update_clock(
+        runtime.loop_state.current_position_seconds,
+        timing_controls.playback_rate() as f64,
+    );
+    write_latest_stream_position(&app.state::<crate::app::media::state::MediaState>(), runtime.loop_state.current_position_seconds)?;
+    if runtime.loop_state.last_progress_emit.elapsed() >= Duration::from_millis(200) {
+        update_playback_progress(
+            app,
+            stream_generation,
+            runtime.loop_state.current_position_seconds,
+            duration_seconds,
+            false,
+        )?;
+        runtime.loop_state.last_progress_emit = std::time::Instant::now();
+    }
+    Ok(())
 }
 
 fn update_cache_recording(

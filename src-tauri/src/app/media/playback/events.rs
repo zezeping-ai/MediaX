@@ -1,24 +1,43 @@
 use serde::Serialize;
 
+use crate::app::media::model::{MediaLyricLine, PlaybackMediaKind};
+
 pub const MEDIA_PLAYBACK_STATE_EVENT: &str = "media://playback/state";
 pub const MEDIA_PLAYBACK_METADATA_EVENT: &str = "media://playback/metadata";
 pub const MEDIA_PLAYBACK_ERROR_EVENT: &str = "media://playback/error";
 pub const MEDIA_PLAYBACK_DEBUG_EVENT: &str = "media://playback/debug";
 pub const MEDIA_PLAYBACK_TELEMETRY_EVENT: &str = "media://playback/telemetry";
+pub const MEDIA_PLAYBACK_AUDIO_METER_EVENT: &str = "media://playback/audio-meter";
 pub const MEDIA_PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Clone, Serialize)]
 pub struct MediaMetadataPayload {
+    pub media_kind: PlaybackMediaKind,
     pub width: u32,
     pub height: u32,
     pub fps: f64,
     pub duration_seconds: f64,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub has_cover_art: bool,
+    pub lyrics: Vec<MediaLyricLine>,
 }
 
 #[derive(Clone, Serialize)]
 pub struct MediaErrorPayload {
     pub code: &'static str,
     pub message: String,
+}
+
+#[derive(Clone, Serialize)]
+pub struct MediaAudioMeterPayload {
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub left_peak: f32,
+    pub right_peak: f32,
+    pub left_spectrum: Vec<f32>,
+    pub right_spectrum: Vec<f32>,
 }
 
 #[derive(Clone, Serialize)]
@@ -100,4 +119,9 @@ pub struct MediaTelemetryPayload {
     pub gpu_queue_utilization: Option<f64>,
     pub render_estimated_cost_ms: Option<f64>,
     pub render_present_lag_ms: Option<f64>,
+    pub video_packet_soft_error_count: Option<u64>,
+    pub video_frame_drop_count: Option<u64>,
+    pub video_hw_transfer_drop_count: Option<u64>,
+    pub video_nv12_drop_count: Option<u64>,
+    pub video_scale_drop_count: Option<u64>,
 }

@@ -21,19 +21,19 @@ pub(crate) fn finish_decode_runtime(
     if let Some(writer) = runtime.loop_state.cache_writer.as_mut() {
         writer.finish();
     }
-    runtime
-        .video_ctx
-        .decoder
-        .send_eof()
-        .map_err(|err| format!("send eof failed: {err}"))?;
-    drain_video_frames(
-        app,
-        renderer,
-        stop_flag,
-        runtime,
-        super::AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT,
-        stream_generation,
-    )?;
+    if let Some(decoder) = runtime.video_ctx.decoder.as_mut() {
+        decoder
+            .send_eof()
+            .map_err(|err| format!("send eof failed: {err}"))?;
+        drain_video_frames(
+            app,
+            renderer,
+            stop_flag,
+            runtime,
+            super::AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT,
+            stream_generation,
+        )?;
+    }
     if let Some(audio_state) = runtime.audio_pipeline.as_mut() {
         audio_state
             .decoder
@@ -59,9 +59,10 @@ pub(crate) fn finish_decode_runtime(
             );
         }
     }
-    complete_eof_tail(app, renderer, stop_flag, timing_controls, runtime)?;
+    complete_eof_tail(app, renderer, stop_flag, timing_controls, runtime, stream_generation)?;
     update_playback_progress(
         app,
+        stream_generation,
         runtime.loop_state.current_position_seconds.max(0.0),
         runtime.video_ctx.duration_seconds,
         true,
@@ -75,6 +76,7 @@ fn complete_eof_tail(
     stop_flag: &Arc<AtomicBool>,
     timing_controls: &Arc<TimingControls>,
     runtime: &mut DecodeRuntime,
+    stream_generation: u32,
 ) -> Result<(), String> {
     let mut tail_position_seconds = runtime.loop_state.current_position_seconds.max(0.0);
     let mut last_tail_tick = Instant::now();
@@ -98,7 +100,13 @@ fn complete_eof_tail(
         renderer.update_clock(tail_position_seconds, rate);
         write_latest_stream_position(&app.state::<MediaState>(), tail_position_seconds)?;
         if last_tail_progress_emit.elapsed() >= Duration::from_millis(200) {
-            update_playback_progress(app, tail_position_seconds, duration_seconds, false)?;
+            update_playback_progress(
+                app,
+                stream_generation,
+                tail_position_seconds,
+                duration_seconds,
+                false,
+            )?;
             last_tail_progress_emit = Instant::now();
         }
         let audio_done = runtime

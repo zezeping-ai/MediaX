@@ -7,9 +7,13 @@ import {
   playbackPreviewFrame,
   playbackResume,
   playbackSeekTo,
+  playbackSetLeftChannelMuted,
+  playbackSetLeftChannelVolume,
   playbackSetMuted,
   playbackSetQuality,
   playbackSetRate,
+  playbackSetRightChannelMuted,
+  playbackSetRightChannelVolume,
   playbackSetVolume,
   playbackStopSession,
   playbackSyncPosition,
@@ -30,6 +34,10 @@ export interface PlaybackCommandSet {
   setRate: (playbackRate: number) => Promise<MediaSnapshot>;
   setVolume: (volume: number) => Promise<MediaSnapshot>;
   setMuted: (muted: boolean) => Promise<MediaSnapshot>;
+  setLeftChannelVolume: (volume: number) => Promise<MediaSnapshot>;
+  setRightChannelVolume: (volume: number) => Promise<MediaSnapshot>;
+  setLeftChannelMuted: (muted: boolean) => Promise<MediaSnapshot>;
+  setRightChannelMuted: (muted: boolean) => Promise<MediaSnapshot>;
   setQuality: (mode: PlaybackQualityMode) => Promise<MediaSnapshot>;
   configureDecoderMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>;
   syncPosition: (positionSeconds: number, durationSeconds: number) => Promise<MediaSnapshot>;
@@ -50,6 +58,10 @@ export function createPlaybackCommandSet(): PlaybackCommandSet {
     setRate: (playbackRate) => playbackSetRate(playbackRate),
     setVolume: (volume) => playbackSetVolume(volume),
     setMuted: (muted) => playbackSetMuted(muted),
+    setLeftChannelVolume: (volume) => playbackSetLeftChannelVolume(volume),
+    setRightChannelVolume: (volume) => playbackSetRightChannelVolume(volume),
+    setLeftChannelMuted: (muted) => playbackSetLeftChannelMuted(muted),
+    setRightChannelMuted: (muted) => playbackSetRightChannelMuted(muted),
     setQuality: (mode) => playbackSetQuality(mode),
     configureDecoderMode: (mode) => playbackConfigureDecoderMode(mode),
     syncPosition: (positionSeconds, durationSeconds) =>

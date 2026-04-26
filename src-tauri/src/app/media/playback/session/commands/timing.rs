@@ -53,6 +53,54 @@ pub fn playback_set_muted(
 }
 
 #[tauri::command]
+pub fn playback_set_left_channel_volume(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    volume: f64,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, MediaCommandError> {
+    command_result(coordinator::set_left_channel_volume(
+        app, state, volume, request_id,
+    ))
+}
+
+#[tauri::command]
+pub fn playback_set_right_channel_volume(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    volume: f64,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, MediaCommandError> {
+    command_result(coordinator::set_right_channel_volume(
+        app, state, volume, request_id,
+    ))
+}
+
+#[tauri::command]
+pub fn playback_set_left_channel_muted(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    muted: bool,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, MediaCommandError> {
+    command_result(coordinator::set_left_channel_muted(
+        app, state, muted, request_id,
+    ))
+}
+
+#[tauri::command]
+pub fn playback_set_right_channel_muted(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    muted: bool,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, MediaCommandError> {
+    command_result(coordinator::set_right_channel_muted(
+        app, state, muted, request_id,
+    ))
+}
+
+#[tauri::command]
 pub fn playback_configure_decoder_mode(
     app: AppHandle,
     state: State<'_, MediaState>,

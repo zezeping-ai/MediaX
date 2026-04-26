@@ -32,6 +32,7 @@ impl TryFrom<&str> for VideoScaleMode {
     }
 }
 
+#[derive(Clone)]
 pub struct VideoFrame {
     pub pts_seconds: f64,
     pub width: u32,

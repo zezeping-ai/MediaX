@@ -40,6 +40,15 @@ export function createPipelineSections(
     decodeRows.push({ key: "pipe_decode_budget", label: "budget", value: `${telemetry.decode_avg_frame_cost_ms.toFixed(2)} / ${frameBudgetMs.toFixed(2)}ms` });
     decodeRows.push({ key: "pipe_decode_state", label: "state", value: classifyBudgetState(telemetry.decode_avg_frame_cost_ms, frameBudgetMs) });
   }
+  if (typeof telemetry?.video_packet_soft_error_count === "number") {
+    decodeRows.push({ key: "pipe_video_packet_soft_error_count", label: "packet err", value: String(telemetry.video_packet_soft_error_count) });
+  }
+  if (typeof telemetry?.video_frame_drop_count === "number") {
+    decodeRows.push({ key: "pipe_video_frame_drop_count", label: "frame drops", value: String(telemetry.video_frame_drop_count) });
+  }
+  if (typeof telemetry?.video_scale_drop_count === "number") {
+    decodeRows.push({ key: "pipe_video_scale_drop_count", label: "scale drops", value: String(telemetry.video_scale_drop_count) });
+  }
   pushSnapshotRow(decodeRows, snapshot, "decoder_ready", "decoder");
   pushSnapshotRow(decodeRows, snapshot, "hw_decode_decision", "hw path");
   pushSnapshotRow(decodeRows, snapshot, "video_integrity", "integrity");

@@ -19,7 +19,10 @@ pub use cache_ops::{
 };
 pub use preview_ops::preview_frame;
 pub use session_ops::{open, pause, play, seek, set_hw_decode_mode, set_quality_mode, stop};
-pub use timing_ops::{set_muted, set_rate, set_volume, sync_position};
+pub use timing_ops::{
+    set_left_channel_muted, set_left_channel_volume, set_muted, set_rate,
+    set_right_channel_muted, set_right_channel_volume, set_volume, sync_position,
+};
 
 pub fn get_snapshot(state: State<'_, MediaState>) -> MediaResult<MediaSnapshot> {
     snapshot_from_state(&state).map_err(MediaError::from)

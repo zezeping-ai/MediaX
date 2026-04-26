@@ -4,7 +4,7 @@ pub(super) fn pick_frame_for_present(
     inner: &RendererInner,
     now_media_seconds: f64,
 ) -> Option<VideoFrame> {
-    let present_lead = 0.010;
+    let present_lead = 0.002;
     let deadline = now_media_seconds + present_lead;
     let mut queue = inner.queued_frames.lock().ok()?;
     let pts_seconds = queue.front()?.pts_seconds;

@@ -1,10 +1,12 @@
-use super::types::AudioPipeline;
+use super::types::{AudioOutputSampleFormat, AudioPipeline};
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::runtime::audio::clamp_playback_rate;
 use crate::app::media::playback::runtime::clock::AudioClock;
 use crate::app::media::playback::runtime::{emit_debug, METRICS_EMIT_INTERVAL_MS};
 use crate::app::media::state::TimingControls;
+use ffmpeg_next::channel_layout::ChannelLayout;
 use ffmpeg_next::frame;
+use ffmpeg_next::software::resampling::context::Context as ResamplingContext;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -26,6 +28,8 @@ pub(crate) fn drain_audio_frames(
             return Ok(());
         }
         audio_state.stats.decoded_frames = audio_state.stats.decoded_frames.saturating_add(1);
+        normalize_decoded_audio_frame(&mut decoded, &audio_state.decoder);
+        ensure_resampler_matches_frame(app, audio_state, &decoded)?;
         let mut converted = frame::Audio::empty();
         audio_state
             .resampler
@@ -34,18 +38,8 @@ pub(crate) fn drain_audio_frames(
 
         let channels = converted.channels().max(1) as usize;
         let samples_per_channel = converted.samples();
-        let total_samples = samples_per_channel.saturating_mul(channels);
-        if total_samples == 0 {
-            continue;
-        }
-        let bytes_per_sample = std::mem::size_of::<i16>();
-        let expected_bytes = total_samples.saturating_mul(bytes_per_sample);
-        let data = converted.data(0);
-        if data.is_empty() {
-            continue;
-        }
-        let clamped_bytes = expected_bytes.min(data.len());
-        if clamped_bytes < bytes_per_sample {
+        let pcm = extract_output_samples(&converted, audio_state.output_sample_format)?;
+        if pcm.is_empty() {
             continue;
         }
 
@@ -60,6 +54,14 @@ pub(crate) fn drain_audio_frames(
             audio_state.output.player.play();
             emit_debug(app, "audio_resume", "audio player resumed from paused state");
         }
+        if should_drop_pre_seek_audio_frame(
+            app,
+            &decoded,
+            audio_state.time_base,
+            active_seek_target_seconds,
+        ) {
+            continue;
+        }
         sync_audio_clock(
             &decoded,
             audio_state.time_base,
@@ -68,17 +70,13 @@ pub(crate) fn drain_audio_frames(
             active_seek_target_seconds,
         );
 
-        let pcm: Vec<i16> = data[..clamped_bytes]
-            .chunks_exact(2)
-            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-            .collect();
         audio_state.stats.queued_samples = audio_state
             .stats
             .queued_samples
             .saturating_add(pcm.len() as u64);
         audio_state
             .output
-            .append_pcm_i16(converted.rate(), converted.channels(), &pcm);
+            .append_pcm_f32(converted.rate(), converted.channels(), &pcm);
         *audio_queue_depth_sources = Some(audio_state.output.player.len());
 
         emit_audio_debug_if_needed(
@@ -87,11 +85,118 @@ pub(crate) fn drain_audio_frames(
             timing_controls,
             channels,
             samples_per_channel,
-            clamped_bytes,
+            pcm.len(),
             audio_clock,
         );
     }
     Ok(())
+}
+
+fn normalize_decoded_audio_frame(
+    frame: &mut frame::Audio,
+    decoder: &ffmpeg_next::decoder::Audio,
+) {
+    if frame.channel_layout().is_empty() {
+        let fallback_layout = if decoder.channel_layout().is_empty() {
+            ChannelLayout::default(frame.channels().max(1).into())
+        } else {
+            decoder.channel_layout()
+        };
+        frame.set_channel_layout(fallback_layout);
+    }
+    if frame.rate() == 0 {
+        frame.set_rate(decoder.rate());
+    }
+}
+
+fn ensure_resampler_matches_frame(
+    app: &AppHandle,
+    audio_state: &mut AudioPipeline,
+    frame: &frame::Audio,
+) -> Result<(), String> {
+    let input = audio_state.resampler.input();
+    let frame_layout = frame.channel_layout();
+    let frame_rate = frame.rate();
+    let frame_format = frame.format();
+    if input.format == frame_format
+        && input.channel_layout == frame_layout
+        && input.rate == frame_rate
+    {
+        return Ok(());
+    }
+
+    emit_debug(
+        app,
+        "audio_resampler_reconfig",
+        format!(
+            "input changed from fmt={:?} rate={}Hz layout={:?} to fmt={:?} rate={}Hz layout={:?}",
+            input.format,
+            input.rate,
+            input.channel_layout,
+            frame_format,
+            frame_rate,
+            frame_layout,
+        ),
+    );
+    audio_state.resampler = ResamplingContext::get(
+        frame_format,
+        frame_layout,
+        frame_rate,
+        audio_state.output_sample_format.ffmpeg_sample_format(),
+        frame_layout,
+        frame_rate,
+    )
+    .map_err(|err| {
+        format!(
+            "reconfigure audio resampler failed: in_fmt={frame_format:?} in_rate={frame_rate}Hz in_layout={frame_layout:?} out_fmt={} err={err}",
+            audio_state.output_sample_format.debug_label()
+        )
+    })?;
+    Ok(())
+}
+
+fn extract_output_samples(
+    frame: &frame::Audio,
+    output_sample_format: AudioOutputSampleFormat,
+) -> Result<Vec<f32>, String> {
+    let channels = frame.channels().max(1) as usize;
+    let total_samples = frame.samples().saturating_mul(channels);
+    if total_samples == 0 {
+        return Ok(Vec::new());
+    }
+    let data = frame.data(0);
+    if data.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    match output_sample_format {
+        AudioOutputSampleFormat::F32Packed => {
+            let bytes_per_sample = std::mem::size_of::<f32>();
+            let expected_bytes = total_samples.saturating_mul(bytes_per_sample);
+            let clamped_bytes = expected_bytes.min(data.len());
+            if clamped_bytes < bytes_per_sample {
+                return Ok(Vec::new());
+            }
+            Ok(data[..clamped_bytes]
+                .chunks_exact(bytes_per_sample)
+                .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                .collect())
+        }
+        AudioOutputSampleFormat::I16Packed => {
+            let bytes_per_sample = std::mem::size_of::<i16>();
+            let expected_bytes = total_samples.saturating_mul(bytes_per_sample);
+            let clamped_bytes = expected_bytes.min(data.len());
+            if clamped_bytes < bytes_per_sample {
+                return Ok(Vec::new());
+            }
+            Ok(data[..clamped_bytes]
+                .chunks_exact(bytes_per_sample)
+                .map(|chunk| {
+                    i16::from_ne_bytes([chunk[0], chunk[1]]) as f32 / (i16::MAX as f32)
+                })
+                .collect())
+        }
+    }
 }
 
 fn sync_audio_clock(
@@ -120,13 +225,41 @@ fn sync_audio_clock(
     }
 }
 
+fn should_drop_pre_seek_audio_frame(
+    app: &AppHandle,
+    decoded: &frame::Audio,
+    time_base: ffmpeg_next::Rational,
+    active_seek_target_seconds: &Option<f64>,
+) -> bool {
+    let Some(target) = *active_seek_target_seconds else {
+        return false;
+    };
+    let Some(seconds) = timestamp_to_seconds(decoded.timestamp(), decoded.pts(), time_base)
+        .filter(|value| value.is_finite() && *value >= 0.0)
+    else {
+        return false;
+    };
+    if seconds + 0.03 < target {
+        emit_debug(
+            app,
+            "audio_seek_drop",
+            format!(
+                "drop stale audio frame pts={seconds:.3}s target={target:.3}s delta_ms={:.3}",
+                (target - seconds) * 1000.0
+            ),
+        );
+        return true;
+    }
+    false
+}
+
 fn emit_audio_debug_if_needed(
     app: &AppHandle,
     audio_state: &mut AudioPipeline,
     timing_controls: &Arc<TimingControls>,
     channels: usize,
     samples_per_channel: usize,
-    clamped_bytes: usize,
+    queued_samples: usize,
     audio_clock: &Option<AudioClock>,
 ) {
     let now = Instant::now();
@@ -156,7 +289,7 @@ fn emit_audio_debug_if_needed(
         app,
         "audio_stats",
         format!(
-            "packets={} frames={} queued_samples={} underruns={} queue_sources={} rate={:.2} channels={} samples_per_ch={} bytes={} pts={}",
+            "packets={} frames={} queued_samples={} underruns={} queue_sources={} rate={:.2} channels={} samples_per_ch={} output_samples={} out_fmt={} pts={}",
             audio_state.stats.packets,
             audio_state.stats.decoded_frames,
             audio_state.stats.queued_samples,
@@ -165,7 +298,8 @@ fn emit_audio_debug_if_needed(
             timing_controls.playback_rate(),
             channels,
             samples_per_channel,
-            clamped_bytes,
+            queued_samples,
+            audio_state.output_sample_format.debug_label(),
             audio_clock
                 .as_ref()
                 .map(|clock| clock.now_seconds())

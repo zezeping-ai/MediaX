@@ -12,8 +12,8 @@ use tauri::AppHandle;
 const MAX_EMIT_FPS: u32 = 60;
 const METRICS_EMIT_INTERVAL_MS: u64 = 1000;
 const RATE_SWITCH_SETTLE_WINDOW_MS: u64 = 320;
-const AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT: f64 = 0.02;
-const AUDIO_ALLOWED_LEAD_SECONDS_DURING_SETTLE: f64 = 0.06;
+const AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT: f64 = 0.0;
+const AUDIO_ALLOWED_LEAD_SECONDS_DURING_SETTLE: f64 = 0.015;
 const MAX_DECODE_LEAD_SECONDS_DEFAULT: f64 = 0.25;
 const MAX_DECODE_LEAD_SECONDS_DURING_SETTLE: f64 = 0.45;
 
@@ -56,6 +56,7 @@ pub(super) fn decode_and_emit_stream(
     stream_generation: u32,
     hw_mode_override: HardwareDecodeMode,
     software_fallback_reason: Option<String>,
+    force_audio_only: bool,
 ) -> Result<(), String> {
     let mut runtime =
         create_decode_runtime(
@@ -66,6 +67,7 @@ pub(super) fn decode_and_emit_stream(
             timing_controls,
             hw_mode_override,
             software_fallback_reason.as_deref(),
+            force_audio_only,
         )?;
     run_decode_loop(
         app,

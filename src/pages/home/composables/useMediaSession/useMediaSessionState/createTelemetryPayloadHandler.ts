@@ -24,6 +24,11 @@ export function createTelemetryPayloadHandler(
     const gpuQueueUsage = payload.gpu_queue_utilization ?? 0;
     const renderCost = payload.render_estimated_cost_ms ?? 0;
     const renderLag = payload.render_present_lag_ms ?? 0;
+    const videoPacketSoftErrors = payload.video_packet_soft_error_count ?? 0;
+    const videoFrameDrops = payload.video_frame_drop_count ?? 0;
+    const videoHwDrops = payload.video_hw_transfer_drop_count ?? 0;
+    const videoScaleDrops = payload.video_scale_drop_count ?? 0;
+    const videoNv12Drops = payload.video_nv12_drop_count ?? 0;
 
     state.networkReadBytesPerSecond.value =
       typeof payload.network_read_bytes_per_second === "number"
@@ -56,6 +61,9 @@ export function createTelemetryPayloadHandler(
       telemetry_render:
         `gpu_queue=${gpuQueueDepth}/${gpuQueueCapacity || "?"} (${(gpuQueueUsage * 100).toFixed(0)}%) ` +
         `render_cost≈${renderCost.toFixed(2)}ms 渲染忙碌≈${renderBusyEstimatePercent.toFixed(0)}% present_lag≈${renderLag.toFixed(2)}ms`,
+      telemetry_video_resilience:
+        `packet_soft_errors=${videoPacketSoftErrors} frame_drops=${videoFrameDrops} ` +
+        `hw=${videoHwDrops} scale=${videoScaleDrops} nv12=${videoNv12Drops}`,
     };
 
     if (payload.video_timestamps) {

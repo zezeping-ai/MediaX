@@ -113,7 +113,7 @@ fn apply_pending_seek(
     emit_debug(app, "seek", format!("apply seek to {target_seconds:.3}s"));
     seek_control::apply_seek_to_stream(
         &mut runtime.video_ctx.input_ctx,
-        &mut runtime.video_ctx.decoder,
+        runtime.video_ctx.decoder.as_mut(),
         target_seconds,
         &mut runtime.loop_state.playback_clock,
         &mut runtime.loop_state.current_position_seconds,

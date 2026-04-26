@@ -38,6 +38,20 @@ export function createOverviewSections(
       value: `${sourceFps.toFixed(2)}fps`,
     });
   }
+  if (typeof telemetry?.video_packet_soft_error_count === "number") {
+    sessionRows.push({
+      key: "video_packet_soft_error_count",
+      label: "packet err",
+      value: String(telemetry.video_packet_soft_error_count),
+    });
+  }
+  if (typeof telemetry?.video_frame_drop_count === "number") {
+    sessionRows.push({
+      key: "video_frame_drop_count",
+      label: "frame drops",
+      value: String(telemetry.video_frame_drop_count),
+    });
+  }
 
   decodeRows.push({
     key: "decode_mode",

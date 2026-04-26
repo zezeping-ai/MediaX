@@ -1,7 +1,7 @@
 use crate::app::media::playback::events::{
-    MediaDebugPayload, MediaEventEnvelope, MediaMetadataPayload, MediaTelemetryPayload,
-    MEDIA_PLAYBACK_DEBUG_EVENT, MEDIA_PLAYBACK_METADATA_EVENT, MEDIA_PLAYBACK_TELEMETRY_EVENT,
-    MEDIA_PROTOCOL_VERSION,
+    MediaAudioMeterPayload, MediaDebugPayload, MediaEventEnvelope, MediaMetadataPayload,
+    MediaTelemetryPayload, MEDIA_PLAYBACK_AUDIO_METER_EVENT, MEDIA_PLAYBACK_DEBUG_EVENT,
+    MEDIA_PLAYBACK_METADATA_EVENT, MEDIA_PLAYBACK_TELEMETRY_EVENT, MEDIA_PROTOCOL_VERSION,
 };
 use tauri::{AppHandle, Emitter};
 
@@ -44,6 +44,19 @@ pub(super) fn emit_metadata_payloads(app: &AppHandle, payload: MediaMetadataPayl
         MediaEventEnvelope {
             protocol_version: MEDIA_PROTOCOL_VERSION,
             event_type: "playback_metadata",
+            request_id: None,
+            emitted_at_ms: unix_epoch_ms_now(),
+            payload,
+        },
+    );
+}
+
+pub(crate) fn emit_audio_meter_payloads(app: &AppHandle, payload: MediaAudioMeterPayload) {
+    let _ = app.emit(
+        MEDIA_PLAYBACK_AUDIO_METER_EVENT,
+        MediaEventEnvelope {
+            protocol_version: MEDIA_PROTOCOL_VERSION,
+            event_type: "playback_audio_meter",
             request_id: None,
             emitted_at_ms: unix_epoch_ms_now(),
             payload,

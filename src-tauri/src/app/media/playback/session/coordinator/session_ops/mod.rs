@@ -5,7 +5,9 @@ use super::helpers::{
     sync_pause_resume_position,
 };
 use crate::app::media::error::{MediaError, MediaResult};
-use crate::app::media::model::{HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode, PlaybackStatus};
+use crate::app::media::model::{
+    HardwareDecodeMode, MediaSnapshot, PlaybackMediaKind, PlaybackQualityMode, PlaybackStatus,
+};
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::render::viewport_sync;
 use crate::app::media::playback::runtime::{
@@ -97,30 +99,55 @@ pub fn seek(
 ) -> MediaResult<MediaSnapshot> {
     let position_seconds =
         constraints::normalize_non_negative(position_seconds, "position_seconds")?;
-    let (media_path, status) = {
+    let (media_path, status, media_kind) = {
         let mut playback = state::playback(&state)?;
         playback.seek(position_seconds);
         let playback_state = playback.state();
-        (playback_state.current_path, playback_state.status)
+        (
+            playback_state.current_path,
+            playback_state.status,
+            playback_state.media_kind,
+        )
     };
     if let Some(path_ref) = media_path.as_deref() {
         let mut library = state::library(&state)?;
         library.mark_playback_progress(path_ref, position_seconds);
     }
     set_pending_seek(&state, position_seconds)?;
-    if status == PlaybackStatus::Paused {
-        if let Some(source) = media_path {
-            let target = position_seconds.max(0.0);
-            let renderer = (*app.state::<RendererState>()).clone();
-            if let Err(err) =
-                viewport_sync::sync_main_viewport_to(&state, &renderer, &source, target)
-            {
-                eprintln!("paused seek preview failed: {err}");
-            }
-        }
-    }
     write_latest_stream_position(&state, position_seconds.max(0.0))?;
+    apply_paused_seek_preview(&app, &state, media_path.as_deref(), &status, &media_kind, position_seconds);
+    if should_restart_playback_after_seek(&status, &media_kind) {
+        restart_active_playback(&app, &state, media_path)?;
+    }
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
+}
+
+fn apply_paused_seek_preview(
+    app: &AppHandle,
+    state: &State<'_, MediaState>,
+    source: Option<&str>,
+    status: &PlaybackStatus,
+    media_kind: &PlaybackMediaKind,
+    position_seconds: f64,
+) {
+    if *status != PlaybackStatus::Paused || *media_kind != PlaybackMediaKind::Video {
+        return;
+    }
+    let Some(source) = source else {
+        return;
+    };
+    let target = position_seconds.max(0.0);
+    let renderer = (*app.state::<RendererState>()).clone();
+    if let Err(err) = viewport_sync::sync_main_viewport_to(state, &renderer, source, target) {
+        eprintln!("paused seek preview failed: {err}");
+    }
+}
+
+fn should_restart_playback_after_seek(
+    status: &PlaybackStatus,
+    media_kind: &PlaybackMediaKind,
+) -> bool {
+    *status == PlaybackStatus::Playing && *media_kind == PlaybackMediaKind::Audio
 }
 
 pub fn set_hw_decode_mode(

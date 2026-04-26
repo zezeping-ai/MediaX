@@ -11,9 +11,17 @@ use tauri::AppHandle;
 pub(super) struct VideoIntegrityStats {
     dropped_hw_transfer: u64,
     dropped_nv12_extract: u64,
+    dropped_scale: u64,
     color_profile_drift: u64,
     last_emit_instant: Option<Instant>,
     last_drift_log_instant: Option<Instant>,
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct VideoIntegritySnapshot {
+    pub dropped_hw_transfer: u64,
+    pub dropped_nv12_extract: u64,
+    pub dropped_scale: u64,
 }
 
 #[derive(Default)]
@@ -79,6 +87,12 @@ impl VideoFramePipeline {
     pub(super) fn on_hw_transfer_failed(&mut self, app: &AppHandle, err: &str) {
         self.integrity.dropped_hw_transfer = self.integrity.dropped_hw_transfer.saturating_add(1);
         emit_debug(app, "hw_frame_transfer", format!("drop frame: {err}"));
+        self.emit_integrity_if_needed(app);
+    }
+
+    pub(super) fn on_scale_failed(&mut self, app: &AppHandle, err: &str) {
+        self.integrity.dropped_scale = self.integrity.dropped_scale.saturating_add(1);
+        emit_debug(app, "video_scale", format!("drop frame: {err}"));
         self.emit_integrity_if_needed(app);
     }
 
@@ -215,11 +229,20 @@ impl VideoFramePipeline {
             app,
             "video_integrity",
             format!(
-                "drops(hw_transfer={}, nv12_extract={}) color_profile_drift={}",
+                "drops(hw_transfer={}, scale={}, nv12_extract={}) color_profile_drift={}",
                 self.integrity.dropped_hw_transfer,
+                self.integrity.dropped_scale,
                 self.integrity.dropped_nv12_extract,
                 self.integrity.color_profile_drift
             ),
         );
+    }
+
+    pub(crate) fn integrity_snapshot(&self) -> VideoIntegritySnapshot {
+        VideoIntegritySnapshot {
+            dropped_hw_transfer: self.integrity.dropped_hw_transfer,
+            dropped_nv12_extract: self.integrity.dropped_nv12_extract,
+            dropped_scale: self.integrity.dropped_scale,
+        }
     }
 }

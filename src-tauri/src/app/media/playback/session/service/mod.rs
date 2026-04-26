@@ -2,7 +2,7 @@ mod source_capabilities;
 mod state_transitions;
 
 use crate::app::media::model::{
-    HardwareDecodeMode, PlaybackQualityMode, PlaybackState, PlaybackStatus,
+    HardwareDecodeMode, PlaybackMediaKind, PlaybackQualityMode, PlaybackState, PlaybackStatus,
 };
 
 use self::source_capabilities::supports_adaptive_quality;
@@ -23,6 +23,7 @@ impl MediaPlaybackService {
     pub fn open(&mut self, source: String) -> PlaybackState {
         let adaptive_quality_supported = supports_adaptive_quality(&source);
         self.state.current_path = Some(source);
+        self.state.media_kind = PlaybackMediaKind::Video;
         reset_playback_metrics(&mut self.state);
         // 仅“打开”媒体时不应假定已播放，状态应等待真实播放事件驱动。
         self.state.status = PlaybackStatus::Paused;
@@ -88,6 +89,44 @@ impl MediaPlaybackService {
 
     pub fn set_quality_mode(&mut self, mode: PlaybackQualityMode) -> PlaybackState {
         self.state.quality_mode = mode;
+        self.state()
+    }
+
+    pub fn set_media_kind(&mut self, kind: PlaybackMediaKind) -> PlaybackState {
+        self.state.media_kind = kind;
+        self.state()
+    }
+
+    pub fn set_volume(&mut self, volume: f64) -> PlaybackState {
+        self.state.volume = volume.clamp(0.0, 1.0);
+        self.state.muted = self.state.volume <= 0.0;
+        self.state()
+    }
+
+    pub fn set_muted(&mut self, muted: bool) -> PlaybackState {
+        self.state.muted = muted;
+        self.state()
+    }
+
+    pub fn set_left_channel_volume(&mut self, volume: f64) -> PlaybackState {
+        self.state.left_channel_volume = volume.clamp(0.0, 1.0);
+        self.state.left_channel_muted = self.state.left_channel_volume <= 0.0;
+        self.state()
+    }
+
+    pub fn set_right_channel_volume(&mut self, volume: f64) -> PlaybackState {
+        self.state.right_channel_volume = volume.clamp(0.0, 1.0);
+        self.state.right_channel_muted = self.state.right_channel_volume <= 0.0;
+        self.state()
+    }
+
+    pub fn set_left_channel_muted(&mut self, muted: bool) -> PlaybackState {
+        self.state.left_channel_muted = muted;
+        self.state()
+    }
+
+    pub fn set_right_channel_muted(&mut self, muted: bool) -> PlaybackState {
+        self.state.right_channel_muted = muted;
         self.state()
     }
 

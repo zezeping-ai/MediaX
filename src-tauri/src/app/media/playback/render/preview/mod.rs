@@ -31,12 +31,19 @@ where
         HardwareDecodeMode::Auto,
         PlaybackQualityMode::Source,
         None,
+        false,
     )?;
+    let Some(video_stream_index) = video_ctx.video_stream_index else {
+        return Err("preview is unavailable for audio-only sources".to_string());
+    };
+    let Some(video_time_base) = video_ctx.video_time_base else {
+        return Err("preview is unavailable for audio-only sources".to_string());
+    };
+    let Some(decoder) = video_ctx.decoder.as_mut() else {
+        return Err("preview is unavailable for audio-only sources".to_string());
+    };
     let mut scaler: Option<ScalingContext> = None;
     let input_ctx = &mut video_ctx.input_ctx;
-    let video_stream_index = video_ctx.video_stream_index;
-    let video_time_base = video_ctx.video_time_base;
-    let decoder = &mut video_ctx.decoder;
     let clamped = target_seconds.max(0.0);
     let seek_applied = apply_preview_seek(input_ctx, decoder, clamped);
 
@@ -111,11 +118,18 @@ where
         HardwareDecodeMode::Auto,
         PlaybackQualityMode::Source,
         None,
+        false,
     )?;
+    let Some(video_stream_index) = video_ctx.video_stream_index else {
+        return Ok(None);
+    };
+    let Some(video_time_base) = video_ctx.video_time_base else {
+        return Ok(None);
+    };
+    let Some(decoder) = video_ctx.decoder.as_mut() else {
+        return Ok(None);
+    };
     let input_ctx = &mut video_ctx.input_ctx;
-    let video_stream_index = video_ctx.video_stream_index;
-    let video_time_base = video_ctx.video_time_base;
-    let decoder = &mut video_ctx.decoder;
     let target_w = max_width.clamp(PREVIEW_MIN_WIDTH, PREVIEW_MAX_WIDTH);
     let target_h = max_height.clamp(PREVIEW_MIN_HEIGHT, PREVIEW_MAX_HEIGHT);
     let mut rgb_scaler: Option<ScalingContext> = None;

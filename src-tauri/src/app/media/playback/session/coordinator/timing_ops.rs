@@ -28,6 +28,10 @@ pub fn set_volume(
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
     let volume = constraints::normalize_unit_interval(volume, "volume")?;
+    {
+        let mut playback = state::playback(&state)?;
+        playback.set_volume(volume);
+    }
     state.audio_controls.set_volume(volume as f32);
     if volume <= 0.0 {
         state.audio_controls.set_muted(true);
@@ -43,7 +47,71 @@ pub fn set_muted(
     muted: bool,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
+    {
+        let mut playback = state::playback(&state)?;
+        playback.set_muted(muted);
+    }
     state.audio_controls.set_muted(muted);
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
+}
+
+pub fn set_left_channel_volume(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    volume: f64,
+    request_id: Option<String>,
+) -> MediaResult<MediaSnapshot> {
+    let volume = constraints::normalize_unit_interval(volume, "volume")?;
+    {
+        let mut playback = state::playback(&state)?;
+        playback.set_left_channel_volume(volume);
+    }
+    state.audio_controls.set_left_volume(volume as f32);
+    state.audio_controls.set_left_muted(volume <= 0.0);
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
+}
+
+pub fn set_right_channel_volume(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    volume: f64,
+    request_id: Option<String>,
+) -> MediaResult<MediaSnapshot> {
+    let volume = constraints::normalize_unit_interval(volume, "volume")?;
+    {
+        let mut playback = state::playback(&state)?;
+        playback.set_right_channel_volume(volume);
+    }
+    state.audio_controls.set_right_volume(volume as f32);
+    state.audio_controls.set_right_muted(volume <= 0.0);
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
+}
+
+pub fn set_left_channel_muted(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    muted: bool,
+    request_id: Option<String>,
+) -> MediaResult<MediaSnapshot> {
+    {
+        let mut playback = state::playback(&state)?;
+        playback.set_left_channel_muted(muted);
+    }
+    state.audio_controls.set_left_muted(muted);
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
+}
+
+pub fn set_right_channel_muted(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    muted: bool,
+    request_id: Option<String>,
+) -> MediaResult<MediaSnapshot> {
+    {
+        let mut playback = state::playback(&state)?;
+        playback.set_right_channel_muted(muted);
+    }
+    state.audio_controls.set_right_muted(muted);
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
