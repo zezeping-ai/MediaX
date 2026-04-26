@@ -15,6 +15,7 @@ export function usePlaybackTimelineState({
   onSeekPreview,
 }: UsePlaybackTimelineStateArgs) {
   const anchorPosition = ref(0);
+  const scrubbing = ref(false);
 
   const currentTime = computed(() => anchorPosition.value);
 
@@ -25,6 +26,7 @@ export function usePlaybackTimelineState({
 
   function previewSeekWhilePaused(nextSeconds: number) {
     const normalized = Math.max(0, Number.isFinite(nextSeconds) ? nextSeconds : 0);
+    scrubbing.value = true;
     anchorPosition.value = normalized;
     if (playback()?.status !== "paused") {
       emitPausedSeekPreview.cancel();
@@ -37,8 +39,14 @@ export function usePlaybackTimelineState({
     const normalized = Math.max(0, Number.isFinite(nextSeconds) ? nextSeconds : 0);
     // Slider release seek should win over any trailing paused preview seek.
     emitPausedSeekPreview.cancel();
+    scrubbing.value = false;
     anchorPosition.value = normalized;
     onSeek(normalized);
+  }
+
+  function cancelPreviewSeek() {
+    scrubbing.value = false;
+    emitPausedSeekPreview.cancel();
   }
 
   watch(
@@ -55,6 +63,11 @@ export function usePlaybackTimelineState({
       const value = playback();
       if (!value) {
         anchorPosition.value = 0;
+        scrubbing.value = false;
+        return;
+      }
+
+      if (scrubbing.value) {
         return;
       }
 
@@ -71,13 +84,13 @@ export function usePlaybackTimelineState({
   );
 
   onBeforeUnmount(() => {
-    emitPausedSeekPreview.cancel();
+    cancelPreviewSeek();
   });
 
   return {
     currentTime,
     commitSeek,
     previewSeekWhilePaused,
-    cancelPreviewSeek: () => emitPausedSeekPreview.cancel(),
+    cancelPreviewSeek,
   };
 }

@@ -1,4 +1,5 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { throttle } from "lodash-es";
 import type { PlaybackState, PreviewFrame } from "@/modules/media-types";
 import { usePlaybackTimelineState } from "../../composables/usePlaybackTimelineState";
 import type { PlaybackQualityOption } from "./playbackControlsUtils";
@@ -33,6 +34,7 @@ export interface PlaybackControlsEmit {
   (event: "seek-preview", position: number): void;
   (event: "change-rate", value: number): void;
   (event: "change-volume", value: number): void;
+  (event: "commit-volume", value: number): void;
   (event: "change-quality", value: string): void;
   (event: "overlay-interaction-change", value: boolean): void;
   (event: "toggle-mute"): void;
@@ -64,7 +66,7 @@ export function usePlaybackControlsViewModel(
     if (!playback || !playback.current_path) {
       return false;
     }
-    return Number.isFinite(playback.duration_seconds) && playback.duration_seconds > 0;
+    return duration.value > 0;
   });
 
   const timelineDisabled = computed(() => props.disabled || !canSeek.value);
@@ -77,11 +79,12 @@ export function usePlaybackControlsViewModel(
     const matched = props.qualityOptions.find((option) => option.key === props.selectedQuality);
     return matched?.label ?? "原画";
   });
+
   const volumeIcon = computed(() => {
-    if (props.muted || props.volume <= 0) {
+    if (props.muted || volumePreview.value <= 0) {
       return "lucide:volume-x";
     }
-    if (props.volume < 0.5) {
+    if (volumePreview.value < 0.5) {
       return "lucide:volume-1";
     }
     return "lucide:volume-2";
@@ -92,12 +95,30 @@ export function usePlaybackControlsViewModel(
   );
   const speedDropdownOpen = ref(false);
   const qualityDropdownOpen = ref(false);
+  const volumePreview = ref(props.volume);
+  const adjustingVolume = ref(false);
+  const emitThrottledVolumeChange = throttle((nextVolume: number) => {
+    emit("change-volume", nextVolume);
+  }, 48, {
+    leading: true,
+    trailing: true,
+  });
 
   watch(
     () => speedDropdownOpen.value || qualityDropdownOpen.value,
     (open) => {
       emit("overlay-interaction-change", open);
     },
+  );
+
+  watch(
+    () => props.volume,
+    (nextVolume) => {
+      if (!adjustingVolume.value) {
+        volumePreview.value = nextVolume;
+      }
+    },
+    { immediate: true },
   );
 
   function setSpeedDropdownOpen(value: boolean) {
@@ -133,11 +154,23 @@ export function usePlaybackControlsViewModel(
   }
 
   function handleVolumeChange(value: SliderValue) {
-    emit("change-volume", normalizeSliderValue(value));
+    const nextVolume = normalizeSliderValue(value);
+    adjustingVolume.value = true;
+    volumePreview.value = nextVolume;
+    emitThrottledVolumeChange(nextVolume);
+  }
+
+  function handleVolumeCommit(value: SliderValue) {
+    const nextVolume = normalizeSliderValue(value);
+    emitThrottledVolumeChange.cancel();
+    adjustingVolume.value = false;
+    volumePreview.value = nextVolume;
+    emit("change-volume", nextVolume);
   }
 
   onBeforeUnmount(() => {
     cancelPreviewSeek();
+    emitThrottledVolumeChange.cancel();
     emit("overlay-interaction-change", false);
   });
 
@@ -150,6 +183,7 @@ export function usePlaybackControlsViewModel(
     handleQualityChange,
     handleSpeedChange,
     handleVolumeChange,
+    handleVolumeCommit,
     isPlaying,
     lockIcon,
     qualityDropdownOpen,
@@ -160,6 +194,7 @@ export function usePlaybackControlsViewModel(
     speedDropdownOpen,
     timelineDisabled,
     timelineTitle,
+    volumePreview,
     volumeIcon,
   };
 }

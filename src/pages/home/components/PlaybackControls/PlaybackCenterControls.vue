@@ -36,6 +36,7 @@ defineEmits<{
   "change-quality": [string | number];
   "toggle-mute": [];
   "change-volume": [number | [number, number]];
+  "commit-volume": [number | [number, number]];
 }>();
 </script>
 
@@ -162,7 +163,9 @@ defineEmits<{
           :tooltip-open="false"
           :disabled="disabled"
           title="调整音量"
+          @update:value="$emit('change-volume', $event)"
           @change="$emit('change-volume', $event)"
+          @afterChange="$emit('commit-volume', $event)"
         />
       </div>
     </div>

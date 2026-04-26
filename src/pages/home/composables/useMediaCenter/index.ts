@@ -314,11 +314,19 @@ export function useMediaCenter() {
     play: () => withBusyState(play),
     pause: () => withBusyState(pause),
     stop: () => withBusyState(stop),
-    seek: (seconds: number) => withBusyState(() => seek(seconds)),
+    seek: (seconds: number) => seek(seconds).catch((error) => {
+      errorMessage.value = toUserErrorMessage(error);
+    }),
     seekPreview: (seconds: number) => seekPreview(seconds),
-    setRate: (rate: number) => withBusyState(() => setRate(rate)),
-    setVolume: (volume: number) => withBusyState(() => setVolume(volume)),
-    setMuted: (muted: boolean) => withBusyState(() => setMuted(muted)),
+    setRate: (rate: number) => setRate(rate).catch((error) => {
+      errorMessage.value = toUserErrorMessage(error);
+    }),
+    setVolume: (volume: number) => setVolume(volume).catch((error) => {
+      errorMessage.value = toUserErrorMessage(error);
+    }),
+    setMuted: (muted: boolean) => setMuted(muted).catch((error) => {
+      errorMessage.value = toUserErrorMessage(error);
+    }),
     setQuality: (mode: PlaybackQualityMode) => withBusyState(() => setQuality(mode)),
     toggleCacheRecording: () => withBusyState(cacheRecordingController.toggleCacheRecording),
     requestPreviewFrame: (positionSeconds: number, maxWidth?: number, maxHeight?: number) =>

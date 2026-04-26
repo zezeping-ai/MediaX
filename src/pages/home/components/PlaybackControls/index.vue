@@ -33,6 +33,7 @@ const {
   handleQualityChange,
   handleSpeedChange,
   handleVolumeChange,
+  handleVolumeCommit,
   isPlaying,
   lockIcon,
   qualityDropdownOpen,
@@ -43,6 +44,7 @@ const {
   speedDropdownOpen,
   timelineDisabled,
   timelineTitle,
+  volumePreview,
   volumeIcon,
 } = usePlaybackControlsViewModel(props, emit);
 </script>
@@ -78,7 +80,7 @@ const {
           :quality-label="qualityLabel"
           :quality-options="qualityOptions"
           :muted="muted"
-          :volume="volume"
+          :volume="volumePreview"
           :volume-icon="volumeIcon"
           :speed-dropdown-open="speedDropdownOpen"
           :quality-dropdown-open="qualityDropdownOpen"
@@ -91,6 +93,7 @@ const {
           @change-quality="handleQualityChange"
           @toggle-mute="emit('toggle-mute')"
           @change-volume="handleVolumeChange"
+          @commit-volume="handleVolumeCommit"
         />
 
         <PlaybackSideActions
