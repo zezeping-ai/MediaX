@@ -41,10 +41,39 @@ where
 }
 
 #[derive(Clone, Serialize)]
+pub struct MediaVideoTimestampStats {
+    pub samples: u64,
+    pub pts_missing_ratio_percent: f64,
+    pub pts_backtrack_count: u64,
+    pub jitter_avg_ms: f64,
+    pub jitter_max_ms: f64,
+}
+
+#[derive(Clone, Serialize)]
+pub struct MediaFrameTypeStats {
+    pub sample_count: u64,
+    pub i_ratio_percent: f64,
+    pub p_ratio_percent: f64,
+    pub b_ratio_percent: f64,
+    pub other_ratio_percent: f64,
+}
+
+#[derive(Clone, Serialize)]
+pub struct MediaDecodeQuantileStats {
+    pub sample_count: u64,
+    pub avg_ms: f64,
+    pub max_ms: f64,
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+}
+
+#[derive(Clone, Serialize)]
 pub struct MediaTelemetryPayload {
     pub source_fps: f64,
     pub render_fps: f64,
     pub queue_depth: usize,
+    pub audio_queue_depth_sources: Option<usize>,
     pub clock_seconds: f64,
     pub current_video_pts_seconds: Option<f64>,
     pub current_audio_clock_seconds: Option<f64>,
@@ -61,6 +90,9 @@ pub struct MediaTelemetryPayload {
     pub decode_avg_frame_cost_ms: Option<f64>,
     pub decode_max_frame_cost_ms: Option<f64>,
     pub decode_samples: Option<u64>,
+    pub decode_quantiles: Option<MediaDecodeQuantileStats>,
+    pub video_timestamps: Option<MediaVideoTimestampStats>,
+    pub frame_types: Option<MediaFrameTypeStats>,
     pub process_cpu_percent: Option<f32>,
     pub process_memory_mb: Option<f64>,
     pub gpu_queue_depth: Option<usize>,

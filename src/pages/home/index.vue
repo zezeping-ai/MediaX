@@ -1,9 +1,18 @@
 <script setup lang="ts">
+import { defineAsyncComponent } from "vue";
 import MediaViewport from "./components/MediaViewport/index.vue";
-import PlaybackControls from "./components/PlaybackControls/index.vue";
-import OpenUrlModal from "./components/OpenUrlModal/index.vue";
 import StatusAlerts from "./components/StatusAlerts.vue";
 import { useHomePlaybackController } from "./composables/useHomePlaybackController";
+
+const PlaybackControls = defineAsyncComponent({
+  loader: () => import("./components/PlaybackControls/index.vue"),
+  delay: 120,
+});
+
+const OpenUrlModal = defineAsyncComponent({
+  loader: () => import("./components/OpenUrlModal/index.vue"),
+  delay: 120,
+});
 
 const {
   cacheFinalizedOutputPath,
@@ -27,6 +36,7 @@ const {
   effectiveDurationSeconds,
   firstFrameAtMs,
   latestTelemetry,
+  telemetryHistory,
   handlePause,
   handlePlay,
   handlePlayFromUrlPlaylist,
@@ -86,6 +96,7 @@ async function handleVideoEnded() {
         :debug-stage-snapshot="debugStageSnapshot"
         :first-frame-at-ms="firstFrameAtMs"
         :latest-telemetry="latestTelemetry"
+        :telemetry-history="telemetryHistory"
         :media-info-snapshot="mediaInfoSnapshot"
         :network-read-bytes-per-second="networkReadBytesPerSecond"
         :network-sustain-ratio="networkSustainRatio"
@@ -135,6 +146,7 @@ async function handleVideoEnded() {
         :display-error-message="displayErrorMessage"
       />
       <OpenUrlModal
+        v-if="urlDialogVisible"
         v-model:open="urlDialogVisible"
         v-model:input-value="urlInputValue"
         :busy="isBusy"

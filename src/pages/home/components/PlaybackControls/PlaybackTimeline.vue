@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, defineAsyncComponent } from "vue";
 import type { PreviewFrame } from "@/modules/media-types";
-import TimelineHoverPreview from "./TimelineHoverPreview.vue";
+
+const TimelineHoverPreview = defineAsyncComponent({
+  loader: () => import("./TimelineHoverPreview.vue"),
+  delay: 120,
+});
 
 const props = defineProps<{
   currentTime: number;

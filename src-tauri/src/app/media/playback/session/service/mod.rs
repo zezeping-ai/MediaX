@@ -1,5 +1,13 @@
+mod source_capabilities;
+mod state_transitions;
+
 use crate::app::media::model::{
     HardwareDecodeMode, PlaybackQualityMode, PlaybackState, PlaybackStatus,
+};
+
+use self::source_capabilities::supports_adaptive_quality;
+use self::state_transitions::{
+    reset_playback_metrics, reset_runtime_decode_state, reset_source_playback_state,
 };
 
 #[derive(Default)]
@@ -13,16 +21,13 @@ impl MediaPlaybackService {
     }
 
     pub fn open(&mut self, source: String) -> PlaybackState {
-        let adaptive_quality_supported = is_adaptive_quality_source(&source);
+        let adaptive_quality_supported = supports_adaptive_quality(&source);
         self.state.current_path = Some(source);
-        self.state.position_seconds = 0.0;
-        self.state.duration_seconds = 0.0;
+        reset_playback_metrics(&mut self.state);
         // 仅“打开”媒体时不应假定已播放，状态应等待真实播放事件驱动。
         self.state.status = PlaybackStatus::Paused;
         self.state.error = None;
-        self.state.hw_decode_active = false;
-        self.state.hw_decode_backend = None;
-        self.state.hw_decode_error = None;
+        reset_runtime_decode_state(&mut self.state);
         // Opening a new source should not inherit previous source's manual downscale setting.
         self.state.quality_mode = PlaybackQualityMode::Source;
         self.state.adaptive_quality_supported = adaptive_quality_supported;
@@ -42,14 +47,7 @@ impl MediaPlaybackService {
 
     pub fn stop(&mut self) -> PlaybackState {
         self.state.status = PlaybackStatus::Stopped;
-        self.state.current_path = None;
-        self.state.position_seconds = 0.0;
-        self.state.duration_seconds = 0.0;
-        self.state.error = None;
-        self.state.hw_decode_active = false;
-        self.state.hw_decode_backend = None;
-        self.state.hw_decode_error = None;
-        self.state.adaptive_quality_supported = false;
+        reset_source_playback_state(&mut self.state);
         self.state()
     }
 
@@ -102,9 +100,4 @@ impl MediaPlaybackService {
         self.state.duration_seconds = duration_seconds.max(0.0);
         self.state()
     }
-}
-
-fn is_adaptive_quality_source(source: &str) -> bool {
-    let normalized = source.trim().to_ascii_lowercase();
-    normalized.contains(".m3u8") || normalized.contains(".mpd")
 }

@@ -1,17 +1,36 @@
 <script setup lang="ts">
-import { computed, ref, toRef, watch } from "vue";
+import { computed, defineAsyncComponent, ref, toRef, watch } from "vue";
 import type { MediaTelemetryPayload, PlaybackState } from "@/modules/media-types";
 import { usePlayerDebugOverlay } from "../../../composables/usePlayerDebugOverlay";
-import DebugGroupSections from "./DebugGroupSections.vue";
-import CurrentFramePanel from "./CurrentFramePanel.vue";
-import MediaInfoPanel from "./MediaInfoPanel.vue";
-import DecodeStatusBanner from "./DecodeStatusBanner.vue";
-import ParseProcessPanel from "./ParseProcessPanel.vue";
-import ProcessStagePanel from "./ProcessStagePanel.vue";
 import {
   STATIC_DEBUG_KEYS,
   formatMediaInfoLabel,
 } from "./playerDebugOverlay.utils";
+
+const ProcessTab = defineAsyncComponent({
+  loader: () => import("./tabs/ProcessTab.vue"),
+  delay: 80,
+});
+
+const OverviewTab = defineAsyncComponent({
+  loader: () => import("./tabs/OverviewTab.vue"),
+  delay: 80,
+});
+
+const PipelineTab = defineAsyncComponent({
+  loader: () => import("./tabs/PipelineTab.vue"),
+  delay: 80,
+});
+
+const CurrentFrameTab = defineAsyncComponent({
+  loader: () => import("./tabs/CurrentFrameTab.vue"),
+  delay: 80,
+});
+
+const SectionTab = defineAsyncComponent({
+  loader: () => import("./tabs/SectionTab.vue"),
+  delay: 80,
+});
 const props = defineProps<{
   source: string;
   playback: PlaybackState | null;
@@ -19,6 +38,7 @@ const props = defineProps<{
   debugTimeline: Array<{ stage: string; message: string; at_ms: number }>;
   debugStageSnapshot: Record<string, { message: string; at_ms: number }>;
   latestTelemetry: MediaTelemetryPayload | null;
+  telemetryHistory: Array<{ at_ms: number; telemetry: MediaTelemetryPayload }>;
   mediaInfoSnapshot: Record<string, string>;
 }>();
 
@@ -81,7 +101,9 @@ const {
   decodeBanner,
   debugGroups,
   currentFrameSections,
+  hardwareDecisionTimeline,
   overviewSections,
+  pipelineSections,
   streamSections,
   timingSections,
   processStages,
@@ -92,7 +114,7 @@ const {
   toRef(props, "debugStageSnapshot"),
   toRef(props, "latestTelemetry"),
 );
-const activeTab = ref<"process" | "overview" | "current-frame" | "stream" | "timing" | "runtime">("process");
+const activeTab = ref<"process" | "overview" | "pipeline" | "current-frame" | "stream" | "timing" | "runtime">("process");
 
 const liveBadgeClass = computed(() => {
   if (!decodeBanner.value) return "border-blue-500/45 bg-blue-500/20 text-emerald-100";
@@ -109,6 +131,7 @@ const liveBadgeText = computed(() => {
 const tabOptions = [
   { label: "过程", value: "process" },
   { label: "概览", value: "overview" },
+  { label: "管线", value: "pipeline" },
   { label: "当前帧", value: "current-frame" },
   { label: "流", value: "stream" },
   { label: "时序", value: "timing" },
@@ -149,32 +172,32 @@ watch(
 
     <div class="debug-scroll-wrap flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto pr-0.5">
       <template v-if="activeTab === 'process'">
-        <ProcessStagePanel :stages="processStages" />
-        <ParseProcessPanel :timeline="debugTimeline" />
+        <ProcessTab :stages="processStages" :timeline="debugTimeline" />
       </template>
 
       <template v-else-if="activeTab === 'overview'">
-        <MediaInfoPanel :groups="mediaInfoGroups" />
-        <DecodeStatusBanner
-          v-if="decodeBanner"
-          :backend="decodeBanner.backend"
-          :mode="decodeBanner.mode"
-          :mode-label="decodeBanner.modeLabel"
-          :error="decodeBanner.error"
-        />
-        <DebugGroupSections
-          title="会话与解码概览"
-          :groups="overviewSections"
-          empty-text="等待会话与解码概览数据..."
+        <OverviewTab
+          :media-info-groups="mediaInfoGroups"
+          :decode-banner="decodeBanner"
+          :hardware-decision-timeline="hardwareDecisionTimeline"
+          :overview-sections="overviewSections"
         />
       </template>
 
       <template v-else-if="activeTab === 'current-frame'">
-        <CurrentFramePanel :sections="currentFrameSections" />
+        <CurrentFrameTab :sections="currentFrameSections" />
+      </template>
+
+      <template v-else-if="activeTab === 'pipeline'">
+        <PipelineTab
+          :telemetry="latestTelemetry"
+          :history="telemetryHistory"
+          :sections="pipelineSections"
+        />
       </template>
 
       <template v-else-if="activeTab === 'stream'">
-        <DebugGroupSections
+        <SectionTab
           title="输入源 / 流结构 / 解码链"
           :groups="streamSections"
           empty-text="等待输入源与解码链数据..."
@@ -182,7 +205,7 @@ watch(
       </template>
 
       <template v-else-if="activeTab === 'timing'">
-        <DebugGroupSections
+        <SectionTab
           title="同步质量 / 帧节奏 / 性能预算"
           :groups="timingSections"
           empty-text="等待时序与同步风险数据..."
@@ -190,7 +213,7 @@ watch(
       </template>
 
       <template v-else>
-        <DebugGroupSections
+        <SectionTab
           title="运行态全量视图"
           :groups="debugGroups"
           empty-text="等待运行态数据..."

@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { type MediaTelemetryPayload, type PlaybackState } from "@/modules/media-types";
 import { usePreferences } from "@/modules/preferences";
 import TransferStatusOverlay from "./TransferStatusOverlay.vue";
 import LoadingProcessOverlay from "./PlayerDebugOverlay/LoadingProcessOverlay.vue";
-import PlayerDebugOverlay from "./PlayerDebugOverlay/index.vue";
+
+const PlayerDebugOverlay = defineAsyncComponent({
+  loader: () => import("./PlayerDebugOverlay/index.vue"),
+  delay: 120,
+});
 
 const props = defineProps<{
   source: string;
@@ -16,6 +20,7 @@ const props = defineProps<{
   debugStageSnapshot: Record<string, { message: string; at_ms: number }>;
   firstFrameAtMs: number | null;
   latestTelemetry: MediaTelemetryPayload | null;
+  telemetryHistory: Array<{ at_ms: number; telemetry: MediaTelemetryPayload }>;
   mediaInfoSnapshot: Record<string, string>;
   networkReadBytesPerSecond: number | null;
   networkSustainRatio: number | null;
@@ -101,6 +106,7 @@ watch(
       :debug-timeline="debugTimeline"
       :debug-stage-snapshot="debugStageSnapshot"
       :latest-telemetry="latestTelemetry"
+      :telemetry-history="telemetryHistory"
       :media-info-snapshot="mediaInfoSnapshot"
       @close="debugOverlayOpen = false"
     />

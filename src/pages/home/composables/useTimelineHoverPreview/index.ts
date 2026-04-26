@@ -1,13 +1,14 @@
 import { computed, ref, watch } from "vue";
 import { throttle } from "lodash-es";
 import type { PreviewFrame } from "@/modules/media-types";
+import {
+  HOVER_CACHE_LIMIT,
+  HOVER_PREVIEW_INTERVAL_MS,
+  PREVIEW_HEIGHT,
+  PREVIEW_WIDTH,
+} from "./constants";
 
 type RequestPreviewFrame = (positionSeconds: number, maxWidth?: number, maxHeight?: number) => Promise<PreviewFrame | null>;
-
-const HOVER_PREVIEW_INTERVAL_MS = 100;
-const HOVER_CACHE_LIMIT = 32;
-const PREVIEW_WIDTH = 160;
-const PREVIEW_HEIGHT = 90;
 
 export function useTimelineHoverPreview(
   durationGetter: () => number,

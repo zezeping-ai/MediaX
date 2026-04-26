@@ -29,6 +29,16 @@ function statusTone(status: ProcessStage["status"]) {
       return "border-white/10 bg-white/[0.03] text-slate-300/80";
   }
 }
+
+function formatDuration(ms: number | null) {
+  if (ms === null || !Number.isFinite(ms)) {
+    return "--";
+  }
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`;
+  }
+  return `${(ms / 1000).toFixed(2)}s`;
+}
 </script>
 
 <template>
@@ -45,7 +55,11 @@ function statusTone(status: ProcessStage["status"]) {
             <span class="inline-flex h-2 w-2 rounded-full bg-current opacity-85" />
             <span class="font-semibold">{{ stage.label }}</span>
           </div>
-          <span class="opacity-70">{{ formatTime(stage.atMs) }}</span>
+          <div class="flex items-center gap-2 opacity-70">
+            <span>{{ formatTime(stage.atMs) }}</span>
+            <span v-if="stage.sinceStartMs !== null">T+{{ formatDuration(stage.sinceStartMs) }}</span>
+            <span v-if="stage.sincePrevMs !== null">Δ{{ formatDuration(stage.sincePrevMs) }}</span>
+          </div>
         </div>
         <div class="mt-0.5 wrap-break-word text-[11px] leading-4 opacity-95">{{ stage.message }}</div>
       </div>

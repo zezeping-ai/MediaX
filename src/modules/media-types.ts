@@ -107,10 +107,36 @@ export interface MediaEventEnvelope<T> {
   payload: T;
 }
 
+export interface MediaVideoTimestampStats {
+  samples: number;
+  pts_missing_ratio_percent: number;
+  pts_backtrack_count: number;
+  jitter_avg_ms: number;
+  jitter_max_ms: number;
+}
+
+export interface MediaFrameTypeStats {
+  sample_count: number;
+  i_ratio_percent: number;
+  p_ratio_percent: number;
+  b_ratio_percent: number;
+  other_ratio_percent: number;
+}
+
+export interface MediaDecodeQuantileStats {
+  sample_count: number;
+  avg_ms: number;
+  max_ms: number;
+  p50_ms: number;
+  p95_ms: number;
+  p99_ms: number;
+}
+
 export interface MediaTelemetryPayload {
   source_fps: number;
   render_fps: number;
   queue_depth: number;
+  audio_queue_depth_sources?: number | null;
   clock_seconds: number;
   current_video_pts_seconds?: number | null;
   current_audio_clock_seconds?: number | null;
@@ -127,6 +153,9 @@ export interface MediaTelemetryPayload {
   decode_avg_frame_cost_ms: number | null;
   decode_max_frame_cost_ms: number | null;
   decode_samples: number | null;
+  decode_quantiles?: MediaDecodeQuantileStats | null;
+  video_timestamps?: MediaVideoTimestampStats | null;
+  frame_types?: MediaFrameTypeStats | null;
   process_cpu_percent: number | null;
   process_memory_mb: number | null;
   gpu_queue_depth: number | null;

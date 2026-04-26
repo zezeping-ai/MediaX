@@ -1,7 +1,10 @@
 use super::{
     emit_debug, emit_telemetry_payloads, write_latest_stream_position, METRICS_EMIT_INTERVAL_MS,
 };
-use crate::app::media::playback::events::MediaTelemetryPayload;
+use crate::app::media::playback::events::{
+    MediaDecodeQuantileStats, MediaFrameTypeStats, MediaTelemetryPayload,
+    MediaVideoTimestampStats,
+};
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::render::renderer::{RendererState, VideoFrame};
 use crate::app::media::playback::render::video_frame::{
@@ -523,16 +526,25 @@ pub(super) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
                 ),
             );
             let ts_elapsed = ctx.video_ts_window_start.elapsed();
-            if ts_elapsed >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS) {
+            let ts_stats = if ts_elapsed >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS) {
                 let samples = (*ctx.video_ts_samples).max(1);
-                let missing_ratio = (*ctx.video_pts_missing as f64) * 100.0 / (samples as f64);
-                let avg_jitter_ms = *ctx.video_pts_jitter_abs_sum_ms / (samples as f64);
+                let stats = MediaVideoTimestampStats {
+                    samples,
+                    pts_missing_ratio_percent: (*ctx.video_pts_missing as f64) * 100.0 / (samples as f64),
+                    pts_backtrack_count: *ctx.video_pts_backtrack,
+                    jitter_avg_ms: *ctx.video_pts_jitter_abs_sum_ms / (samples as f64),
+                    jitter_max_ms: *ctx.video_pts_jitter_max_ms,
+                };
                 emit_debug(
                     ctx.app,
                     "video_timestamps",
                     format!(
                         "samples={} pts_missing={:.2}% backtrack={} jitter_avg={:.3}ms jitter_max={:.3}ms",
-                        samples, missing_ratio, *ctx.video_pts_backtrack, avg_jitter_ms, *ctx.video_pts_jitter_max_ms
+                        stats.samples,
+                        stats.pts_missing_ratio_percent,
+                        stats.pts_backtrack_count,
+                        stats.jitter_avg_ms,
+                        stats.jitter_max_ms
                     ),
                 );
                 *ctx.video_ts_window_start = Instant::now();
@@ -541,39 +553,64 @@ pub(super) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
                 *ctx.video_pts_backtrack = 0;
                 *ctx.video_pts_jitter_abs_sum_ms = 0.0;
                 *ctx.video_pts_jitter_max_ms = 0.0;
-            }
+                Some(stats)
+            } else {
+                None
+            };
             let frame_type_elapsed = ctx.video_frame_type_window_start.elapsed();
-            if frame_type_elapsed >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS) {
+            let frame_type_stats = if frame_type_elapsed >= Duration::from_millis(METRICS_EMIT_INTERVAL_MS) {
                 let total = *ctx.video_frame_type_i
                     + *ctx.video_frame_type_p
                     + *ctx.video_frame_type_b
                     + *ctx.video_frame_type_other;
-                if total > 0 {
+                let result = if total > 0 {
+                    let stats = MediaFrameTypeStats {
+                        sample_count: total,
+                        i_ratio_percent: (*ctx.video_frame_type_i as f64) * 100.0 / (total as f64),
+                        p_ratio_percent: (*ctx.video_frame_type_p as f64) * 100.0 / (total as f64),
+                        b_ratio_percent: (*ctx.video_frame_type_b as f64) * 100.0 / (total as f64),
+                        other_ratio_percent: (*ctx.video_frame_type_other as f64) * 100.0 / (total as f64),
+                    };
                     emit_debug(
                         ctx.app,
                         "video_frame_types",
                         format!(
                             "I={:.1}% P={:.1}% B={:.1}% other={:.1}% samples={}",
-                            (*ctx.video_frame_type_i as f64) * 100.0 / (total as f64),
-                            (*ctx.video_frame_type_p as f64) * 100.0 / (total as f64),
-                            (*ctx.video_frame_type_b as f64) * 100.0 / (total as f64),
-                            (*ctx.video_frame_type_other as f64) * 100.0 / (total as f64),
-                            total
+                            stats.i_ratio_percent,
+                            stats.p_ratio_percent,
+                            stats.b_ratio_percent,
+                            stats.other_ratio_percent,
+                            stats.sample_count
                         ),
                     );
-                }
+                    Some(stats)
+                } else {
+                    None
+                };
                 *ctx.video_frame_type_window_start = Instant::now();
                 *ctx.video_frame_type_i = 0;
                 *ctx.video_frame_type_p = 0;
                 *ctx.video_frame_type_b = 0;
                 *ctx.video_frame_type_other = 0;
-            }
+                result
+            } else {
+                None
+            };
+            let decode_quantiles = perf_snapshot.as_ref().map(|v| MediaDecodeQuantileStats {
+                sample_count: v.samples,
+                avg_ms: v.avg_ms,
+                max_ms: v.max_ms,
+                p50_ms: v.p50_ms,
+                p95_ms: v.p95_ms,
+                p99_ms: v.p99_ms,
+            });
             emit_telemetry_payloads(
                 ctx.app,
                 MediaTelemetryPayload {
                     source_fps: 1.0 / ctx.playback_clock.frame_duration.as_secs_f64().max(1e-6),
                     render_fps,
                     queue_depth: renderer_metrics.queue_depth,
+                    audio_queue_depth_sources: ctx.audio_queue_depth_sources,
                     clock_seconds: *ctx.current_position_seconds,
                     current_video_pts_seconds: Some(estimated_pts.max(0.0)),
                     current_audio_clock_seconds: audio_now,
@@ -598,6 +635,9 @@ pub(super) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
                     decode_avg_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.avg_ms),
                     decode_max_frame_cost_ms: perf_snapshot.as_ref().map(|v| v.max_ms),
                     decode_samples: perf_snapshot.as_ref().map(|v| v.samples),
+                    decode_quantiles,
+                    video_timestamps: ts_stats,
+                    frame_types: frame_type_stats,
                     process_cpu_percent: process_snapshot.as_ref().map(|v| v.cpu_percent),
                     process_memory_mb: process_snapshot.as_ref().map(|v| v.memory_mb),
                     gpu_queue_depth: Some(renderer_metrics.queue_depth),

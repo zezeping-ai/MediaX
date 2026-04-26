@@ -1,6 +1,11 @@
 mod app;
 use app::media::{
-    library, playback::session::commands as playback_commands, MediaState, RendererState,
+    library,
+    playback::session::commands::{
+        cache as playback_cache_commands, preview as playback_preview_commands,
+        session as playback_session_commands, timing as playback_timing_commands,
+    },
+    MediaState, RendererState,
 };
 use tauri::Manager;
 
@@ -27,24 +32,24 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            playback_commands::playback_get_snapshot,
+            playback_session_commands::playback_get_snapshot,
             library::media_set_library_roots,
             library::media_rescan_library,
-            playback_commands::playback_open_source,
-            playback_commands::playback_resume,
-            playback_commands::playback_pause,
-            playback_commands::playback_stop_session,
-            playback_commands::playback_seek_to,
-            playback_commands::playback_set_rate,
-            playback_commands::playback_set_volume,
-            playback_commands::playback_set_muted,
-            playback_commands::playback_configure_decoder_mode,
-            playback_commands::playback_set_quality,
-            playback_commands::playback_sync_position,
-            playback_commands::playback_preview_frame,
-            playback_commands::playback_get_cache_recording_status,
-            playback_commands::playback_start_cache_recording,
-            playback_commands::playback_stop_cache_recording,
+            playback_session_commands::playback_open_source,
+            playback_session_commands::playback_resume,
+            playback_session_commands::playback_pause,
+            playback_session_commands::playback_stop_session,
+            playback_timing_commands::playback_seek_to,
+            playback_timing_commands::playback_set_rate,
+            playback_timing_commands::playback_set_volume,
+            playback_timing_commands::playback_set_muted,
+            playback_timing_commands::playback_configure_decoder_mode,
+            playback_timing_commands::playback_set_quality,
+            playback_timing_commands::playback_sync_position,
+            playback_preview_commands::playback_preview_frame,
+            playback_cache_commands::playback_get_cache_recording_status,
+            playback_cache_commands::playback_start_cache_recording,
+            playback_cache_commands::playback_stop_cache_recording,
             app::windows::window_set_main_always_on_top,
             app::windows::window_set_main_video_scale_mode,
         ])

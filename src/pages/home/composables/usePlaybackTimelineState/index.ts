@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { throttle } from "lodash-es";
 import type { PlaybackState } from "@/modules/media-types";
-import { PREVIEW_SEEK_INTERVAL_MS } from "../components/PlaybackControls/playbackControls.constants";
+import { PREVIEW_SEEK_INTERVAL_MS } from "../../components/PlaybackControls/playbackControls.constants";
 
 interface UsePlaybackTimelineStateArgs {
   playback: () => PlaybackState | null;

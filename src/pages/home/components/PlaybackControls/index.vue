@@ -1,136 +1,50 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
-import type { PlaybackState, PreviewFrame } from "@/modules/media-types";
-import { usePlaybackTimelineState } from "../../composables/usePlaybackTimelineState";
+import type { PreviewFrame } from "@/modules/media-types";
 import PlaybackCenterControls from "./PlaybackCenterControls.vue";
 import PlaybackSideActions from "./PlaybackSideActions.vue";
 import PlaybackTimeline from "./PlaybackTimeline.vue";
 import { type PlaybackQualityOption } from "./playbackControlsUtils";
+import {
+  usePlaybackControlsViewModel,
+  type PlaybackControlsEmit,
+  type PlaybackControlsProps,
+} from "./usePlaybackControlsViewModel";
 
-const props = defineProps<{
-  playback: PlaybackState | null;
-  disabled: boolean;
-  playbackRate: number;
-  volume: number;
-  muted: boolean;
-  locked: boolean;
-  cacheRecording: boolean;
-  cacheOutputPath: string;
-  durationSecondsOverride: number;
+type RequestPreviewFrame = (
+  positionSeconds: number,
+  maxWidth?: number,
+  maxHeight?: number,
+) => Promise<PreviewFrame | null>;
+
+interface PlaybackControlsViewProps extends Omit<PlaybackControlsProps, "qualityOptions" | "requestPreviewFrame"> {
   qualityOptions: PlaybackQualityOption[];
-  selectedQuality: string;
-  requestPreviewFrame?: (
-    positionSeconds: number,
-    maxWidth?: number,
-    maxHeight?: number
-  ) => Promise<PreviewFrame | null>;
-}>();
-
-const emit = defineEmits<{
-  play: [];
-  pause: [number];
-  stop: [];
-  seek: [number];
-  "seek-preview": [number];
-  "change-rate": [number];
-  "change-volume": [number];
-  "change-quality": [string];
-  "overlay-interaction-change": [boolean];
-  "toggle-mute": [];
-  "toggle-cache": [];
-  "toggle-lock": [];
-}>();
-
-function normalizeSliderValue(value: number | [number, number]) {
-  return Array.isArray(value) ? Number(value[0]) : Number(value);
+  requestPreviewFrame?: RequestPreviewFrame;
 }
 
-const { currentTime, commitSeek, previewSeekWhilePaused, cancelPreviewSeek } = usePlaybackTimelineState({
-  playback: () => props.playback,
-  onSeek: (seconds) => emit("seek", seconds),
-  onSeekPreview: (seconds) => emit("seek-preview", seconds),
-});
-const duration = computed(() => {
-  const base = props.playback?.duration_seconds ?? 0;
-  const override = props.durationSecondsOverride ?? 0;
-  const normalizedBase = Number.isFinite(base) ? Math.max(0, base) : 0;
-  const normalizedOverride = Number.isFinite(override) ? Math.max(0, override) : 0;
-  return Math.max(normalizedBase, normalizedOverride);
-});
-const canSeek = computed(() => {
-  const playback = props.playback;
-  if (!playback || !playback.current_path) {
-    return false;
-  }
-  // For streams that don't support seeking (commonly some live/m3u8),
-  // backend reports duration_seconds as 0. Disable timeline interaction to avoid bad seeks.
-  return Number.isFinite(playback.duration_seconds) && playback.duration_seconds > 0;
-});
-const timelineDisabled = computed(() => props.disabled || !canSeek.value);
-const timelineTitle = computed(() =>
-  timelineDisabled.value ? "当前流不支持跳转进度" : "拖动调整播放进度",
-);
-const sliderMax = computed(() => Math.max(duration.value, currentTime.value, 1));
-const isPlaying = computed(() => props.playback?.status === "playing");
-const volumeIcon = computed(() => {
-  if (props.muted || props.volume <= 0) {
-    return "lucide:volume-x";
-  }
-  if (props.volume < 0.5) {
-    return "lucide:volume-1";
-  }
-  return "lucide:volume-2";
-});
-const qualityLabel = computed(() => {
-  const matched = props.qualityOptions.find((option) => option.key === props.selectedQuality);
-  return matched?.label ?? "原画";
-});
+const props = defineProps<PlaybackControlsViewProps>();
+const emit = defineEmits<PlaybackControlsEmit>();
 
-// 线性小图标：比 duotone 更轻，与音量区图标体量接近
-const lockIcon = computed(() => (props.locked ? "lucide:lock" : "lucide:lock-open"));
-const cacheIcon = computed(() => (props.cacheRecording ? "lucide:database-zap" : "lucide:database"));
-const speedDropdownOpen = ref(false);
-const qualityDropdownOpen = ref(false);
-
-watch(
-  () => speedDropdownOpen.value || qualityDropdownOpen.value,
-  (open) => {
-    emit("overlay-interaction-change", open);
-  },
-);
-
-function handleSpeedMenuClick({ key }: { key: string | number }) {
-  speedDropdownOpen.value = false;
-  emit("change-rate", Number(key));
-}
-
-function handleQualityMenuClick({ key }: { key: string | number }) {
-  qualityDropdownOpen.value = false;
-  emit("change-quality", String(key));
-}
-
-function handleProgressPreviewUpdate(value: number | [number, number]) {
-  if (!canSeek.value) {
-    return;
-  }
-  previewSeekWhilePaused(normalizeSliderValue(value));
-}
-
-function handleProgressCommit(value: number | [number, number]) {
-  if (!canSeek.value) {
-    return;
-  }
-  commitSeek(normalizeSliderValue(value));
-}
-
-function handleVolumeChange(value: number | [number, number]) {
-  emit("change-volume", normalizeSliderValue(value));
-}
-
-onBeforeUnmount(() => {
-  cancelPreviewSeek();
-  emit("overlay-interaction-change", false);
-});
+const {
+  cacheIcon,
+  currentTime,
+  duration,
+  handleProgressCommit,
+  handleProgressPreviewUpdate,
+  handleQualityChange,
+  handleSpeedChange,
+  handleVolumeChange,
+  isPlaying,
+  lockIcon,
+  qualityDropdownOpen,
+  qualityLabel,
+  setQualityDropdownOpen,
+  setSpeedDropdownOpen,
+  sliderMax,
+  speedDropdownOpen,
+  timelineDisabled,
+  timelineTitle,
+  volumeIcon,
+} = usePlaybackControlsViewModel(props, emit);
 </script>
 
 <template>
@@ -171,10 +85,10 @@ onBeforeUnmount(() => {
           @play="emit('play')"
           @pause="emit('pause', currentTime)"
           @stop="emit('stop')"
-          @toggle-speed-open="speedDropdownOpen = $event"
-          @toggle-quality-open="qualityDropdownOpen = $event"
-          @change-speed="handleSpeedMenuClick({ key: $event })"
-          @change-quality="handleQualityMenuClick({ key: $event })"
+          @toggle-speed-open="setSpeedDropdownOpen"
+          @toggle-quality-open="setQualityDropdownOpen"
+          @change-speed="handleSpeedChange"
+          @change-quality="handleQualityChange"
           @toggle-mute="emit('toggle-mute')"
           @change-volume="handleVolumeChange"
         />
