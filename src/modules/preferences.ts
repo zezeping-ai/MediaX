@@ -11,6 +11,8 @@ export type Preferences = {
     parseDebugEnabled: boolean;
     alwaysOnTop: boolean;
     videoScaleMode: PlayerVideoScaleMode;
+    showDownlinkSpeed: boolean;
+    showUplinkSpeed: boolean;
   };
 };
 
@@ -23,6 +25,8 @@ const DEFAULT_PREFERENCES: Preferences = {
     alwaysOnTop: true,
     // 默认“自适应”：完整显示视频，必要时留黑边。
     videoScaleMode: "contain",
+    showDownlinkSpeed: true,
+    showUplinkSpeed: true,
   },
 };
 
@@ -45,7 +49,12 @@ export function usePreferences() {
   // `mergeDefaults` may not deep-merge nested objects in all historical states.
   watchEffect(() => {
     const player = preferences.value.player;
-    if (!player || !player.videoScaleMode) {
+    if (
+      !player
+      || !player.videoScaleMode
+      || typeof player.showDownlinkSpeed !== "boolean"
+      || typeof player.showUplinkSpeed !== "boolean"
+    ) {
       preferences.value = {
         ...preferences.value,
         player: {
@@ -53,7 +62,11 @@ export function usePreferences() {
           parseDebugEnabled:
             player?.parseDebugEnabled ?? DEFAULT_PREFERENCES.player.parseDebugEnabled,
           alwaysOnTop: player?.alwaysOnTop ?? DEFAULT_PREFERENCES.player.alwaysOnTop,
-          videoScaleMode: DEFAULT_PREFERENCES.player.videoScaleMode,
+          videoScaleMode: player?.videoScaleMode ?? DEFAULT_PREFERENCES.player.videoScaleMode,
+          showDownlinkSpeed:
+            player?.showDownlinkSpeed ?? DEFAULT_PREFERENCES.player.showDownlinkSpeed,
+          showUplinkSpeed:
+            player?.showUplinkSpeed ?? DEFAULT_PREFERENCES.player.showUplinkSpeed,
         },
       };
     }
@@ -119,6 +132,23 @@ export function usePreferences() {
         };
       },
     }),
+    playerShowDownlinkSpeed: computed({
+      get: () => preferences.value.player.showDownlinkSpeed,
+      set: (v: boolean) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, showDownlinkSpeed: v },
+        };
+      },
+    }),
+    playerShowUplinkSpeed: computed({
+      get: () => preferences.value.player.showUplinkSpeed,
+      set: (v: boolean) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, showUplinkSpeed: v },
+        };
+      },
+    }),
   };
 }
-

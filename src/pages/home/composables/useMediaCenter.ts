@@ -24,7 +24,9 @@ export function useMediaCenter() {
     currentSource,
     debugSnapshot,
     debugTimeline,
+    firstFrameAtMs,
     networkReadBytesPerSecond,
+    networkSustainRatio,
     metadataDurationSeconds,
     metadataVideoWidth,
     metadataVideoHeight,
@@ -60,6 +62,7 @@ export function useMediaCenter() {
   const cacheStatusPollHandle = ref<number | null>(null);
   const cacheSizeSampleBytes = ref<number | null>(null);
   const cacheSizeSampleAtMs = ref<number | null>(null);
+  const pendingSource = ref("");
 
   const playback = computed(() => snapshot.value?.playback ?? null);
 
@@ -95,6 +98,10 @@ export function useMediaCenter() {
   }
 
   async function applyHwDecodePreference(enabled: boolean) {
+    const expectedMode = enabled ? "auto" : "off";
+    if (playback.value?.hw_decode_mode === expectedMode) {
+      return;
+    }
     const next = await playbackSettings.applyHwDecode(enabled);
     if (next) {
       updateSnapshot(next);
@@ -127,11 +134,16 @@ export function useMediaCenter() {
   }
 
   async function openPath(path: string) {
-    await runPlaybackCommand(() => commands.openPath(path));
-    await runPlaybackCommand(commands.play);
-    await refreshCacheRecordingStatus();
-    recordingNoticeMessage.value = "";
-    errorMessage.value = "";
+    pendingSource.value = path;
+    try {
+      await runPlaybackCommand(() => commands.openPath(path));
+      await runPlaybackCommand(commands.play);
+      await refreshCacheRecordingStatus();
+      recordingNoticeMessage.value = "";
+      errorMessage.value = "";
+    } finally {
+      pendingSource.value = "";
+    }
   }
 
   async function openUrl(url: string) {
@@ -210,8 +222,8 @@ export function useMediaCenter() {
       throw new Error("请输入有效的播放 URL");
     }
     urlInputValue.value = normalized;
-    await openUrl(normalized);
     urlDialogVisible.value = false;
+    await openUrl(normalized);
   }
 
   async function play() {
@@ -516,6 +528,7 @@ export function useMediaCenter() {
   return {
     playback,
     currentSource,
+    pendingSource,
     effectiveDurationSeconds,
     urlInputValue,
     urlDialogVisible,
@@ -527,11 +540,13 @@ export function useMediaCenter() {
     cacheOutputSizeBytes,
     cacheWriteSpeedBytesPerSecond,
     networkReadBytesPerSecond,
+    networkSustainRatio,
     cacheOutputDir,
     errorMessage,
     recordingNoticeMessage,
     debugSnapshot,
     debugTimeline,
+    firstFrameAtMs,
     mediaInfoSnapshot,
     metadataVideoHeight,
     openLocalFileByDialog: () => withBusyState(openLocalFileByDialog),
@@ -594,4 +609,3 @@ function normalizePlayableUrl(raw: string) {
   }
   return parsed.toString();
 }
-

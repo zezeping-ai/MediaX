@@ -3,16 +3,20 @@ import { computed, ref, watch } from "vue";
 import { type PlaybackState } from "@/modules/media-types";
 import { usePreferences } from "@/modules/preferences";
 import TransferStatusOverlay from "./TransferStatusOverlay.vue";
-import PlayerDebugOverlay from "./PlayerDebugOverlay.vue";
+import LoadingProcessOverlay from "./PlayerDebugOverlay/LoadingProcessOverlay.vue";
+import PlayerDebugOverlay from "./PlayerDebugOverlay/index.vue";
 
 const props = defineProps<{
   source: string;
+  pendingSource: string;
   loading: boolean;
   playback: PlaybackState | null;
   debugSnapshot: Record<string, string>;
   debugTimeline: Array<{ stage: string; message: string; at_ms: number }>;
+  firstFrameAtMs: number | null;
   mediaInfoSnapshot: Record<string, string>;
   networkReadBytesPerSecond: number | null;
+  networkSustainRatio: number | null;
   cacheRecording: boolean;
   cacheOutputPath: string;
   cacheOutputSizeBytes: number | null;
@@ -27,10 +31,40 @@ const emit = defineEmits<{
 
 const { playerParseDebugEnabled } = usePreferences();
 const debugOverlayOpen = ref(true);
-const shouldShowDebugOverlay = computed(
-  () => Boolean(props.source) && playerParseDebugEnabled.value && debugOverlayOpen.value,
-);
 
+const shouldShowDebugOverlay = computed(
+  () =>
+    Boolean(props.source)
+    && playerParseDebugEnabled.value
+    && debugOverlayOpen.value
+    && Boolean(props.firstFrameAtMs),
+);
+const overlaySource = computed(() => props.pendingSource || props.source);
+const hasPresentedFirstFrame = computed(() =>
+  Boolean(
+    props.debugSnapshot.video_frame_format
+    || props.debugSnapshot.video_fps
+    || props.debugSnapshot.video_pipeline,
+  ),
+);
+const isWaitingForFirstFrame = computed(
+  () =>
+    Boolean(overlaySource.value)
+    && !hasPresentedFirstFrame.value
+    && props.playback?.status !== "stopped",
+);
+const shouldShowLoadingProcessOverlay = computed(
+  () =>
+    playerParseDebugEnabled.value
+    && Boolean(overlaySource.value)
+    && isWaitingForFirstFrame.value,
+);
+const activeDebugTimeline = computed(() => {
+  if (!props.firstFrameAtMs) {
+    return [];
+  }
+  return props.debugTimeline.filter((item) => item.at_ms >= props.firstFrameAtMs!);
+});
 watch(
   () => props.source,
   (nextSource) => {
@@ -58,19 +92,24 @@ watch(
         </template>
       </a-empty>
     </div>
-    <a-spin v-if="loading" class="absolute" />
+    <LoadingProcessOverlay
+      v-if="shouldShowLoadingProcessOverlay"
+      :source="overlaySource"
+      :timeline="debugTimeline"
+    />
     <PlayerDebugOverlay
       v-if="shouldShowDebugOverlay"
       :source="source"
       :playback="playback"
       :debug-snapshot="debugSnapshot"
-      :debug-timeline="debugTimeline"
+      :debug-timeline="activeDebugTimeline"
       :media-info-snapshot="mediaInfoSnapshot"
       @close="debugOverlayOpen = false"
     />
     <TransferStatusOverlay
       :source="source"
       :network-read-bytes-per-second="networkReadBytesPerSecond"
+      :network-sustain-ratio="networkSustainRatio"
       :cache-recording="cacheRecording"
       :cache-output-path="cacheOutputPath"
       :cache-output-size-bytes="cacheOutputSizeBytes"

@@ -6,8 +6,14 @@ import {
   applyVideoScaleModePreference,
 } from "@/modules/player-settings-actions";
 
-const { playerHwDecodeEnabled, playerParseDebugEnabled, playerAlwaysOnTop, playerVideoScaleMode } =
-  usePreferences();
+const {
+  playerHwDecodeEnabled,
+  playerParseDebugEnabled,
+  playerAlwaysOnTop,
+  playerVideoScaleMode,
+  playerShowDownlinkSpeed,
+  playerShowUplinkSpeed,
+} = usePreferences();
 
 async function applyHwDecode(enabled: boolean) {
   // “开”使用 auto：尽可能启用硬解，失败则自动回退。
@@ -62,6 +68,30 @@ async function applyVideoScaleMode(mode: "contain" | "cover") {
             </div>
           </div>
           <a-switch v-model:checked="playerParseDebugEnabled" />
+        </div>
+      </a-space>
+    </a-card>
+
+    <a-card title="网络速率" :bordered="false" size="small" :body-style="{ padding: '12px' }">
+      <a-space direction="vertical" class="w-full">
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="font-semibold">显示下行</div>
+            <div class="text-xs text-black/55 dark:text-white/55">
+              在播放器右上角显示网络读取速度，标签简写为“下行”。
+            </div>
+          </div>
+          <a-switch v-model:checked="playerShowDownlinkSpeed" />
+        </div>
+
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="font-semibold">显示上行</div>
+            <div class="text-xs text-black/55 dark:text-white/55">
+              在播放器右上角显示缓存/录制写入速度，标签简写为“上行”。
+            </div>
+          </div>
+          <a-switch v-model:checked="playerShowUplinkSpeed" />
         </div>
       </a-space>
     </a-card>
@@ -135,4 +165,3 @@ async function applyVideoScaleMode(mode: "contain" | "cover") {
   color: rgba(255, 255, 255, 0.55);
 }
 </style>
-

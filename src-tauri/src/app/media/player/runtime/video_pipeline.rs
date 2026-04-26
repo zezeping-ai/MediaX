@@ -1,2 +1,0 @@
-pub const DECODE_LEAD_SLEEP_MS: u64 = 5;
-pub const RENDER_BACKPRESSURE_SLEEP_MS: u64 = 2;

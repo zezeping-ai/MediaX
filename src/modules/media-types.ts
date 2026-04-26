@@ -113,6 +113,8 @@ export interface MediaTelemetryPayload {
   queue_depth: number;
   clock_seconds: number;
   network_read_bytes_per_second?: number | null;
+  media_required_bytes_per_second?: number | null;
+  network_sustain_ratio?: number | null;
   audio_drift_seconds: number | null;
   video_pts_gap_seconds: number | null;
   seek_settle_ms: number | null;

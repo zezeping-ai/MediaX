@@ -21,12 +21,14 @@ export function useMediaSession() {
   const currentSource = ref("");
   const debugSnapshot = ref<Record<string, string>>({});
   const debugTimeline = ref<Array<{ stage: string; message: string; at_ms: number }>>([]);
+  const firstFrameAtMs = ref<number | null>(null);
   const metadataDurationSeconds = ref<number | null>(null);
   const metadataVideoWidth = ref<number | null>(null);
   const metadataVideoHeight = ref<number | null>(null);
   const metadataVideoFps = ref<number | null>(null);
   const playbackErrorMessage = ref("");
   const networkReadBytesPerSecond = ref<number | null>(null);
+  const networkSustainRatio = ref<number | null>(null);
   const lastTelemetryAtMs = ref<number>(0);
   let unlistenPlaybackStateEvent: UnlistenFn | null = null;
   let unlistenMenuEvent: UnlistenFn | null = null;
@@ -37,13 +39,26 @@ export function useMediaSession() {
   let snapshotPollingTimer: number | null = null;
   let telemetryStaleTimer: number | null = null;
 
+  function resetTransientMediaState() {
+    debugSnapshot.value = {};
+    debugTimeline.value = [];
+    firstFrameAtMs.value = null;
+    metadataDurationSeconds.value = null;
+    metadataVideoWidth.value = null;
+    metadataVideoHeight.value = null;
+    metadataVideoFps.value = null;
+    networkReadBytesPerSecond.value = null;
+    networkSustainRatio.value = null;
+    lastTelemetryAtMs.value = 0;
+    playbackErrorMessage.value = "";
+  }
+
   function updateSnapshot(next: MediaSnapshot) {
+    const previousSource = currentSource.value;
     snapshot.value = next;
     currentSource.value = next.playback.current_path ?? "";
-    if (!currentSource.value) {
-      // When no active source, clear any previous network speed display.
-      networkReadBytesPerSecond.value = null;
-      lastTelemetryAtMs.value = 0;
+    if (previousSource !== currentSource.value) {
+      resetTransientMediaState();
     }
   }
 
@@ -90,14 +105,21 @@ export function useMediaSession() {
     const upsertDebug = (payload: MediaDebugPayload) => {
       const stage = payload.stage?.trim() || "debug";
       const msg = payload.message?.trim() || "";
+      const atMs = payload.at_ms ?? Date.now();
       debugTimeline.value = [
         ...debugTimeline.value,
-        { stage, message: msg || "-", at_ms: payload.at_ms ?? Date.now() },
+        { stage, message: msg || "-", at_ms: atMs },
       ].slice(-200);
       debugSnapshot.value = {
         ...debugSnapshot.value,
         [stage]: msg || "-",
       };
+      if (
+        firstFrameAtMs.value === null
+        && (stage === "video_frame_format" || stage === "video_pipeline" || stage === "video_fps")
+      ) {
+        firstFrameAtMs.value = atMs;
+      }
     };
     unlistenPlaybackDebugEvent = await listen<MediaEventEnvelope<MediaDebugPayload> | MediaDebugPayload>(
       MEDIA_PLAYBACK_DEBUG_EVENT,
@@ -125,6 +147,10 @@ export function useMediaSession() {
         networkReadBytesPerSecond.value =
           typeof p.network_read_bytes_per_second === "number" && Number.isFinite(p.network_read_bytes_per_second)
             ? Math.max(0, p.network_read_bytes_per_second)
+            : null;
+        networkSustainRatio.value =
+          typeof p.network_sustain_ratio === "number" && Number.isFinite(p.network_sustain_ratio)
+            ? Math.max(0, p.network_sustain_ratio)
             : null;
         const renderBusyEstimatePercent =
           renderCost > 0 && p.render_fps > 0
@@ -160,6 +186,9 @@ export function useMediaSession() {
       if (Date.now() - last >= 2000) {
         networkReadBytesPerSecond.value = 0;
       }
+      if (Date.now() - last >= 2000) {
+        networkSustainRatio.value = null;
+      }
     }, 500);
   }
 
@@ -191,7 +220,9 @@ export function useMediaSession() {
     currentSource,
     debugSnapshot,
     debugTimeline,
+    firstFrameAtMs,
     networkReadBytesPerSecond,
+    networkSustainRatio,
     metadataDurationSeconds,
     metadataVideoWidth,
     metadataVideoHeight,

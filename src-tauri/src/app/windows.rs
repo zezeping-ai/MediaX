@@ -1,7 +1,7 @@
-use crate::app::media::player::coordinator;
-use crate::app::media::player::renderer::{RendererState, VideoScaleMode};
-use crate::app::media::player::state::MediaState;
-use crate::app::media::types::PlaybackStatus;
+use crate::app::media::model::PlaybackStatus;
+use crate::app::media::playback::render::renderer::{RendererState, VideoScaleMode};
+use crate::app::media::playback::session::coordinator;
+use crate::app::media::state::MediaState;
 use tauri::Manager;
 use tauri::State;
 

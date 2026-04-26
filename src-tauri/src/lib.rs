@@ -1,6 +1,7 @@
 mod app;
-use app::media::player::renderer::RendererState;
-use app::media::player::state::MediaState;
+use app::media::{
+    library, playback::session::commands as playback_commands, MediaState, RendererState,
+};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -26,24 +27,24 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            app::media::player::commands::playback_get_snapshot,
-            app::media::library_commands::media_set_library_roots,
-            app::media::library_commands::media_rescan_library,
-            app::media::player::commands::playback_open_source,
-            app::media::player::commands::playback_resume,
-            app::media::player::commands::playback_pause,
-            app::media::player::commands::playback_stop_session,
-            app::media::player::commands::playback_seek_to,
-            app::media::player::commands::playback_set_rate,
-            app::media::player::commands::playback_set_volume,
-            app::media::player::commands::playback_set_muted,
-            app::media::player::commands::playback_configure_decoder_mode,
-            app::media::player::commands::playback_set_quality,
-            app::media::player::commands::playback_sync_position,
-            app::media::player::commands::playback_preview_frame,
-            app::media::player::commands::playback_get_cache_recording_status,
-            app::media::player::commands::playback_start_cache_recording,
-            app::media::player::commands::playback_stop_cache_recording,
+            playback_commands::playback_get_snapshot,
+            library::media_set_library_roots,
+            library::media_rescan_library,
+            playback_commands::playback_open_source,
+            playback_commands::playback_resume,
+            playback_commands::playback_pause,
+            playback_commands::playback_stop_session,
+            playback_commands::playback_seek_to,
+            playback_commands::playback_set_rate,
+            playback_commands::playback_set_volume,
+            playback_commands::playback_set_muted,
+            playback_commands::playback_configure_decoder_mode,
+            playback_commands::playback_set_quality,
+            playback_commands::playback_sync_position,
+            playback_commands::playback_preview_frame,
+            playback_commands::playback_get_cache_recording_status,
+            playback_commands::playback_start_cache_recording,
+            playback_commands::playback_stop_cache_recording,
             app::windows::window_set_main_always_on_top,
             app::windows::window_set_main_video_scale_mode,
         ])
