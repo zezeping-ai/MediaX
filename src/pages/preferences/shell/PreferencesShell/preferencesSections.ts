@@ -1,6 +1,6 @@
 import type { Component } from "vue";
-import AppearanceSection from "../../sections/appearance/index.vue";
-import PlayerSection from "../../sections/player/index.vue";
+import AppearanceSection from "../../sections/appearance";
+import PlayerSection from "../../sections/player";
 
 export type SectionKey = "appearance" | "player";
 

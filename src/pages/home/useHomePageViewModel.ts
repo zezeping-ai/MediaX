@@ -2,12 +2,12 @@ import { defineAsyncComponent } from "vue";
 import { useHomePlaybackController } from "./composables/useHomePlaybackController";
 
 const PlaybackControls = defineAsyncComponent({
-  loader: () => import("./components/PlaybackControls/index.vue"),
+  loader: () => import("./components/PlaybackControls"),
   delay: 120,
 });
 
 const OpenUrlModal = defineAsyncComponent({
-  loader: () => import("./components/OpenUrlModal/index.vue"),
+  loader: () => import("./components/OpenUrlModal"),
   delay: 120,
 });
 

@@ -1,8 +1,9 @@
-use super::{emit_debug, percentile_from_sorted, METRICS_EMIT_INTERVAL_MS};
+use super::percentile_from_sorted;
+use crate::app::media::playback::render::renderer::VideoFrame;
 use crate::app::media::playback::render::video_frame::{
     detect_color_profile, video_frame_to_nv12_planes_from_yuv420p, ColorProfile,
 };
-use crate::app::media::playback::render::renderer::VideoFrame;
+use crate::app::media::playback::runtime::{emit_debug, METRICS_EMIT_INTERVAL_MS};
 use ffmpeg_next::frame;
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
@@ -58,7 +59,9 @@ impl VideoFramePipeline {
             .perf_window
             .max_micros
             .max(u64::try_from(micros).unwrap_or(u64::MAX));
-        self.perf_window.cost_samples_ms.push((micros as f64) / 1000.0);
+        self.perf_window
+            .cost_samples_ms
+            .push((micros as f64) / 1000.0);
     }
 
     pub(super) fn take_perf_snapshot(&mut self) -> Option<VideoPerfSnapshot> {
@@ -129,51 +132,7 @@ impl VideoFramePipeline {
             locked
         } else {
             self.locked_color_profile = Some(current_profile);
-            emit_debug(app, "color_profile", "lock color profile from first frame".to_string());
-            emit_debug(app, "video_frame_format", {
-                let (sar_num, sar_den, interlaced, top_field_first) = unsafe {
-                    let raw = &*frame.as_ptr();
-                    (
-                        raw.sample_aspect_ratio.num,
-                        raw.sample_aspect_ratio.den,
-                        raw.interlaced_frame != 0,
-                        raw.top_field_first != 0,
-                    )
-                };
-                let sar = if sar_num > 0 && sar_den > 0 {
-                    format!("{sar_num}:{sar_den}")
-                } else {
-                    "n/a".to_string()
-                };
-                let dar = if sar_num > 0 && sar_den > 0 && frame.height() > 0 {
-                    ((frame.width() as f64) * (sar_num as f64) / (sar_den as f64))
-                        / (frame.height() as f64)
-                } else if frame.height() > 0 {
-                    (frame.width() as f64) / (frame.height() as f64)
-                } else {
-                    0.0
-                };
-                let scan_type = if interlaced {
-                    if top_field_first {
-                        "interlaced_tff"
-                    } else {
-                        "interlaced_bff"
-                    }
-                } else {
-                    "progressive"
-                };
-                format!(
-                    "pix_fmt={:?} color_space={:?} color_range={:?} sar={} dar≈{:.3} scan={} size={}x{}",
-                    frame.format(),
-                    frame.color_space(),
-                    frame.color_range(),
-                    sar,
-                    dar,
-                    scan_type,
-                    frame.width(),
-                    frame.height()
-                )
-            });
+            self.emit_locked_color_profile(app, frame);
             current_profile
         }
     }
@@ -184,20 +143,7 @@ impl VideoFramePipeline {
         frame: &frame::Video,
         pts: f64,
     ) -> Option<VideoFrame> {
-        if !self.first_frame_emitted {
-            self.first_frame_emitted = true;
-            emit_debug(
-                app,
-                "first_frame",
-                format!(
-                    "first frame ready pts={:.3}s size={}x{} fmt={:?}",
-                    pts.max(0.0),
-                    frame.width(),
-                    frame.height(),
-                    frame.format(),
-                ),
-            );
-        }
+        self.emit_first_frame_if_needed(app, frame, pts);
         let profile = self.resolve_color_profile(app, frame);
         let render_frame =
             match video_frame_to_nv12_planes_from_yuv420p(frame, Some(pts), Some(profile)) {
@@ -209,6 +155,33 @@ impl VideoFramePipeline {
             };
         self.emit_integrity_if_needed(app);
         Some(render_frame)
+    }
+
+    fn emit_first_frame_if_needed(&mut self, app: &AppHandle, frame: &frame::Video, pts: f64) {
+        if self.first_frame_emitted {
+            return;
+        }
+        self.first_frame_emitted = true;
+        emit_debug(
+            app,
+            "first_frame",
+            format!(
+                "first frame ready pts={:.3}s size={}x{} fmt={:?}",
+                pts.max(0.0),
+                frame.width(),
+                frame.height(),
+                frame.format(),
+            ),
+        );
+    }
+
+    fn emit_locked_color_profile(&self, app: &AppHandle, frame: &frame::Video) {
+        emit_debug(
+            app,
+            "color_profile",
+            "lock color profile from first frame".to_string(),
+        );
+        emit_debug(app, "video_frame_format", describe_video_frame(frame));
     }
 
     fn emit_integrity_if_needed(&mut self, app: &AppHandle) {
@@ -245,4 +218,48 @@ impl VideoFramePipeline {
             dropped_scale: self.integrity.dropped_scale,
         }
     }
+}
+
+fn describe_video_frame(frame: &frame::Video) -> String {
+    let (sar_num, sar_den, interlaced, top_field_first) = unsafe {
+        let raw = &*frame.as_ptr();
+        (
+            raw.sample_aspect_ratio.num,
+            raw.sample_aspect_ratio.den,
+            raw.interlaced_frame != 0,
+            raw.top_field_first != 0,
+        )
+    };
+    let sar = if sar_num > 0 && sar_den > 0 {
+        format!("{sar_num}:{sar_den}")
+    } else {
+        "n/a".to_string()
+    };
+    let dar = if sar_num > 0 && sar_den > 0 && frame.height() > 0 {
+        ((frame.width() as f64) * (sar_num as f64) / (sar_den as f64)) / (frame.height() as f64)
+    } else if frame.height() > 0 {
+        (frame.width() as f64) / (frame.height() as f64)
+    } else {
+        0.0
+    };
+    let scan_type = if interlaced {
+        if top_field_first {
+            "interlaced_tff"
+        } else {
+            "interlaced_bff"
+        }
+    } else {
+        "progressive"
+    };
+    format!(
+        "pix_fmt={:?} color_space={:?} color_range={:?} sar={} dar≈{:.3} scan={} size={}x{}",
+        frame.format(),
+        frame.color_space(),
+        frame.color_range(),
+        sar,
+        dar,
+        scan_type,
+        frame.width(),
+        frame.height()
+    )
 }

@@ -4,7 +4,7 @@ import type {
 } from "@/pages/home/composables/usePlayerDebugOverlay";
 import type { MediaTelemetryPayload } from "@/modules/media-types";
 import DebugGroupSections from "../DebugGroupSections.vue";
-import PipelineHealthPanel from "../PipelineHealthPanel/index.vue";
+import PipelineHealthPanel from "../PipelineHealthPanel";
 
 defineProps<{
   telemetry: MediaTelemetryPayload | null;

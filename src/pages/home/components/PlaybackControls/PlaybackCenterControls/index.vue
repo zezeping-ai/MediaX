@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, ref, toRef } from "vue";
 import type { PlaybackChannelRouting } from "@/modules/media-types";
 import {
   CIRCLE_BTN_BASE,
@@ -9,8 +9,14 @@ import {
   PILL_BASE,
   SPEED_OPTIONS,
   TINY_PILL_BTN,
-} from "./playbackControls.constants";
-import { type PlaybackQualityOption } from "./playbackControlsUtils";
+} from "../playbackControls.constants";
+import { type PlaybackQualityOption } from "../playbackControlsUtils";
+import {
+  channelRoutingLabel,
+  channelStateLabel,
+  formatPercent,
+} from "./channelTrimDisplay";
+import { useChannelTrimPanel } from "./useChannelTrimPanel";
 
 const props = defineProps<{
   disabled: boolean;
@@ -50,48 +56,46 @@ const emit = defineEmits<{
   "set-channel-routing": [PlaybackChannelRouting];
 }>();
 
-const channelPanelOpen = ref(false);
-const leftVolumePreview = ref(1);
-const rightVolumePreview = ref(1);
 const rootRef = ref<HTMLElement | null>(null);
-
-watch(
-  () => [props.leftChannelVolume, props.rightChannelVolume],
-  ([left, right]) => {
-    leftVolumePreview.value = left;
-    rightVolumePreview.value = right;
-  },
-  { immediate: true },
-);
-
-watch(channelPanelOpen, (open) => {
-  emit("overlay-interaction-change", open);
+const {
+  channelPanelOpen,
+  leftVolumePreview,
+  rightVolumePreview,
+  toggleChannelPanel,
+} = useChannelTrimPanel({
+  rootRef,
+  leftChannelVolume: toRef(props, "leftChannelVolume"),
+  rightChannelVolume: toRef(props, "rightChannelVolume"),
+  speedDropdownOpen: toRef(props, "speedDropdownOpen"),
+  qualityDropdownOpen: toRef(props, "qualityDropdownOpen"),
+  emitOverlayInteractionChange: (open) => emit("overlay-interaction-change", open),
 });
 
-watch(
-  () => props.speedDropdownOpen || props.qualityDropdownOpen,
-  (open) => {
-    if (open) {
-      channelPanelOpen.value = false;
-    }
-  },
-);
-
-function toggleChannelPanel() {
-  channelPanelOpen.value = !channelPanelOpen.value;
-}
-
-function handleDocumentPointerDown(event: PointerEvent) {
-  if (!channelPanelOpen.value) {
-    return;
+const leftChannelSummary = computed(() => {
+  if (props.leftChannelMuted) {
+    return "M";
   }
-  const root = rootRef.value;
-  const target = event.target;
-  if (!(target instanceof Node) || !root || root.contains(target)) {
-    return;
+  return formatPercent(leftVolumePreview.value);
+});
+
+const rightChannelSummary = computed(() => {
+  if (props.rightChannelMuted) {
+    return "M";
   }
-  channelPanelOpen.value = false;
-}
+  return formatPercent(rightVolumePreview.value);
+});
+
+const leftEffectiveOutput = computed(() => {
+  const master = props.muted ? 0 : props.volume;
+  const trim = props.leftChannelMuted ? 0 : leftVolumePreview.value;
+  return master * trim;
+});
+
+const rightEffectiveOutput = computed(() => {
+  const master = props.muted ? 0 : props.volume;
+  const trim = props.rightChannelMuted ? 0 : rightVolumePreview.value;
+  return master * trim;
+});
 
 function updateLeftChannelVolume(value: number | [number, number]) {
   const normalized = Array.isArray(value) ? value[0] : value;
@@ -104,54 +108,6 @@ function updateRightChannelVolume(value: number | [number, number]) {
   rightVolumePreview.value = normalized;
   emit("set-right-channel-volume", normalized);
 }
-
-function formatPercent(value: number) {
-  const normalized = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
-  return `${Math.round(normalized * 100)}%`;
-}
-
-function effectiveChannelOutput(side: "left" | "right") {
-  const master = props.muted ? 0 : props.volume;
-  if (side === "left") {
-    const trim = props.leftChannelMuted ? 0 : leftVolumePreview.value;
-    return master * trim;
-  }
-  const trim = props.rightChannelMuted ? 0 : rightVolumePreview.value;
-  return master * trim;
-}
-
-function channelStateLabel(muted: boolean) {
-  return muted ? "Muted" : "Live";
-}
-
-function compactChannelSummary(side: "left" | "right") {
-  const muted = side === "left" ? props.leftChannelMuted : props.rightChannelMuted;
-  const trim = side === "left" ? leftVolumePreview.value : rightVolumePreview.value;
-  if (muted) {
-    return "M";
-  }
-  return formatPercent(trim);
-}
-
-function channelRoutingLabel(routing: PlaybackChannelRouting) {
-  switch (routing) {
-    case "left_to_both":
-      return "L->LR";
-    case "right_to_both":
-      return "R->LR";
-    default:
-      return "Stereo";
-  }
-}
-
-onMounted(() => {
-  document.addEventListener("pointerdown", handleDocumentPointerDown);
-});
-
-onBeforeUnmount(() => {
-  document.removeEventListener("pointerdown", handleDocumentPointerDown);
-  emit("overlay-interaction-change", false);
-});
 </script>
 
 <template>
@@ -265,9 +221,9 @@ onBeforeUnmount(() => {
             @afterChange="$emit('commit-volume', $event)"
           />
           <div class="mt-1.5 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/36">
-            <span>L {{ compactChannelSummary("left") }}</span>
+            <span>L {{ leftChannelSummary }}</span>
             <span>{{ channelRoutingLabel(channelRouting) }}</span>
-            <span>R {{ compactChannelSummary("right") }}</span>
+            <span>R {{ rightChannelSummary }}</span>
           </div>
         </div>
 
@@ -325,7 +281,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="flex items-center gap-2.5">
                 <span class="text-[10px] uppercase tracking-[0.14em] text-white/42">
-                  out {{ formatPercent(effectiveChannelOutput("left")) }}
+                  out {{ formatPercent(leftEffectiveOutput) }}
                 </span>
                 <a-button
                   size="small"
@@ -365,7 +321,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="flex items-center gap-2.5">
                 <span class="text-[10px] uppercase tracking-[0.14em] text-white/42">
-                  out {{ formatPercent(effectiveChannelOutput("right")) }}
+                  out {{ formatPercent(rightEffectiveOutput) }}
                 </span>
                 <a-button
                   size="small"

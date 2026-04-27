@@ -8,12 +8,12 @@ import {
   type PlaybackState,
 } from "@/modules/media-types";
 import { usePreferences } from "@/modules/preferences";
-import AudioLyricsOverlay from "./AudioLyricsOverlay.vue";
+import AudioLyricsOverlay from "./AudioLyricsOverlay";
 import TransferStatusOverlay from "./TransferStatusOverlay.vue";
 import LoadingProcessOverlay from "./PlayerDebugOverlay/LoadingProcessOverlay.vue";
 
 const PlayerDebugOverlay = defineAsyncComponent({
-  loader: () => import("./PlayerDebugOverlay/index.vue"),
+  loader: () => import("./PlayerDebugOverlay"),
   delay: 120,
 });
 
@@ -59,20 +59,40 @@ const emit = defineEmits<{
 const { playerParseDebugEnabled } = usePreferences();
 const debugOverlayOpen = ref(true);
 
+const hasVideoPresentationSignals = computed(() =>
+  Boolean(
+    props.playback?.media_kind === "video"
+    || props.debugSnapshot.video_frame_format
+    || props.debugSnapshot.video_fps
+    || props.debugSnapshot.video_pipeline,
+  ),
+);
+const hasAudioPresentationSignals = computed(() =>
+  Boolean(
+    props.playback?.media_kind === "audio"
+    || props.metadataMediaKind === "audio"
+    || (
+      !hasVideoPresentationSignals.value
+      && (
+        props.metadataHasCoverArt
+        || Boolean(props.latestAudioMeter?.channels)
+        || Boolean(props.debugSnapshot.audio_pipeline_ready)
+      )
+    ),
+  ),
+);
 const effectiveMediaKind = computed(() => {
-  if (props.playback?.media_kind === "audio") {
+  if (hasAudioPresentationSignals.value) {
     return "audio";
   }
-  return props.metadataMediaKind;
+  return "video";
 });
 const overlaySource = computed(() => props.pendingSource || props.source);
 const hasPresentedFirstFrame = computed(() =>
   Boolean(
     effectiveMediaKind.value === "audio"
     || props.debugSnapshot.audio_pipeline_ready
-    || props.debugSnapshot.video_frame_format
-    || props.debugSnapshot.video_fps
-    || props.debugSnapshot.video_pipeline,
+    || hasVideoPresentationSignals.value,
   ),
 );
 const isWaitingForFirstFrame = computed(() => (

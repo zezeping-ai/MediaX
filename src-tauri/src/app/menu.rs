@@ -81,14 +81,14 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         MENU_FILE_OPEN_LOCAL_ID,
         "打开本地文件...",
         true,
-        None::<&str>,
+        Some("CmdOrCtrl+O"),
     )?;
     let open_url = MenuItem::with_id(
         app,
         MENU_FILE_OPEN_URL_ID,
         "打开 URL...",
         true,
-        None::<&str>,
+        Some("CmdOrCtrl+Shift+O"),
     )?;
     let file_submenu = Submenu::with_items(app, "File", true, &[&open_local, &open_url])?;
 

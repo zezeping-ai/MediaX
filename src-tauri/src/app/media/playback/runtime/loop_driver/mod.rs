@@ -1,9 +1,7 @@
 use super::emit::emit_debug;
 use super::seek_control;
 use super::video_pipeline;
-use super::{
-    DecodeRuntime, AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT,
-};
+use super::{DecodeRuntime, AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT};
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::state::{MediaState, TimingControls};
 use ffmpeg_next::Error as FfmpegError;
@@ -17,9 +15,7 @@ mod pacing;
 mod packet_flow;
 mod tail;
 
-use self::pacing::{
-    refresh_audio_rate, refresh_tail_audio_rate, should_wait_for_decode_lead,
-};
+use self::pacing::{refresh_audio_rate, refresh_tail_audio_rate, should_wait_for_decode_lead};
 use self::packet_flow::{drain_video_frames, handle_packet};
 pub(super) use self::tail::finish_decode_runtime;
 
@@ -56,32 +52,46 @@ pub(super) fn run_decode_loop(
                 stream_generation,
                 packet,
             )?,
-            Err(FfmpegError::Eof) => {
-                if stop_flag.load(Ordering::Relaxed) {
+            Err(err) => {
+                if should_break_after_read_error(stop_flag, runtime, &err) {
                     break;
                 }
-                if runtime.should_tail_eof {
-                    std::thread::sleep(Duration::from_millis(200));
-                    continue;
+                if should_retry_after_read_error(runtime, &err) {
+                    sleep_for_read_retry(&err);
                 }
-                break;
-            }
-            Err(_) => {
-                if runtime.should_tail_eof {
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-                continue;
             }
         }
     }
     Ok(())
 }
 
-fn should_exit_loop(
-    app: &AppHandle,
+fn should_break_after_read_error(
     stop_flag: &Arc<AtomicBool>,
-    stream_generation: u32,
+    runtime: &DecodeRuntime,
+    err: &FfmpegError,
 ) -> bool {
+    match err {
+        FfmpegError::Eof => stop_flag.load(Ordering::Relaxed) || !runtime.should_tail_eof,
+        _ => false,
+    }
+}
+
+fn should_retry_after_read_error(runtime: &DecodeRuntime, err: &FfmpegError) -> bool {
+    match err {
+        FfmpegError::Eof => runtime.should_tail_eof,
+        _ => runtime.should_tail_eof,
+    }
+}
+
+fn sleep_for_read_retry(err: &FfmpegError) {
+    let delay_ms = match err {
+        FfmpegError::Eof => 200,
+        _ => 50,
+    };
+    std::thread::sleep(Duration::from_millis(delay_ms));
+}
+
+fn should_exit_loop(app: &AppHandle, stop_flag: &Arc<AtomicBool>, stream_generation: u32) -> bool {
     if !app
         .state::<MediaState>()
         .stream

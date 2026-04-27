@@ -1,0 +1,32 @@
+use super::VideoScaleMode;
+
+pub(super) struct Renderer {
+    pub(super) window: tauri::WebviewWindow,
+    pub(super) surface: wgpu::Surface<'static>,
+    pub(super) device: wgpu::Device,
+    pub(super) queue: wgpu::Queue,
+    pub(super) config: wgpu::SurfaceConfiguration,
+    pub(super) max_surface_extent: u32,
+    pub(super) pipeline: wgpu::RenderPipeline,
+    pub(super) bind_group_layout: wgpu::BindGroupLayout,
+    pub(super) sampler: wgpu::Sampler,
+    pub(super) color_params_buffer: wgpu::Buffer,
+    pub(super) texture_y: wgpu::Texture,
+    pub(super) texture_y_view: wgpu::TextureView,
+    pub(super) texture_uv: wgpu::Texture,
+    pub(super) texture_uv_view: wgpu::TextureView,
+    pub(super) bind_group: wgpu::BindGroup,
+    pub(super) texture_size: (u32, u32),
+    pub(super) has_uploaded_frame: bool,
+    pub(super) video_scale_mode: VideoScaleMode,
+}
+
+pub(super) struct ColorParams {
+    pub(super) y_offset: f32,
+    pub(super) y_scale: f32,
+    pub(super) uv_offset: f32,
+    pub(super) uv_scale: f32,
+    pub(super) row0: [f32; 4],
+    pub(super) row1: [f32; 4],
+    pub(super) row2: [f32; 4],
+}

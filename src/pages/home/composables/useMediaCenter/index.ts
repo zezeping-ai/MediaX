@@ -1,9 +1,11 @@
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { usePreferences } from "@/modules/preferences";
-import type { HardwareDecodeMode, PlaybackChannelRouting, PlaybackQualityMode } from "@/modules/media-types";
+import type { HardwareDecodeMode } from "@/modules/media-types";
 import { useCacheRecordingController } from "./useCacheRecordingController";
+import { createMediaCenterActions } from "./createMediaCenterActions";
 import { createMediaInfoSnapshot } from "./createMediaInfoSnapshot";
 import { createPlaybackCommandRunner } from "./createPlaybackCommandRunner";
+import { syncMediaCenterRuntime } from "./syncMediaCenterRuntime";
 import { useMediaCenterBusyState } from "./useMediaCenterBusyState";
 import { useMediaCenterLifecycle } from "./useMediaCenterLifecycle";
 import { usePlayerPreferenceSync } from "./usePlayerPreferenceSync";
@@ -113,20 +115,18 @@ export function useMediaCenter() {
     },
   });
 
-  onBeforeUnmount(() => {
-    mediaSession.unmount();
+  syncMediaCenterRuntime({
+    mediaSession,
+    playbackRunner,
+    errorMessage,
   });
 
-  watch(mediaSession.metadataDurationSeconds, (duration) => {
-    if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) {
-      void playbackRunner.syncPosition(0, duration);
-    }
-  });
-
-  watch(mediaSession.playbackErrorMessage, (message) => {
-    if (message) {
-      errorMessage.value = message;
-    }
+  const actions = createMediaCenterActions({
+    withBusyState,
+    playbackRunner,
+    cacheRecordingController,
+    urlInputController,
+    requestPreviewFrame,
   });
 
   return {
@@ -163,45 +163,6 @@ export function useMediaCenter() {
     metadataHasCoverArt: mediaSession.metadataHasCoverArt,
     metadataLyrics: mediaSession.metadataLyrics,
     metadataVideoHeight: mediaSession.metadataVideoHeight,
-    openLocalFileByDialog: () => withBusyState(async () => {
-      const selectedPath = await playbackRunner.openLocalFileByDialog();
-      if (selectedPath) {
-        await playbackRunner.openPath(selectedPath);
-      }
-    }),
-    openUrl: (url: string) => withBusyState(async () => {
-      await urlInputController.submitUrl(url);
-    }),
-    requestOpenUrlInput: urlInputController.requestOpenUrlInput,
-    cancelOpenUrlInput: urlInputController.cancelOpenUrlInput,
-    confirmOpenUrlInput: () => withBusyState(urlInputController.confirmOpenUrlInput),
-    removeUrlFromPlaylist: urlInputController.removeUrlFromPlaylist,
-    clearUrlPlaylist: urlInputController.clearUrlPlaylist,
-    play: () => withBusyState(playbackRunner.play),
-    pause: () => withBusyState(playbackRunner.pause),
-    stop: () => withBusyState(playbackRunner.stop),
-    seek: (seconds: number) => playbackRunner.runWithoutBusyLock(() => playbackRunner.seek(seconds)),
-    seekPreview: (seconds: number) => playbackRunner.seekPreview(seconds),
-    setRate: (rate: number) => playbackRunner.runWithoutBusyLock(() => playbackRunner.setRate(rate)),
-    setVolume: (volume: number) =>
-      playbackRunner.runWithoutBusyLock(() => playbackRunner.setVolume(volume)),
-    setMuted: (muted: boolean) =>
-      playbackRunner.runWithoutBusyLock(() => playbackRunner.setMuted(muted)),
-    setLeftChannelVolume: (volume: number) =>
-      playbackRunner.runWithoutBusyLock(() => playbackRunner.setLeftChannelVolume(volume)),
-    setRightChannelVolume: (volume: number) =>
-      playbackRunner.runWithoutBusyLock(() => playbackRunner.setRightChannelVolume(volume)),
-    setLeftChannelMuted: (muted: boolean) =>
-      playbackRunner.runWithoutBusyLock(() => playbackRunner.setLeftChannelMuted(muted)),
-    setRightChannelMuted: (muted: boolean) =>
-      playbackRunner.runWithoutBusyLock(() => playbackRunner.setRightChannelMuted(muted)),
-    setChannelRouting: (routing: PlaybackChannelRouting) =>
-      playbackRunner.runWithoutBusyLock(() => playbackRunner.setChannelRouting(routing)),
-    setQuality: (mode: PlaybackQualityMode) => withBusyState(() => playbackRunner.setQuality(mode)),
-    toggleCacheRecording: () => withBusyState(cacheRecordingController.toggleCacheRecording),
-    requestPreviewFrame: (positionSeconds: number, maxWidth?: number, maxHeight?: number) =>
-      requestPreviewFrame(positionSeconds, maxWidth, maxHeight),
-    syncPosition: (positionSeconds: number, durationSeconds: number) =>
-      withBusyState(() => playbackRunner.syncPosition(positionSeconds, durationSeconds)),
+    ...actions,
   };
 }

@@ -8,7 +8,10 @@ use crate::app::media::playback::runtime::{
 use crate::app::media::state::TimingControls;
 use std::sync::Arc;
 
-pub(super) fn refresh_audio_rate(runtime: &mut DecodeRuntime, timing_controls: &Arc<TimingControls>) {
+pub(super) fn refresh_audio_rate(
+    runtime: &mut DecodeRuntime,
+    timing_controls: &Arc<TimingControls>,
+) {
     let Some(audio_state) = runtime.audio_pipeline.as_mut() else {
         return;
     };
@@ -20,11 +23,10 @@ pub(super) fn refresh_audio_rate(runtime: &mut DecodeRuntime, timing_controls: &
     if let Some(clock) = runtime.loop_state.audio_clock.as_mut() {
         clock.rebase_rate(next_rate as f64);
     }
-    audio_state.output.player.set_speed(next_rate);
-    let queued_sources = audio_state.output.player.len();
+    audio_state.output.set_speed(next_rate);
+    let queued_sources = audio_state.output.queue_depth();
     if queued_sources >= audio_pipeline::DEEP_AUDIO_QUEUE_SOURCE_THRESHOLD && next_rate < 1.0 {
-        audio_state.output.player.clear();
-        audio_state.output.player.play();
+        audio_state.output.clear_queue();
         runtime.loop_state.audio_clock = None;
         runtime.loop_state.audio_queue_depth_sources = None;
     }
@@ -74,11 +76,10 @@ pub(super) fn refresh_tail_audio_rate(
     if let Some(clock) = runtime.loop_state.audio_clock.as_mut() {
         clock.rebase_rate(next_rate as f64);
     }
-    audio_state.output.player.set_speed(next_rate);
-    let queued_sources = audio_state.output.player.len();
+    audio_state.output.set_speed(next_rate);
+    let queued_sources = audio_state.output.queue_depth();
     if queued_sources >= audio_pipeline::DEEP_AUDIO_QUEUE_SOURCE_THRESHOLD && next_rate < 1.0 {
-        audio_state.output.player.clear();
-        audio_state.output.player.play();
+        audio_state.output.clear_queue();
     }
     runtime.loop_state.last_applied_audio_rate = next_rate;
 }

@@ -1,4 +1,5 @@
-use super::{RendererInner, VideoFrame, FRAME_QUEUE_CAPACITY};
+use super::renderer_state::{RendererInner, FRAME_QUEUE_CAPACITY};
+use super::VideoFrame;
 
 pub(super) fn pick_frame_for_present(
     inner: &RendererInner,

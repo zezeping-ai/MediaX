@@ -14,41 +14,6 @@ export default defineConfig(async () => ({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     }
   },
-  build: {
-    chunkSizeWarningLimit: 600,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes("node_modules")) {
-            return undefined;
-          }
-          if (id.includes("ant-design-vue")) {
-            return "ui-antdv";
-          }
-          if (id.includes("@tauri-apps")) {
-            return "tauri-runtime";
-          }
-          if (id.includes("@iconify")) {
-            return "iconify";
-          }
-          if (id.includes("/echarts/")) {
-            return "viz-echarts";
-          }
-          if (id.includes("@vueuse") || id.includes("lodash-es")) {
-            return "app-utils";
-          }
-          if (
-            id.includes("/vue/") ||
-            id.includes("/vue-router/") ||
-            id.includes("/pinia/")
-          ) {
-            return "vue-core";
-          }
-          return "vendor";
-        },
-      },
-    },
-  },
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

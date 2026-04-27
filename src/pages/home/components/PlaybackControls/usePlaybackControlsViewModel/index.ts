@@ -12,6 +12,8 @@ export type {
   RequestPreviewFrame,
 } from "./types";
 
+export type PlaybackControlsViewModel = ReturnType<typeof usePlaybackControlsViewModel>;
+
 export function usePlaybackControlsViewModel(
   props: PlaybackControlsProps,
   emit: PlaybackControlsEmit,

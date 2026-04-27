@@ -4,12 +4,20 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
 pub struct AudioClock {
-    pub anchor_instant: Instant,
-    pub anchor_media_seconds: f64,
-    pub anchor_rate: f64,
+    anchor_instant: Instant,
+    anchor_media_seconds: f64,
+    anchor_rate: f64,
 }
 
 impl AudioClock {
+    pub fn new(anchor_media_seconds: f64, anchor_rate: f64) -> Self {
+        Self {
+            anchor_instant: Instant::now(),
+            anchor_media_seconds: anchor_media_seconds.max(0.0),
+            anchor_rate: anchor_rate.max(0.25),
+        }
+    }
+
     pub fn now_seconds(&self) -> f64 {
         let elapsed = Instant::now()
             .saturating_duration_since(self.anchor_instant)
@@ -26,16 +34,16 @@ impl AudioClock {
 }
 
 pub struct PlaybackClock {
-    pub frame_duration: Duration,
-    pub last_emit_instant: Option<Instant>,
-    pub media_seconds: f64,
-    pub timing_controls: Arc<TimingControls>,
+    frame_duration: Duration,
+    last_emit_instant: Option<Instant>,
+    media_seconds: f64,
+    timing_controls: Arc<TimingControls>,
 }
 
 #[derive(Default)]
 pub struct FpsWindow {
-    pub started_at: Option<Instant>,
-    pub frames: u32,
+    started_at: Option<Instant>,
+    frames: u32,
 }
 
 impl FpsWindow {
@@ -82,6 +90,14 @@ impl PlaybackClock {
     pub fn reset_to(&mut self, media_seconds: f64) {
         self.media_seconds = media_seconds.max(0.0);
         self.last_emit_instant = None;
+    }
+
+    pub fn frame_duration_seconds(&self) -> f64 {
+        self.frame_duration.as_secs_f64()
+    }
+
+    pub fn source_fps(&self) -> f64 {
+        1.0 / self.frame_duration.as_secs_f64().max(1e-6)
     }
 
     pub fn playback_rate(&self) -> f64 {

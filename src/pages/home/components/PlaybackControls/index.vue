@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { PreviewFrame } from "@/modules/media-types";
-import PlaybackCenterControls from "./PlaybackCenterControls.vue";
+import PlaybackCenterControls from "./PlaybackCenterControls";
 import PlaybackSideActions from "./PlaybackSideActions.vue";
 import PlaybackTimeline from "./PlaybackTimeline.vue";
 import { type PlaybackQualityOption } from "./playbackControlsUtils";
+import { usePlaybackControlsBindings } from "./usePlaybackControlsBindings";
 import {
   usePlaybackControlsViewModel,
   type PlaybackControlsEmit,
@@ -24,32 +25,20 @@ interface PlaybackControlsViewProps extends Omit<PlaybackControlsProps, "quality
 const props = defineProps<PlaybackControlsViewProps>();
 const emit = defineEmits<PlaybackControlsEmit>();
 
+const viewModel = usePlaybackControlsViewModel(props, emit);
+
 const {
-  cacheIcon,
-  currentTime,
-  decodeBadgeClass,
-  decodeBadgeLabel,
-  decodeBadgeTitle,
-  duration,
-  handleProgressCommit,
-  handleProgressPreviewUpdate,
-  handleQualityChange,
-  handleSpeedChange,
-  handleVolumeChange,
-  handleVolumeCommit,
-  isPlaying,
-  lockIcon,
-  qualityDropdownOpen,
-  qualityLabel,
-  setQualityDropdownOpen,
-  setSpeedDropdownOpen,
-  sliderMax,
-  speedDropdownOpen,
-  timelineDisabled,
-  timelineTitle,
-  volumePreview,
-  volumeIcon,
-} = usePlaybackControlsViewModel(props, emit);
+  centerControlEvents,
+  centerControlProps,
+  sideActionEvents,
+  sideActionProps,
+  timelineEvents,
+  timelineProps,
+} = usePlaybackControlsBindings({
+  props,
+  emit,
+  viewModel,
+});
 </script>
 
 <template>
@@ -58,18 +47,9 @@ const {
   >
     <div class="px-3.5 pb-2 pt-2.5">
       <PlaybackTimeline
-        :current-time="currentTime"
-        :duration="duration"
-        :decode-badge-class="decodeBadgeClass"
-        :decode-badge-label="decodeBadgeLabel"
-        :decode-badge-title="decodeBadgeTitle"
-        :slider-max="sliderMax"
-        :timeline-disabled="timelineDisabled"
-        :timeline-title="timelineTitle"
-        :source-key="playback?.current_path ?? ''"
-        :request-preview-frame="requestPreviewFrame"
-        @preview="handleProgressPreviewUpdate"
-        @commit="handleProgressCommit"
+        v-bind="timelineProps"
+        @preview="timelineEvents.onPreview"
+        @commit="timelineEvents.onCommit"
       />
 
       <div
@@ -77,47 +57,29 @@ const {
       >
         <div aria-hidden="true" />
         <PlaybackCenterControls
-          :disabled="disabled"
-          :is-playing="isPlaying"
-          :playback-rate="playbackRate"
-          :selected-quality="selectedQuality"
-          :quality-label="qualityLabel"
-          :quality-options="qualityOptions"
-          :muted="muted"
-          :volume="volumePreview"
-          :volume-icon="volumeIcon"
-          :left-channel-volume="playback?.left_channel_volume ?? 1"
-          :right-channel-volume="playback?.right_channel_volume ?? 1"
-          :left-channel-muted="playback?.left_channel_muted ?? false"
-          :right-channel-muted="playback?.right_channel_muted ?? false"
-          :channel-routing="playback?.channel_routing ?? 'stereo'"
-          :speed-dropdown-open="speedDropdownOpen"
-          :quality-dropdown-open="qualityDropdownOpen"
-          @play="emit('play')"
-          @pause="emit('pause', currentTime)"
-          @stop="emit('stop')"
-          @toggle-speed-open="setSpeedDropdownOpen"
-          @toggle-quality-open="setQualityDropdownOpen"
-          @change-speed="handleSpeedChange"
-          @change-quality="handleQualityChange"
-          @toggle-mute="emit('toggle-mute')"
-          @overlay-interaction-change="emit('overlay-interaction-change', $event)"
-          @change-volume="handleVolumeChange"
-          @commit-volume="handleVolumeCommit"
-          @set-left-channel-volume="emit('set-left-channel-volume', $event)"
-          @set-right-channel-volume="emit('set-right-channel-volume', $event)"
-          @set-left-channel-muted="emit('set-left-channel-muted', $event)"
-          @set-right-channel-muted="emit('set-right-channel-muted', $event)"
-          @set-channel-routing="emit('set-channel-routing', $event)"
+          v-bind="centerControlProps"
+          @play="centerControlEvents.onPlay"
+          @pause="centerControlEvents.onPause"
+          @stop="centerControlEvents.onStop"
+          @toggle-speed-open="centerControlEvents.onToggleSpeedOpen"
+          @toggle-quality-open="centerControlEvents.onToggleQualityOpen"
+          @change-speed="centerControlEvents.onChangeSpeed"
+          @change-quality="centerControlEvents.onChangeQuality"
+          @toggle-mute="centerControlEvents.onToggleMute"
+          @overlay-interaction-change="centerControlEvents.onOverlayInteractionChange"
+          @change-volume="centerControlEvents.onChangeVolume"
+          @commit-volume="centerControlEvents.onCommitVolume"
+          @set-left-channel-volume="centerControlEvents.onSetLeftChannelVolume"
+          @set-right-channel-volume="centerControlEvents.onSetRightChannelVolume"
+          @set-left-channel-muted="centerControlEvents.onSetLeftChannelMuted"
+          @set-right-channel-muted="centerControlEvents.onSetRightChannelMuted"
+          @set-channel-routing="centerControlEvents.onSetChannelRouting"
         />
 
         <PlaybackSideActions
-          :cache-recording="cacheRecording"
-          :locked="locked"
-          :cache-icon="cacheIcon"
-          :lock-icon="lockIcon"
-          @toggle-cache="emit('toggle-cache')"
-          @toggle-lock="emit('toggle-lock')"
+          v-bind="sideActionProps"
+          @toggle-cache="sideActionEvents.onToggleCache"
+          @toggle-lock="sideActionEvents.onToggleLock"
         />
       </div>
     </div>

@@ -1,4 +1,4 @@
-use super::RendererInner;
+use super::renderer_state::RendererInner;
 use std::time::Duration;
 
 pub(super) fn wait_for_render_signal(inner: &RendererInner, timeout: Duration) -> bool {

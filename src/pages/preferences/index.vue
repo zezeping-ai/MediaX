@@ -3,5 +3,5 @@
 </template>
 
 <script setup lang="ts">
-import PreferencesShell from "./shell/PreferencesShell/index.vue";
+import PreferencesShell from "./shell/PreferencesShell";
 </script>
