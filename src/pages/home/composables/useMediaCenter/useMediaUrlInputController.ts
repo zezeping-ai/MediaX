@@ -21,7 +21,7 @@ export function useMediaUrlInputController(options: UseMediaUrlInputControllerOp
   async function submitUrl(url: string) {
     const normalized = normalizePlayableUrl(url);
     if (!normalized) {
-      throw new Error("请输入有效的播放 URL");
+      throw new Error("请输入有效的媒体直链，支持 http(s)、rtsp、rtmp、mms");
     }
     await options.openUrl(normalized);
     addUrlToPlaylist(normalized);

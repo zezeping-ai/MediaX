@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { usePreferences } from "@/modules/preferences";
-import type { HardwareDecodeMode, PlaybackQualityMode } from "@/modules/media-types";
+import type { HardwareDecodeMode, PlaybackChannelRouting, PlaybackQualityMode } from "@/modules/media-types";
 import { useCacheRecordingController } from "./useCacheRecordingController";
 import { createMediaInfoSnapshot } from "./createMediaInfoSnapshot";
 import { createPlaybackCommandRunner } from "./createPlaybackCommandRunner";
@@ -195,6 +195,8 @@ export function useMediaCenter() {
       playbackRunner.runWithoutBusyLock(() => playbackRunner.setLeftChannelMuted(muted)),
     setRightChannelMuted: (muted: boolean) =>
       playbackRunner.runWithoutBusyLock(() => playbackRunner.setRightChannelMuted(muted)),
+    setChannelRouting: (routing: PlaybackChannelRouting) =>
+      playbackRunner.runWithoutBusyLock(() => playbackRunner.setChannelRouting(routing)),
     setQuality: (mode: PlaybackQualityMode) => withBusyState(() => playbackRunner.setQuality(mode)),
     toggleCacheRecording: () => withBusyState(cacheRecordingController.toggleCacheRecording),
     requestPreviewFrame: (positionSeconds: number, maxWidth?: number, maxHeight?: number) =>

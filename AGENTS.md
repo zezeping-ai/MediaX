@@ -1,11 +1,14 @@
-## AI 编码约束。 按照 .ai-rules.md 中的规则执行
-- 企业级应用
+# 项目背景
+- 企业级专业音频视频播放器
+
+# 代码规范
 - 必须添加必要注释，不写废话
 - 优先现代语法，不兼容老旧环境
 - 代码结构清晰，注意代码重构和可用性, 可维护性要求高。
 - 代码风格：简洁、紧凑、无冗余
 
-# 前端
+# 项目规则（每次对话自动生效）
+## 前端
 1. 修改项目支持@/目录引入
 2. 引入vueuse,  lodash-es,  sass, @vitejs/plugin-vue-jsx, tailwindcss， vue-router 和 pinia, ant-design-vue,  和@iconify/vue
 3. ant-design-vue默认最小尺寸，图标库统一用@iconify/vue
@@ -13,7 +16,7 @@
 5.  前端拆分组件，如果是XXX.vue 需要自己再拆分则变成XXX/index.vue, 然后把自身依赖或者自身独享子组件放在当前目录下
 6.  前端composable也是一样的逻辑， 如果是useXXX.ts,需要自己再拆分则变成XXX/index.ts, 然后把自身依赖或者自身独享子composable放在当前目录下
 
-# rust端
+## rust端
 1. 编写github workflow, 支持通过创建对git打tag: v0.0.1这种方式自动构建macos x64/arm,  windows x64/arm
 2. 引入托盘功能，并配置主窗口点击关闭不退出程序，左键点击会重新显示窗口，右键添加菜单显示主窗口
 3. 引入tauri-plugin-updater，应用添加帮助菜单/检查更新 自动检测github最新release的最新版本下载安装更新。

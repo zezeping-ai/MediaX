@@ -1,4 +1,5 @@
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use crate::app::media::model::PlaybackChannelRouting;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 #[derive(Default)]
 pub struct AudioControls {
@@ -8,6 +9,7 @@ pub struct AudioControls {
     right_volume_bits: AtomicU32,
     left_muted: AtomicBool,
     right_muted: AtomicBool,
+    channel_routing: AtomicU8,
 }
 
 #[derive(Default)]
@@ -83,6 +85,23 @@ impl AudioControls {
 
     pub fn set_right_muted(&self, value: bool) {
         self.right_muted.store(value, Ordering::Relaxed);
+    }
+
+    pub fn channel_routing(&self) -> PlaybackChannelRouting {
+        match self.channel_routing.load(Ordering::Relaxed) {
+            1 => PlaybackChannelRouting::LeftToBoth,
+            2 => PlaybackChannelRouting::RightToBoth,
+            _ => PlaybackChannelRouting::Stereo,
+        }
+    }
+
+    pub fn set_channel_routing(&self, value: PlaybackChannelRouting) {
+        let encoded = match value {
+            PlaybackChannelRouting::Stereo => 0,
+            PlaybackChannelRouting::LeftToBoth => 1,
+            PlaybackChannelRouting::RightToBoth => 2,
+        };
+        self.channel_routing.store(encoded, Ordering::Relaxed);
     }
 }
 

@@ -47,6 +47,7 @@ pub fn run() {
             playback_timing_commands::playback_set_right_channel_volume,
             playback_timing_commands::playback_set_left_channel_muted,
             playback_timing_commands::playback_set_right_channel_muted,
+            playback_timing_commands::playback_set_channel_routing,
             playback_timing_commands::playback_configure_decoder_mode,
             playback_timing_commands::playback_set_quality,
             playback_timing_commands::playback_sync_position,

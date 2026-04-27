@@ -63,6 +63,7 @@ const {
   seekPreview,
   selectedQuality,
   setControlsOverlayInteracting,
+  setChannelRouting,
   setLeftChannelMuted,
   setLeftChannelVolume,
   setRightChannelMuted,
@@ -105,6 +106,7 @@ const {
         :metadata-media-kind="metadataMediaKind"
         :metadata-title="metadataTitle"
         :set-left-channel-muted="setLeftChannelMuted"
+        :set-channel-routing="setChannelRouting"
         :set-left-channel-volume="setLeftChannelVolume"
         :set-right-channel-muted="setRightChannelMuted"
         :set-right-channel-volume="setRightChannelVolume"
@@ -147,6 +149,11 @@ const {
         @change-quality="(value) => void changeQuality(value)"
         @overlay-interaction-change="setControlsOverlayInteracting"
         @toggle-mute="() => void toggleMute()"
+        @set-left-channel-volume="(value) => void setLeftChannelVolume(value)"
+        @set-right-channel-volume="(value) => void setRightChannelVolume(value)"
+        @set-left-channel-muted="(value) => void setLeftChannelMuted(value)"
+        @set-right-channel-muted="(value) => void setRightChannelMuted(value)"
+        @set-channel-routing="(value) => void setChannelRouting(value)"
         @toggle-cache="toggleCacheRecording"
         @toggle-lock="toggleLock"
       />

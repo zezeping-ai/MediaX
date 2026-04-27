@@ -2,7 +2,8 @@ mod source_capabilities;
 mod state_transitions;
 
 use crate::app::media::model::{
-    HardwareDecodeMode, PlaybackMediaKind, PlaybackQualityMode, PlaybackState, PlaybackStatus,
+    HardwareDecodeMode, PlaybackChannelRouting, PlaybackMediaKind, PlaybackQualityMode,
+    PlaybackState, PlaybackStatus,
 };
 
 use self::source_capabilities::supports_adaptive_quality;
@@ -127,6 +128,11 @@ impl MediaPlaybackService {
 
     pub fn set_right_channel_muted(&mut self, muted: bool) -> PlaybackState {
         self.state.right_channel_muted = muted;
+        self.state()
+    }
+
+    pub fn set_channel_routing(&mut self, routing: PlaybackChannelRouting) -> PlaybackState {
+        self.state.channel_routing = routing;
         self.state()
     }
 

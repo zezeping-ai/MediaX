@@ -10,6 +10,7 @@ export {
   playbackPreviewFrame,
   playbackResume,
   playbackSeekTo,
+  playbackSetChannelRouting,
   playbackSetLeftChannelMuted,
   playbackSetLeftChannelVolume,
   playbackSetMuted,

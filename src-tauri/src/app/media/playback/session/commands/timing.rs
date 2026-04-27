@@ -1,6 +1,8 @@
 use super::command_result;
 use crate::app::media::error::MediaCommandError;
-use crate::app::media::model::{HardwareDecodeMode, MediaSnapshot, PlaybackQualityMode};
+use crate::app::media::model::{
+    HardwareDecodeMode, MediaSnapshot, PlaybackChannelRouting, PlaybackQualityMode,
+};
 use crate::app::media::playback::session::coordinator;
 use crate::app::media::state::MediaState;
 use tauri::{AppHandle, State};
@@ -97,6 +99,18 @@ pub fn playback_set_right_channel_muted(
 ) -> Result<MediaSnapshot, MediaCommandError> {
     command_result(coordinator::set_right_channel_muted(
         app, state, muted, request_id,
+    ))
+}
+
+#[tauri::command]
+pub fn playback_set_channel_routing(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    routing: PlaybackChannelRouting,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, MediaCommandError> {
+    command_result(coordinator::set_channel_routing(
+        app, state, routing, request_id,
     ))
 }
 

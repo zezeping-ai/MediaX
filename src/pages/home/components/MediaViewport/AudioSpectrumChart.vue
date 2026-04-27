@@ -7,6 +7,7 @@ const props = defineProps<{
   bars: number[];
   holdBars: number[];
   peakHold: number;
+  compact?: boolean;
 }>();
 
 const chartEl = ref<HTMLDivElement | null>(null);
@@ -50,13 +51,14 @@ function axisDbLabel(value: number) {
 
 function buildOption(): EChartsOption {
   const peakLine = peakHoldValue.value;
+  const isCompact = Boolean(props.compact);
   return {
     animation: false,
     backgroundColor: "transparent",
     grid: {
-      top: 6,
+      top: isCompact ? 1 : 2,
       right: 0,
-      bottom: 18,
+      bottom: isCompact ? 10 : 12,
       left: 26,
       containLabel: false,
     },
@@ -65,9 +67,7 @@ function buildOption(): EChartsOption {
       data: categories.value,
       boundaryGap: true,
       axisLine: {
-        lineStyle: {
-          color: "rgba(255,255,255,0.12)",
-        },
+        show: false,
       },
       axisTick: {
         show: false,
@@ -76,11 +76,15 @@ function buildOption(): EChartsOption {
         interval: 0,
         color: "rgba(255,255,255,0.30)",
         fontSize: 9,
-        margin: 10,
+        margin: isCompact ? 4 : 6,
         formatter: (value: string) => FREQ_LABELS.get(Number(value)) ?? "",
       },
       splitLine: {
-        show: false,
+        show: true,
+        lineStyle: {
+          color: "rgba(255,255,255,0.08)",
+          width: 1,
+        },
       },
     },
     yAxis: {
@@ -97,7 +101,7 @@ function buildOption(): EChartsOption {
       axisLabel: {
         color: "rgba(255,255,255,0.24)",
         fontSize: 9,
-        margin: 8,
+        margin: isCompact ? 4 : 6,
         formatter: (value: number) => axisDbLabel(value),
       },
       splitLine: {
@@ -118,8 +122,8 @@ function buildOption(): EChartsOption {
       {
         type: "bar",
         data: barData.value,
-        barMaxWidth: 7,
-        barMinHeight: 3,
+        barMaxWidth: isCompact ? 9 : 10,
+        barMinHeight: isCompact ? 5 : 6,
         itemStyle: {
           color: new echartsModule!.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: "rgba(255,255,255,0.92)" },
@@ -149,7 +153,7 @@ function buildOption(): EChartsOption {
         type: "scatter",
         data: holdData.value.map((value, index) => [index, value]),
         symbol: "rect",
-        symbolSize: [8, 2],
+        symbolSize: isCompact ? [10, 2] : [11, 2],
         itemStyle: {
           color: "rgba(255,255,255,0.58)",
         },
@@ -230,5 +234,5 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="chartEl" class="h-[5.5rem] w-full" />
+  <div ref="chartEl" :class="props.compact ? 'h-[6.75rem] w-full' : 'h-[9.5rem] w-full'" />
 </template>

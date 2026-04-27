@@ -1,4 +1,5 @@
 use crate::app::media::playback::events::MediaAudioMeterPayload;
+use crate::app::media::model::PlaybackChannelRouting;
 use crate::app::media::playback::runtime::emit::emit_audio_meter_payloads;
 use crate::app::media::state::AudioControls;
 use rodio::Source;
@@ -72,7 +73,8 @@ where
     shared: SharedAudioMeter,
     controls: Arc<AudioControls>,
     accumulator: AudioMeterAccumulator,
-    sample_index: usize,
+    pending_input_frame: Vec<f32>,
+    pending_output_frame: VecDeque<f32>,
 }
 
 impl<S> MeteredSource<S>
@@ -87,7 +89,8 @@ where
             shared,
             controls,
             accumulator: AudioMeterAccumulator::new(sample_rate, channels.max(1)),
-            sample_index: 0,
+            pending_input_frame: Vec::with_capacity(channels.max(1)),
+            pending_output_frame: VecDeque::with_capacity(channels.max(1)),
         }
     }
 
@@ -95,6 +98,12 @@ where
         if let Ok(mut shared) = self.shared.lock() {
             shared.sequence = shared.sequence.saturating_add(1);
             shared.snapshot = Some(snapshot);
+        }
+    }
+
+    fn flush_pending_snapshot(&mut self) {
+        if let Some(snapshot) = self.accumulator.flush_snapshot() {
+            self.publish_snapshot(snapshot);
         }
     }
 }
@@ -106,12 +115,10 @@ where
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let sample = self.inner.next()?;
-        let processed = self.apply_live_controls(sample);
+        let processed = self.next_processed_sample()?;
         if let Some(snapshot) = self.accumulator.push_sample(processed) {
             self.publish_snapshot(snapshot);
         }
-        self.sample_index = self.sample_index.saturating_add(1);
         Some(processed)
     }
 }
@@ -141,13 +148,38 @@ where
     }
 }
 
+impl<S> Drop for MeteredSource<S>
+where
+    S: Source<Item = f32>,
+{
+    fn drop(&mut self) {
+        // Network/compressed audio can arrive as many short queued buffers. Flush the
+        // last partial meter window so short chunks still drive the live spectrum.
+        self.flush_pending_snapshot();
+    }
+}
+
 impl<S> MeteredSource<S>
 where
     S: Source<Item = f32>,
 {
-    fn apply_live_controls(&self, sample: f32) -> f32 {
+    fn next_processed_sample(&mut self) -> Option<f32> {
+        if let Some(sample) = self.pending_output_frame.pop_front() {
+            return Some(sample);
+        }
+
         let channel_count = usize::from(self.inner.channels().get().max(1));
-        let channel = self.sample_index % channel_count;
+        while self.pending_input_frame.len() < channel_count {
+            self.pending_input_frame.push(self.inner.next()?);
+        }
+
+        let routed_frame = self.apply_live_controls(&self.pending_input_frame);
+        self.pending_input_frame.clear();
+        self.pending_output_frame.extend(routed_frame);
+        self.pending_output_frame.pop_front()
+    }
+
+    fn apply_live_controls(&self, frame: &[f32]) -> Vec<f32> {
         let global_gain = if self.controls.muted() {
             0.0
         } else {
@@ -163,13 +195,32 @@ where
         } else {
             self.controls.right_volume()
         };
-        let surround_gain = (left_gain + right_gain) * 0.5;
-        let channel_gain = match channel {
-            0 => left_gain,
-            1 => right_gain,
-            _ => surround_gain,
-        };
-        sample * global_gain * channel_gain
+        let mut output = frame.to_vec();
+        if output.is_empty() {
+            return output;
+        }
+
+        match self.controls.channel_routing() {
+            PlaybackChannelRouting::Stereo => {}
+            PlaybackChannelRouting::LeftToBoth if output.len() >= 2 => {
+                output[1] = output[0];
+            }
+            PlaybackChannelRouting::RightToBoth if output.len() >= 2 => {
+                output[0] = output[1];
+            }
+            _ => {}
+        }
+
+        for (index, sample) in output.iter_mut().enumerate() {
+            let channel_gain = match index {
+                0 => left_gain,
+                1 => right_gain,
+                _ => (left_gain + right_gain) * 0.5,
+            };
+            *sample *= global_gain * channel_gain;
+        }
+
+        output
     }
 }
 
@@ -220,6 +271,37 @@ impl AudioMeterAccumulator {
         self.frames_since_emit = self.frames_since_emit.saturating_add(1);
         if self.frames_since_emit < self.frames_per_emit {
             return None;
+        }
+        self.frames_since_emit = 0;
+        let snapshot = AudioMeterSnapshot {
+            sample_rate: self.sample_rate,
+            channels: self.channels as u16,
+            left_peak: self.interval_left_peak.clamp(0.0, 1.0),
+            right_peak: self.interval_right_peak.clamp(0.0, 1.0),
+            left_samples: self.left_window.iter().copied().collect(),
+            right_samples: self.right_window.iter().copied().collect(),
+        };
+        self.interval_left_peak = 0.0;
+        self.interval_right_peak = 0.0;
+        Some(snapshot)
+    }
+
+    fn flush_snapshot(&mut self) -> Option<AudioMeterSnapshot> {
+        if self.left_window.is_empty() && self.right_window.is_empty() {
+            return None;
+        }
+        if !self.pending_frame.is_empty() {
+            let left = self.pending_frame.first().copied().unwrap_or(0.0);
+            let right = if self.channels > 1 {
+                self.pending_frame.get(1).copied().unwrap_or(left)
+            } else {
+                left
+            };
+            self.pending_frame.clear();
+            Self::push_window_sample(&mut self.left_window, left);
+            Self::push_window_sample(&mut self.right_window, right);
+            self.interval_left_peak = self.interval_left_peak.max(left.abs());
+            self.interval_right_peak = self.interval_right_peak.max(right.abs());
         }
         self.frames_since_emit = 0;
         let snapshot = AudioMeterSnapshot {

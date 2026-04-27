@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import type { MediaSnapshot, PlaybackQualityMode } from "@/modules/media-types";
+import type { MediaSnapshot, PlaybackChannelRouting, PlaybackQualityMode } from "@/modules/media-types";
 
 const DEV_SEEK_LOG = import.meta.env.DEV;
 
@@ -17,6 +17,7 @@ type CreatePlaybackCommandRunnerOptions = {
     setRightChannelVolume: (volume: number) => Promise<MediaSnapshot>;
     setLeftChannelMuted: (muted: boolean) => Promise<MediaSnapshot>;
     setRightChannelMuted: (muted: boolean) => Promise<MediaSnapshot>;
+    setChannelRouting: (routing: PlaybackChannelRouting) => Promise<MediaSnapshot>;
     setQuality: (mode: PlaybackQualityMode) => Promise<MediaSnapshot>;
     syncPosition: (positionSeconds: number, durationSeconds: number) => Promise<MediaSnapshot>;
   };
@@ -130,6 +131,10 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     await run(() => options.commands.setRightChannelMuted(muted));
   }
 
+  async function setChannelRouting(routing: PlaybackChannelRouting) {
+    await run(() => options.commands.setChannelRouting(routing));
+  }
+
   async function setQuality(mode: PlaybackQualityMode) {
     await run(() => options.commands.setQuality(mode));
   }
@@ -163,6 +168,7 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     setMuted,
     setLeftChannelMuted,
     setLeftChannelVolume,
+    setChannelRouting,
     setQuality,
     setRate,
     setRightChannelMuted,

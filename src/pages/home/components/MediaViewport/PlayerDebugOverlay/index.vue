@@ -147,30 +147,7 @@ const {
 
 <style scoped>
 .debug-scroll-wrap {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.42) transparent;
   color-scheme: dark;
-}
-.debug-scroll-wrap::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-  background: transparent;
-}
-.debug-scroll-wrap::-webkit-scrollbar-track {
-  background: transparent;
-}
-.debug-scroll-wrap::-webkit-scrollbar-corner {
-  background: transparent;
-}
-.debug-scroll-wrap::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background-clip: padding-box;
-  background: rgba(148, 163, 184, 0.4);
-  transition: background-color 180ms ease;
-}
-.debug-scroll-wrap:hover::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.65);
 }
 .debug-close-btn {
   display: inline-flex;

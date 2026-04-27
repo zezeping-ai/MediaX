@@ -22,9 +22,12 @@ function formatOpenedAt(timestamp: number) {
 </script>
 
 <template>
-  <div class="space-y-2">
-    <div class="flex items-center justify-between">
-      <span class="text-xs opacity-70">播放列表（最近优先）</span>
+  <section class="space-y-2">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <div class="text-sm font-medium text-white/88">播放列表</div>
+        <div class="text-xs text-white/42">最近打开优先，点击地址可快速回填</div>
+      </div>
       <a-button
         v-if="playlist.length"
         size="small"
@@ -35,11 +38,17 @@ function formatOpenedAt(timestamp: number) {
         一键清空
       </a-button>
     </div>
-    <a-empty v-if="!playlist.length" description="暂无历史 URL" />
-    <a-list v-else size="small" :data-source="playlist">
+    <div class="overflow-hidden rounded-lg border border-white/8">
+      <a-empty v-if="!playlist.length" description="暂无历史 URL" class="py-8" />
+      <a-list
+        v-else
+        size="small"
+        :data-source="playlist"
+        class="max-h-[20rem] overflow-y-auto"
+      >
       <template #renderItem="{ item }">
-        <a-list-item class="overflow-hidden">
-          <div class="min-w-0 w-full space-y-1 overflow-hidden">
+        <a-list-item class="overflow-hidden px-3 py-2.5 transition-colors hover:bg-white/[0.03]">
+          <div class="min-w-0 w-full space-y-1.5 overflow-hidden">
             <button
               class="block min-w-0 w-full cursor-pointer bg-transparent p-0 text-left"
               type="button"
@@ -47,16 +56,16 @@ function formatOpenedAt(timestamp: number) {
               @click="emit('select', item.url)"
             >
               <span
-                class="block min-w-0 w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[rgba(255,255,255,0.85)]"
+                class="block min-w-0 w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm text-[rgba(255,255,255,0.88)]"
               >
                 {{ item.url }}
               </span>
             </button>
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-xs opacity-70">{{ formatOpenedAt(item.lastOpenedAt) }}</span>
-              <a-space :size="4">
+            <div class="flex items-center justify-between gap-3">
+              <span class="truncate text-[11px] text-white/42">{{ formatOpenedAt(item.lastOpenedAt) }}</span>
+              <a-space :size="2">
                 <a-button size="small" type="link" :disabled="busy" @click="emit('play', item.url)">
-                  播放
+                  打开
                 </a-button>
                 <a-button size="small" danger type="text" @click="emit('remove', item.url)">
                   删除
@@ -66,6 +75,7 @@ function formatOpenedAt(timestamp: number) {
           </div>
         </a-list-item>
       </template>
-    </a-list>
-  </div>
+      </a-list>
+    </div>
+  </section>
 </template>

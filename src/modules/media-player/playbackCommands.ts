@@ -7,6 +7,7 @@ import {
   isPreviewFrame,
   type HardwareDecodeMode,
   type MediaSnapshot,
+  type PlaybackChannelRouting,
   type PlaybackQualityMode,
   type PreviewFrame,
 } from "../media-types";
@@ -107,6 +108,14 @@ export function playbackSetRightChannelMuted(muted: boolean) {
     "playback_set_right_channel_muted",
     isMediaSnapshot,
     { muted },
+  );
+}
+
+export function playbackSetChannelRouting(routing: PlaybackChannelRouting) {
+  return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
+    "playback_set_channel_routing",
+    isMediaSnapshot,
+    { routing },
   );
 }
 

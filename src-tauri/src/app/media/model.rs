@@ -45,6 +45,16 @@ pub enum PlaybackMediaKind {
     Audio,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum PlaybackChannelRouting {
+    #[default]
+    Stereo,
+    LeftToBoth,
+    RightToBoth,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaybackState {
     pub engine: String,
@@ -67,6 +77,7 @@ pub struct PlaybackState {
     pub right_channel_volume: f64,
     pub left_channel_muted: bool,
     pub right_channel_muted: bool,
+    pub channel_routing: PlaybackChannelRouting,
 }
 
 impl Default for PlaybackState {
@@ -92,6 +103,7 @@ impl Default for PlaybackState {
             right_channel_volume: 1.0,
             left_channel_muted: false,
             right_channel_muted: false,
+            channel_routing: PlaybackChannelRouting::Stereo,
         }
     }
 }

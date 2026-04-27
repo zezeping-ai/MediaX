@@ -7,6 +7,7 @@ import {
   playbackPreviewFrame,
   playbackResume,
   playbackSeekTo,
+  playbackSetChannelRouting,
   playbackSetLeftChannelMuted,
   playbackSetLeftChannelVolume,
   playbackSetMuted,
@@ -21,6 +22,7 @@ import {
 import type {
   HardwareDecodeMode,
   MediaSnapshot,
+  PlaybackChannelRouting,
   PlaybackQualityMode,
   PreviewFrame,
 } from "@/modules/media-types";
@@ -38,6 +40,7 @@ export interface PlaybackCommandSet {
   setRightChannelVolume: (volume: number) => Promise<MediaSnapshot>;
   setLeftChannelMuted: (muted: boolean) => Promise<MediaSnapshot>;
   setRightChannelMuted: (muted: boolean) => Promise<MediaSnapshot>;
+  setChannelRouting: (routing: PlaybackChannelRouting) => Promise<MediaSnapshot>;
   setQuality: (mode: PlaybackQualityMode) => Promise<MediaSnapshot>;
   configureDecoderMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>;
   syncPosition: (positionSeconds: number, durationSeconds: number) => Promise<MediaSnapshot>;
@@ -62,6 +65,7 @@ export function createPlaybackCommandSet(): PlaybackCommandSet {
     setRightChannelVolume: (volume) => playbackSetRightChannelVolume(volume),
     setLeftChannelMuted: (muted) => playbackSetLeftChannelMuted(muted),
     setRightChannelMuted: (muted) => playbackSetRightChannelMuted(muted),
+    setChannelRouting: (routing) => playbackSetChannelRouting(routing),
     setQuality: (mode) => playbackSetQuality(mode),
     configureDecoderMode: (mode) => playbackConfigureDecoderMode(mode),
     syncPosition: (positionSeconds, durationSeconds) =>

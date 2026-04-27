@@ -36,6 +36,11 @@ export interface PlaybackControlsEmit {
   (event: "change-quality", value: string): void;
   (event: "overlay-interaction-change", value: boolean): void;
   (event: "toggle-mute"): void;
+  (event: "set-left-channel-volume", value: number): void;
+  (event: "set-right-channel-volume", value: number): void;
+  (event: "set-left-channel-muted", value: boolean): void;
+  (event: "set-right-channel-muted", value: boolean): void;
+  (event: "set-channel-routing", value: PlaybackState["channel_routing"]): void;
   (event: "toggle-cache"): void;
   (event: "toggle-lock"): void;
 }

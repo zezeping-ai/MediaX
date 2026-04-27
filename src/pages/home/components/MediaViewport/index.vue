@@ -4,6 +4,7 @@ import {
   type MediaAudioMeterPayload,
   type MediaLyricLine,
   type MediaTelemetryPayload,
+  type PlaybackChannelRouting,
   type PlaybackState,
 } from "@/modules/media-types";
 import { usePreferences } from "@/modules/preferences";
@@ -40,6 +41,7 @@ const props = defineProps<{
   setRightChannelVolume: (volume: number) => Promise<void>;
   setLeftChannelMuted: (muted: boolean) => Promise<void>;
   setRightChannelMuted: (muted: boolean) => Promise<void>;
+  setChannelRouting: (routing: PlaybackChannelRouting) => Promise<void>;
   networkReadBytesPerSecond: number | null;
   networkSustainRatio: number | null;
   cacheRecording: boolean;
@@ -57,17 +59,16 @@ const emit = defineEmits<{
 const { playerParseDebugEnabled } = usePreferences();
 const debugOverlayOpen = ref(true);
 
-const shouldShowDebugOverlay = computed(() => (
-  Boolean(props.source)
-  && props.controlsVisible
-  && playerParseDebugEnabled.value
-  && debugOverlayOpen.value
-  && Boolean(props.firstFrameAtMs)
-));
+const effectiveMediaKind = computed(() => {
+  if (props.playback?.media_kind === "audio") {
+    return "audio";
+  }
+  return props.metadataMediaKind;
+});
 const overlaySource = computed(() => props.pendingSource || props.source);
 const hasPresentedFirstFrame = computed(() =>
   Boolean(
-    props.metadataMediaKind === "audio"
+    effectiveMediaKind.value === "audio"
     || props.debugSnapshot.audio_pipeline_ready
     || props.debugSnapshot.video_frame_format
     || props.debugSnapshot.video_fps
@@ -79,11 +80,20 @@ const isWaitingForFirstFrame = computed(() => (
   && !hasPresentedFirstFrame.value
   && props.playback?.status !== "stopped"
 ));
-const shouldShowLoadingProcessOverlay = computed(() => (
+const shouldShowParseOverlay = computed(() => (
   props.controlsVisible
   && playerParseDebugEnabled.value
+  && debugOverlayOpen.value
   && Boolean(overlaySource.value)
+));
+const shouldShowLoadingProcessOverlay = computed(() => (
+  shouldShowParseOverlay.value
   && isWaitingForFirstFrame.value
+));
+const shouldShowDebugOverlay = computed(() => (
+  shouldShowParseOverlay.value
+  && Boolean(props.source)
+  && Boolean(props.firstFrameAtMs)
 ));
 watch(
   () => props.source,
@@ -118,7 +128,7 @@ watch(
       :timeline="debugTimeline"
     />
     <AudioLyricsOverlay
-      :media-kind="metadataMediaKind"
+      :media-kind="effectiveMediaKind"
       :playback="playback"
       :audio-meter="latestAudioMeter"
       :lyrics="metadataLyrics"

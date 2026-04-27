@@ -1,5 +1,5 @@
 use crate::app::media::error::{MediaError, MediaResult};
-use crate::app::media::model::MediaSnapshot;
+use crate::app::media::model::{MediaSnapshot, PlaybackChannelRouting};
 use crate::app::media::playback::session::constraints;
 use crate::app::media::state;
 use crate::app::media::state::MediaState;
@@ -112,6 +112,20 @@ pub fn set_right_channel_muted(
         playback.set_right_channel_muted(muted);
     }
     state.audio_controls.set_right_muted(muted);
+    emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
+}
+
+pub fn set_channel_routing(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    routing: PlaybackChannelRouting,
+    request_id: Option<String>,
+) -> MediaResult<MediaSnapshot> {
+    {
+        let mut playback = state::playback(&state)?;
+        playback.set_channel_routing(routing);
+    }
+    state.audio_controls.set_channel_routing(routing);
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 

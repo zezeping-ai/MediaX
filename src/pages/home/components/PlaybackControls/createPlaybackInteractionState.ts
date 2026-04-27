@@ -35,10 +35,16 @@ export function createPlaybackInteractionState(
 
   function setSpeedDropdownOpen(value: boolean) {
     speedDropdownOpen.value = value;
+    if (value) {
+      qualityDropdownOpen.value = false;
+    }
   }
 
   function setQualityDropdownOpen(value: boolean) {
     qualityDropdownOpen.value = value;
+    if (value) {
+      speedDropdownOpen.value = false;
+    }
   }
 
   function emitVolumePreview(nextVolume: number) {

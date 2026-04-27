@@ -29,21 +29,38 @@ function setOpen(value: boolean) {
   <a-modal
     :open="props.open"
     title="打开 URL"
-    ok-text="开始播放"
-    cancel-text="取消"
+    :footer="null"
     :confirm-loading="props.busy"
-    @ok="emit('confirm')"
     @cancel="emit('cancel')"
     @update:open="setOpen"
   >
-    <a-space direction="vertical" class="w-full" :size="12">
-      <a-input
-        :value="props.inputValue"
-        placeholder="请输入视频 URL（http/https）"
-        allow-clear
-        @update:value="(value: string) => emit('update:inputValue', value)"
-        @press-enter="emit('confirm')"
-      />
+    <div class="space-y-4">
+      <div class="space-y-2">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-medium text-white/88">媒体直链</div>
+            <div class="text-xs text-white/42">
+              支持 http(s)、rtsp、rtmp、mms
+            </div>
+          </div>
+          <a-button @click="emit('cancel')">
+            取消
+          </a-button>
+        </div>
+        <a-input-group compact class="flex">
+          <a-input
+            :value="props.inputValue"
+            class="flex-1"
+            placeholder="输入媒体 URL 或流地址"
+            allow-clear
+            @update:value="(value: string) => emit('update:inputValue', value)"
+            @press-enter="emit('confirm')"
+          />
+          <a-button type="primary" :loading="props.busy" @click="emit('confirm')">
+            打开
+          </a-button>
+        </a-input-group>
+      </div>
       <UrlHistoryList
         :playlist="props.playlist"
         :busy="props.busy"
@@ -52,6 +69,6 @@ function setOpen(value: boolean) {
         @select="(url) => emit('select', url)"
         @play="(url) => emit('play', url)"
       />
-    </a-space>
+    </div>
   </a-modal>
 </template>

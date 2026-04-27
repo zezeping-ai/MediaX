@@ -86,6 +86,11 @@ const {
           :muted="muted"
           :volume="volumePreview"
           :volume-icon="volumeIcon"
+          :left-channel-volume="playback?.left_channel_volume ?? 1"
+          :right-channel-volume="playback?.right_channel_volume ?? 1"
+          :left-channel-muted="playback?.left_channel_muted ?? false"
+          :right-channel-muted="playback?.right_channel_muted ?? false"
+          :channel-routing="playback?.channel_routing ?? 'stereo'"
           :speed-dropdown-open="speedDropdownOpen"
           :quality-dropdown-open="qualityDropdownOpen"
           @play="emit('play')"
@@ -96,8 +101,14 @@ const {
           @change-speed="handleSpeedChange"
           @change-quality="handleQualityChange"
           @toggle-mute="emit('toggle-mute')"
+          @overlay-interaction-change="emit('overlay-interaction-change', $event)"
           @change-volume="handleVolumeChange"
           @commit-volume="handleVolumeCommit"
+          @set-left-channel-volume="emit('set-left-channel-volume', $event)"
+          @set-right-channel-volume="emit('set-right-channel-volume', $event)"
+          @set-left-channel-muted="emit('set-left-channel-muted', $event)"
+          @set-right-channel-muted="emit('set-right-channel-muted', $event)"
+          @set-channel-routing="emit('set-channel-routing', $event)"
         />
 
         <PlaybackSideActions

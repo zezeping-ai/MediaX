@@ -68,6 +68,7 @@ export function useMediaSessionState() {
     if (previousSource !== currentSource.value) {
       resetTransientMediaState();
     }
+    metadataMediaKind.value = next.playback.media_kind;
   }
 
   function applyMetadataPayload(payload: MediaMetadataPayload) {
