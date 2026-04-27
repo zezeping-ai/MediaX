@@ -16,15 +16,28 @@ use self::renderer_types::{ColorParams, Renderer};
 
 impl RendererState {
     pub fn metrics_snapshot(&self) -> RendererMetricsSnapshot {
+        let last_presented_pts_seconds = self.last_presented_pts_seconds();
+        let last_submitted_pts_seconds = self.last_submitted_pts_seconds();
+        let submit_lead_ms = match (last_submitted_pts_seconds, last_presented_pts_seconds) {
+            (Some(submitted), Some(presented))
+                if submitted.is_finite() && presented.is_finite() && submitted >= presented =>
+            {
+                (submitted - presented) * 1000.0
+            }
+            _ => 0.0,
+        };
         RendererMetricsSnapshot {
             queue_depth: self.queue_depth(),
-            queue_capacity: renderer_state::FRAME_QUEUE_CAPACITY,
+            queue_capacity: self.queue_capacity(),
             last_render_cost_ms: (self.inner.last_render_cost_micros.load(Ordering::Relaxed)
                 as f64)
                 / 1000.0,
             last_present_lag_ms: f32::from_bits(
                 self.inner.last_present_lag_ms_bits.load(Ordering::Relaxed),
             ) as f64,
+            last_presented_pts_seconds,
+            last_submitted_pts_seconds,
+            submit_lead_ms,
         }
     }
 }

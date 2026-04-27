@@ -1,13 +1,23 @@
-use super::renderer_state::{RendererInner, FRAME_QUEUE_CAPACITY};
+use super::renderer_state::{RendererInner, FRAME_QUEUE_HARD_CAPACITY};
 use super::VideoFrame;
+
+pub(super) struct FramePresentSelection {
+    pub frame: Option<VideoFrame>,
+    pub remaining_queue_depth: usize,
+}
 
 pub(super) fn pick_frame_for_present(
     inner: &RendererInner,
     now_media_seconds: f64,
-) -> Option<VideoFrame> {
+) -> FramePresentSelection {
     let present_lead = 0.004;
     let deadline = now_media_seconds + present_lead;
-    let mut queue = inner.queued_frames.lock().ok()?;
+    let Ok(mut queue) = inner.queued_frames.lock() else {
+        return FramePresentSelection {
+            frame: None,
+            remaining_queue_depth: 0,
+        };
+    };
     let mut selected = None;
     while let Some(frame) = queue.front() {
         if !frame.pts_seconds.is_finite() || frame.pts_seconds <= deadline {
@@ -16,7 +26,10 @@ pub(super) fn pick_frame_for_present(
         }
         break;
     }
-    selected
+    FramePresentSelection {
+        frame: selected,
+        remaining_queue_depth: queue.len(),
+    }
 }
 
 pub(super) fn submit_frame_to_queue(inner: &RendererInner, frame: VideoFrame) {
@@ -31,7 +44,7 @@ pub(super) fn submit_frame_to_queue(inner: &RendererInner, frame: VideoFrame) {
         }
     }
     if let Ok(mut queue) = inner.queued_frames.lock() {
-        while queue.len() >= FRAME_QUEUE_CAPACITY {
+        while queue.len() >= FRAME_QUEUE_HARD_CAPACITY {
             queue.pop_front();
         }
         queue.push_back(frame);

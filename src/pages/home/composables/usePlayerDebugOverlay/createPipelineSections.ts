@@ -82,6 +82,9 @@ export function createPipelineSections(
     });
     renderRows.push({ key: "pipe_gpu_state", label: "state", value: classifyGpuQueueState(gpuQueueDepth, gpuQueueCapacity) });
   }
+  if (isFiniteNumber(telemetry?.video_submit_lead_ms)) {
+    renderRows.push({ key: "pipe_submit_lead", label: "submit lead", value: `${telemetry.video_submit_lead_ms.toFixed(2)}ms` });
+  }
   if (isFiniteNumber(telemetry?.render_estimated_cost_ms)) renderRows.push({ key: "pipe_render_cost", label: "render", value: `${telemetry.render_estimated_cost_ms.toFixed(2)}ms` });
   if (isFiniteNumber(telemetry?.render_present_lag_ms)) renderRows.push({ key: "pipe_present_lag", label: "present lag", value: `${telemetry.render_present_lag_ms.toFixed(2)}ms` });
   if (frameBudgetMs !== null && isFiniteNumber(telemetry?.render_estimated_cost_ms)) {

@@ -1,6 +1,6 @@
 use super::{Renderer, VideoFrame, VideoScaleMode};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -11,8 +11,13 @@ use tauri::Manager;
 use super::frame_queue::{pick_frame_for_present, submit_frame_to_queue};
 use super::helpers::wait_for_render_signal;
 
-pub(super) const FRAME_QUEUE_CAPACITY: usize = 6;
+pub(super) const FRAME_QUEUE_HARD_CAPACITY: usize = 6;
+const FRAME_QUEUE_TARGET_BASE: usize = 3;
 const RENDER_LOOP_IDLE_TICK: Duration = Duration::from_millis(8);
+const QUEUE_GROW_LAG_MS: f64 = 24.0;
+const QUEUE_SHRINK_LAG_MS: f64 = 8.0;
+const QUEUE_GROW_STREAK: u8 = 2;
+const QUEUE_SHRINK_STREAK: u8 = 18;
 
 #[derive(Clone)]
 pub struct RendererState {
@@ -29,8 +34,11 @@ pub(super) struct RendererInner {
     pub(super) pending_render: Mutex<bool>,
     pub(super) render_cv: Condvar,
     pub(super) video_scale_mode: AtomicU8,
+    pub(super) target_queue_capacity: AtomicUsize,
     pub(super) last_render_cost_micros: AtomicU64,
     pub(super) last_present_lag_ms_bits: AtomicU32,
+    pub(super) last_presented_pts_bits: AtomicU64,
+    pub(super) queue_tuning: Mutex<QueueTuningState>,
 }
 
 #[derive(Clone, Copy)]
@@ -38,6 +46,12 @@ pub(super) struct ClockState {
     pub(super) anchor_instant: Instant,
     pub(super) anchor_media_seconds: f64,
     pub(super) rate: f64,
+}
+
+#[derive(Default)]
+pub(super) struct QueueTuningState {
+    pub(super) late_present_streak: u8,
+    pub(super) healthy_present_streak: u8,
 }
 
 impl RendererState {
@@ -58,8 +72,11 @@ impl RendererState {
                 pending_render: Mutex::new(false),
                 render_cv: Condvar::new(),
                 video_scale_mode: AtomicU8::new(VideoScaleMode::Contain.as_u8()),
+                target_queue_capacity: AtomicUsize::new(FRAME_QUEUE_TARGET_BASE),
                 last_render_cost_micros: AtomicU64::new(0),
                 last_present_lag_ms_bits: AtomicU32::new(0f32.to_bits()),
+                last_presented_pts_bits: AtomicU64::new(f64::NAN.to_bits()),
+                queue_tuning: Mutex::new(QueueTuningState::default()),
             }),
         }
     }
@@ -122,7 +139,8 @@ impl RendererState {
                             clock.anchor_media_seconds
                                 + elapsed.as_secs_f64() * clock.rate.max(0.25)
                         };
-                        let frame = pick_frame_for_present(&inner, now_media_seconds);
+                        let selection = pick_frame_for_present(&inner, now_media_seconds);
+                        let frame = selection.frame;
                         if let Ok(mut guard) = inner.renderer.lock() {
                             if let Some(renderer) = guard.as_mut() {
                                 let render_start = Instant::now();
@@ -142,6 +160,20 @@ impl RendererState {
                                 inner
                                     .last_present_lag_ms_bits
                                     .store(lag_ms.to_bits(), Ordering::Relaxed);
+                                let presented_pts = frame
+                                    .as_ref()
+                                    .map(|value| value.pts_seconds)
+                                    .filter(|value| value.is_finite());
+                                inner.last_presented_pts_bits.store(
+                                    presented_pts.unwrap_or(f64::NAN).to_bits(),
+                                    Ordering::Relaxed,
+                                );
+                                update_dynamic_queue_capacity(
+                                    &inner,
+                                    f64::from(lag_ms),
+                                    presented_pts.is_some(),
+                                    selection.remaining_queue_depth,
+                                );
                             }
                         }
                         inner.render_task_in_flight.store(false, Ordering::Release);
@@ -174,6 +206,15 @@ impl RendererState {
         if let Ok(mut last_pts) = self.inner.last_queued_pts.lock() {
             *last_pts = None;
         }
+        self.inner
+            .last_presented_pts_bits
+            .store(f64::NAN.to_bits(), Ordering::Relaxed);
+        self.inner
+            .target_queue_capacity
+            .store(FRAME_QUEUE_TARGET_BASE, Ordering::Relaxed);
+        if let Ok(mut tuning) = self.inner.queue_tuning.lock() {
+            *tuning = QueueTuningState::default();
+        }
         self.update_clock(media_seconds, playback_rate);
         if let Ok(mut pending) = self.inner.pending_render.lock() {
             *pending = true;
@@ -188,6 +229,9 @@ impl RendererState {
         if let Ok(mut last_pts) = self.inner.last_queued_pts.lock() {
             *last_pts = None;
         }
+        self.inner
+            .last_presented_pts_bits
+            .store(f64::NAN.to_bits(), Ordering::Relaxed);
         let inner = self.inner.clone();
         app.run_on_main_thread(move || {
             if let Ok(mut guard) = inner.renderer.lock() {
@@ -205,7 +249,7 @@ impl RendererState {
             .queued_frames
             .lock()
             .ok()
-            .map(|q| q.len() < FRAME_QUEUE_CAPACITY)
+            .map(|q| q.len() < self.queue_capacity())
             .unwrap_or(true)
     }
 
@@ -218,7 +262,67 @@ impl RendererState {
             .unwrap_or(0)
     }
 
+    pub fn queue_capacity(&self) -> usize {
+        self.inner
+            .target_queue_capacity
+            .load(Ordering::Relaxed)
+            .clamp(FRAME_QUEUE_TARGET_BASE, FRAME_QUEUE_HARD_CAPACITY)
+    }
+
+    pub fn last_presented_pts_seconds(&self) -> Option<f64> {
+        let value = f64::from_bits(self.inner.last_presented_pts_bits.load(Ordering::Relaxed));
+        value.is_finite().then_some(value)
+    }
+
+    pub fn last_submitted_pts_seconds(&self) -> Option<f64> {
+        self.inner
+            .last_queued_pts
+            .lock()
+            .ok()
+            .and_then(|value| *value)
+            .filter(|value| value.is_finite())
+    }
+
     pub fn submit_frame(&self, frame: VideoFrame) {
         submit_frame_to_queue(&self.inner, frame);
     }
+}
+
+fn update_dynamic_queue_capacity(
+    inner: &RendererInner,
+    lag_ms: f64,
+    has_presented_frame: bool,
+    remaining_queue_depth: usize,
+) {
+    let Ok(mut tuning) = inner.queue_tuning.lock() else {
+        return;
+    };
+    let current_capacity = inner
+        .target_queue_capacity
+        .load(Ordering::Relaxed)
+        .clamp(FRAME_QUEUE_TARGET_BASE, FRAME_QUEUE_HARD_CAPACITY);
+    if has_presented_frame && (lag_ms >= QUEUE_GROW_LAG_MS || (lag_ms >= 12.0 && remaining_queue_depth == 0)) {
+        tuning.late_present_streak = tuning.late_present_streak.saturating_add(1);
+        tuning.healthy_present_streak = 0;
+        if tuning.late_present_streak >= QUEUE_GROW_STREAK && current_capacity < FRAME_QUEUE_HARD_CAPACITY {
+            inner
+                .target_queue_capacity
+                .store(current_capacity + 1, Ordering::Relaxed);
+            tuning.late_present_streak = 0;
+        }
+        return;
+    }
+    if has_presented_frame && lag_ms <= QUEUE_SHRINK_LAG_MS && remaining_queue_depth >= 1 {
+        tuning.healthy_present_streak = tuning.healthy_present_streak.saturating_add(1);
+        tuning.late_present_streak = 0;
+        if tuning.healthy_present_streak >= QUEUE_SHRINK_STREAK && current_capacity > FRAME_QUEUE_TARGET_BASE {
+            inner
+                .target_queue_capacity
+                .store(current_capacity - 1, Ordering::Relaxed);
+            tuning.healthy_present_streak = 0;
+        }
+        return;
+    }
+    tuning.late_present_streak = 0;
+    tuning.healthy_present_streak = 0;
 }

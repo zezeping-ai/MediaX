@@ -21,20 +21,28 @@ pub(super) fn emit_video_telemetry(
     let stage_perf_snapshot = ctx.frame_pipeline.take_stage_perf_snapshot();
     let process_snapshot = ctx.process_metrics.sample();
     let renderer_metrics = ctx.renderer.metrics_snapshot();
+    let presented_video_pts = renderer_metrics.last_presented_pts_seconds;
+    let submitted_video_pts = renderer_metrics.last_submitted_pts_seconds;
     emit_debug(ctx.app, "video_fps", format!("render_fps={render_fps:.2}"));
     let audio_now = ctx.audio_clock.map(|clock| clock.now_seconds());
-    let audio_drift = audio_now.map(|audio_seconds| estimated_pts - audio_seconds);
+    let sync_video_pts = presented_video_pts.unwrap_or_else(|| estimated_pts.max(0.0));
+    let audio_drift = audio_now.map(|audio_seconds| sync_video_pts - audio_seconds);
     emit_debug(
         ctx.app,
         "av_sync",
         format!(
-            "a_minus_v={:.3}ms audio_clock={} video_pts={:.3}s queue_depth={} lead_target={:.3}ms",
+            "a_minus_v={:.3}ms audio_clock={} video_presented={:.3}s video_submitted={} queue_depth={}/{} submit_lead={:.3}ms lead_target={:.3}ms",
             audio_drift.unwrap_or(0.0) * 1000.0,
             audio_now
                 .map(|value| format!("{value:.3}s"))
                 .unwrap_or_else(|| "n/a".to_string()),
-            estimated_pts.max(0.0),
+            sync_video_pts,
+            submitted_video_pts
+                .map(|value| format!("{value:.3}s"))
+                .unwrap_or_else(|| "n/a".to_string()),
             renderer_metrics.queue_depth,
+            renderer_metrics.queue_capacity,
+            renderer_metrics.submit_lead_ms,
             ctx.audio_allowed_lead_seconds * 1000.0,
         ),
     );
@@ -88,6 +96,26 @@ pub(super) fn emit_video_telemetry(
                 .unwrap_or(0),
         ),
     );
+    if let Some(stage_costs) = stage_perf_snapshot.as_ref() {
+        emit_debug(
+            ctx.app,
+            "video_stage_costs",
+            format!(
+                "receive={:.2}/{:.2}ms hw_transfer={:.2}/{:.2}ms scale={:.2}/{:.2}ms submit={:.2}/{:.2}ms total={:.2}/{:.2}ms samples={}",
+                stage_costs.receive_avg_ms,
+                stage_costs.receive_max_ms,
+                stage_costs.hw_transfer_avg_ms,
+                stage_costs.hw_transfer_max_ms,
+                stage_costs.scale_avg_ms,
+                stage_costs.scale_max_ms,
+                stage_costs.submit_avg_ms,
+                stage_costs.submit_max_ms,
+                stage_costs.total_avg_ms,
+                stage_costs.total_max_ms,
+                stage_costs.sample_count,
+            ),
+        );
+    }
     let ts_stats = take_video_timestamp_stats(ctx);
     let frame_type_stats = take_frame_type_stats(ctx);
     let decode_quantiles = perf_snapshot
@@ -127,7 +155,9 @@ pub(super) fn emit_video_telemetry(
             queue_depth: renderer_metrics.queue_depth,
             audio_queue_depth_sources: ctx.audio_queue_depth_sources,
             clock_seconds: *ctx.current_position_seconds,
-            current_video_pts_seconds: Some(estimated_pts.max(0.0)),
+            current_video_pts_seconds: Some(sync_video_pts),
+            current_presented_video_pts_seconds: presented_video_pts,
+            current_submitted_video_pts_seconds: submitted_video_pts,
             current_audio_clock_seconds: audio_now,
             current_frame_type: Some(picture_type_label(pict_type).to_string()),
             current_frame_width: Some(nv12_frame.width()),
@@ -141,7 +171,7 @@ pub(super) fn emit_video_telemetry(
                 }
                 _ => None,
             },
-            audio_drift_seconds: audio_now.map(|value| estimated_pts - value),
+            audio_drift_seconds: audio_now.map(|value| sync_video_pts - value),
             video_pts_gap_seconds: *ctx.video_timestamp_metrics.last_gap_seconds,
             seek_settle_ms: None,
             decode_avg_frame_cost_ms: perf_snapshot.as_ref().map(|value| value.avg_ms),
@@ -161,6 +191,7 @@ pub(super) fn emit_video_telemetry(
             ),
             render_estimated_cost_ms: Some(renderer_metrics.last_render_cost_ms),
             render_present_lag_ms: Some(renderer_metrics.last_present_lag_ms),
+            video_submit_lead_ms: Some(renderer_metrics.submit_lead_ms),
             video_packet_soft_error_count: Some(*ctx.video_packet_soft_error_count),
             video_frame_drop_count: Some(total_frame_drops),
             video_hw_transfer_drop_count: Some(integrity_snapshot.dropped_hw_transfer),

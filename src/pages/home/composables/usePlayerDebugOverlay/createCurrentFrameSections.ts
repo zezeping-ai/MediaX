@@ -11,14 +11,18 @@ export function createCurrentFrameSections(
   const outputRows: DebugRow[] = [];
   const decodeRows: DebugRow[] = [];
 
-  const videoPts = telemetry?.current_video_pts_seconds;
-  if (isFiniteNumber(videoPts)) timingRows.push({ key: "current_video_pts_seconds", label: "video pts", value: `${videoPts.toFixed(3)}s` });
+  const presentedVideoPts = telemetry?.current_presented_video_pts_seconds ?? telemetry?.current_video_pts_seconds;
+  if (isFiniteNumber(presentedVideoPts)) timingRows.push({ key: "current_presented_video_pts_seconds", label: "presented pts", value: `${presentedVideoPts.toFixed(3)}s` });
+  const submittedVideoPts = telemetry?.current_submitted_video_pts_seconds;
+  if (isFiniteNumber(submittedVideoPts)) timingRows.push({ key: "current_submitted_video_pts_seconds", label: "submitted pts", value: `${submittedVideoPts.toFixed(3)}s` });
   const clockSeconds = telemetry?.clock_seconds;
   if (isFiniteNumber(clockSeconds)) timingRows.push({ key: "clock_seconds", label: "play clock", value: `${clockSeconds.toFixed(3)}s` });
   const audioClock = telemetry?.current_audio_clock_seconds;
   if (isFiniteNumber(audioClock)) timingRows.push({ key: "current_audio_clock_seconds", label: "audio clock", value: `${audioClock.toFixed(3)}s` });
   const driftSeconds = telemetry?.audio_drift_seconds;
   if (isFiniteNumber(driftSeconds)) timingRows.push({ key: "audio_drift_seconds", label: "av drift", value: `${(driftSeconds * 1000).toFixed(2)}ms` });
+  const submitLeadMs = telemetry?.video_submit_lead_ms;
+  if (isFiniteNumber(submitLeadMs)) timingRows.push({ key: "video_submit_lead_ms", label: "submit lead", value: `${submitLeadMs.toFixed(2)}ms` });
   const ptsGap = telemetry?.video_pts_gap_seconds;
   if (isFiniteNumber(ptsGap)) timingRows.push({ key: "video_pts_gap_seconds", label: "frame gap", value: `${(ptsGap * 1000).toFixed(2)}ms` });
 

@@ -178,6 +178,8 @@ export interface MediaTelemetryPayload {
   audio_queue_depth_sources?: number | null;
   clock_seconds: number;
   current_video_pts_seconds?: number | null;
+  current_presented_video_pts_seconds?: number | null;
+  current_submitted_video_pts_seconds?: number | null;
   current_audio_clock_seconds?: number | null;
   current_frame_type?: string | null;
   current_frame_width?: number | null;
@@ -203,6 +205,7 @@ export interface MediaTelemetryPayload {
   gpu_queue_utilization: number | null;
   render_estimated_cost_ms: number | null;
   render_present_lag_ms: number | null;
+  video_submit_lead_ms?: number | null;
   video_packet_soft_error_count?: number | null;
   video_frame_drop_count?: number | null;
   video_hw_transfer_drop_count?: number | null;
