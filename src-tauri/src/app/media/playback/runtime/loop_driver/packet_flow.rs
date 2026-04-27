@@ -219,6 +219,7 @@ pub(super) fn drain_video_frames(
                 .video_timestamp_metrics
                 .pts_jitter_abs_sum_ms,
             pts_jitter_max_ms: &mut runtime.loop_state.video_timestamp_metrics.pts_jitter_max_ms,
+            last_gap_seconds: &mut runtime.loop_state.video_timestamp_metrics.last_gap_seconds,
         },
         VideoFrameTypeMetricsRef {
             window_start: &mut runtime.loop_state.video_frame_type_metrics.window_start,

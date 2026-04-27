@@ -1,6 +1,7 @@
 use super::DrainFramesContext;
 use crate::app::media::playback::events::{
-    MediaDecodeQuantileStats, MediaFrameTypeStats, MediaTelemetryPayload, MediaVideoTimestampStats,
+    MediaDecodeQuantileStats, MediaFrameTypeStats, MediaTelemetryPayload,
+    MediaVideoStageCostStats, MediaVideoTimestampStats,
 };
 use crate::app::media::playback::runtime::{
     emit_debug, emit_telemetry_payloads, METRICS_EMIT_INTERVAL_MS,
@@ -17,6 +18,7 @@ pub(super) fn emit_video_telemetry(
     nv12_frame: &frame::Video,
 ) {
     let perf_snapshot = ctx.frame_pipeline.take_perf_snapshot();
+    let stage_perf_snapshot = ctx.frame_pipeline.take_stage_perf_snapshot();
     let process_snapshot = ctx.process_metrics.sample();
     let renderer_metrics = ctx.renderer.metrics_snapshot();
     emit_debug(ctx.app, "video_fps", format!("render_fps={render_fps:.2}"));
@@ -98,6 +100,19 @@ pub(super) fn emit_video_telemetry(
             p95_ms: value.p95_ms,
             p99_ms: value.p99_ms,
         });
+    let video_stage_costs = stage_perf_snapshot.as_ref().map(|value| MediaVideoStageCostStats {
+        sample_count: value.sample_count,
+        receive_avg_ms: value.receive_avg_ms,
+        receive_max_ms: value.receive_max_ms,
+        hw_transfer_avg_ms: value.hw_transfer_avg_ms,
+        hw_transfer_max_ms: value.hw_transfer_max_ms,
+        scale_avg_ms: value.scale_avg_ms,
+        scale_max_ms: value.scale_max_ms,
+        submit_avg_ms: value.submit_avg_ms,
+        submit_max_ms: value.submit_max_ms,
+        total_avg_ms: value.total_avg_ms,
+        total_max_ms: value.total_max_ms,
+    });
     let integrity_snapshot = ctx.frame_pipeline.integrity_snapshot();
     let total_frame_drops = integrity_snapshot
         .dropped_hw_transfer
@@ -127,15 +142,13 @@ pub(super) fn emit_video_telemetry(
                 _ => None,
             },
             audio_drift_seconds: audio_now.map(|value| estimated_pts - value),
-            video_pts_gap_seconds: ctx
-                .last_video_pts_seconds
-                .as_ref()
-                .map(|previous_pts| (estimated_pts - previous_pts).max(0.0)),
+            video_pts_gap_seconds: *ctx.video_timestamp_metrics.last_gap_seconds,
             seek_settle_ms: None,
             decode_avg_frame_cost_ms: perf_snapshot.as_ref().map(|value| value.avg_ms),
             decode_max_frame_cost_ms: perf_snapshot.as_ref().map(|value| value.max_ms),
             decode_samples: perf_snapshot.as_ref().map(|value| value.samples),
             decode_quantiles,
+            video_stage_costs,
             video_timestamps: ts_stats,
             frame_types: frame_type_stats,
             process_cpu_percent: Some(process_cpu_percent),
@@ -191,6 +204,7 @@ fn take_video_timestamp_stats(
     *ctx.video_timestamp_metrics.pts_backtrack = 0;
     *ctx.video_timestamp_metrics.pts_jitter_abs_sum_ms = 0.0;
     *ctx.video_timestamp_metrics.pts_jitter_max_ms = 0.0;
+    *ctx.video_timestamp_metrics.last_gap_seconds = None;
     Some(stats)
 }
 

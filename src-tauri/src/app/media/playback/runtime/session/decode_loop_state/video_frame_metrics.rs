@@ -7,6 +7,7 @@ pub(crate) struct VideoTimestampMetrics {
     pub pts_backtrack: u64,
     pub pts_jitter_abs_sum_ms: f64,
     pub pts_jitter_max_ms: f64,
+    pub last_gap_seconds: Option<f64>,
 }
 
 impl VideoTimestampMetrics {
@@ -18,6 +19,7 @@ impl VideoTimestampMetrics {
             pts_backtrack: 0,
             pts_jitter_abs_sum_ms: 0.0,
             pts_jitter_max_ms: 0.0,
+            last_gap_seconds: None,
         }
     }
 }

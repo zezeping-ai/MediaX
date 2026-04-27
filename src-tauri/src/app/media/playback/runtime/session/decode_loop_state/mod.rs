@@ -3,12 +3,12 @@ mod video_frame_metrics;
 mod video_packet_metrics;
 
 use super::cache_remux::CacheRemuxWriter;
-use crate::app::media::playback::runtime::audio::clamp_playback_rate;
+use crate::app::media::playback::rate::{PlaybackRate, RATE_SWITCH_SETTLE_WINDOW_MS};
 use crate::app::media::playback::runtime::clock::{AudioClock, FpsWindow, PlaybackClock};
 use crate::app::media::playback::runtime::video_pipeline::{
     ProcessMetricsSampler, VideoFramePipeline,
 };
-use crate::app::media::playback::runtime::{MAX_EMIT_FPS, RATE_SWITCH_SETTLE_WINDOW_MS};
+use crate::app::media::playback::runtime::MAX_EMIT_FPS;
 use crate::app::media::state::TimingControls;
 use ffmpeg_next::Packet;
 use std::sync::Arc;
@@ -20,7 +20,8 @@ pub(crate) use video_frame_metrics::{VideoFrameTypeMetrics, VideoTimestampMetric
 pub(crate) use video_packet_metrics::VideoPacketMetrics;
 
 pub(crate) struct DecodeLoopState {
-    pub last_applied_audio_rate: f32,
+    pub last_applied_audio_rate: PlaybackRate,
+    pub pending_audio_rate: Option<PlaybackRate>,
     pub playback_clock: PlaybackClock,
     pub last_progress_emit: Instant,
     pub current_position_seconds: f64,
@@ -29,6 +30,7 @@ pub(crate) struct DecodeLoopState {
     pub active_seek_target_seconds: Option<f64>,
     pub last_video_pts_seconds: Option<f64>,
     pub rate_switch_settle_until: Option<Instant>,
+    pub rate_switch_hold_logged: bool,
     pub fps_window: FpsWindow,
     pub frame_pipeline: VideoFramePipeline,
     pub process_metrics: ProcessMetricsSampler,
@@ -43,7 +45,8 @@ impl DecodeLoopState {
     pub fn new(fps_value: f64, timing_controls: Arc<TimingControls>) -> Self {
         let now = Instant::now();
         Self {
-            last_applied_audio_rate: clamp_playback_rate(timing_controls.playback_rate()),
+            last_applied_audio_rate: timing_controls.playback_rate_value(),
+            pending_audio_rate: None,
             playback_clock: PlaybackClock::new(fps_value, MAX_EMIT_FPS, 0.0, timing_controls),
             last_progress_emit: Instant::now() - Duration::from_millis(250),
             current_position_seconds: 0.0,
@@ -52,6 +55,7 @@ impl DecodeLoopState {
             active_seek_target_seconds: None,
             last_video_pts_seconds: None,
             rate_switch_settle_until: None,
+            rate_switch_hold_logged: false,
             fps_window: FpsWindow::default(),
             frame_pipeline: VideoFramePipeline::default(),
             process_metrics: ProcessMetricsSampler::new(),
@@ -110,7 +114,19 @@ impl DecodeLoopState {
         self.audio_queue_depth_sources = None;
     }
 
-    pub fn commit_audio_playback_rate(&mut self, playback_rate: f32) {
+    pub fn commit_audio_playback_rate(&mut self, playback_rate: PlaybackRate) {
         self.last_applied_audio_rate = playback_rate;
+        self.pending_audio_rate = None;
+        self.rate_switch_hold_logged = false;
+    }
+
+    pub fn schedule_audio_rate_switch(&mut self, playback_rate: PlaybackRate) {
+        self.pending_audio_rate = Some(playback_rate);
+        self.rate_switch_hold_logged = false;
+    }
+
+    pub fn clear_pending_audio_rate_switch(&mut self) {
+        self.pending_audio_rate = None;
+        self.rate_switch_hold_logged = false;
     }
 }

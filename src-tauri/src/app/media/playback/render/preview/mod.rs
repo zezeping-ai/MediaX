@@ -4,7 +4,8 @@ mod encoder;
 
 use self::context::{DecodePreviewFrameContext, PreviewFrameContext};
 use self::decode::{decode_preview_frame_until, submit_preview_frame};
-use crate::app::media::model::{HardwareDecodeMode, PlaybackQualityMode, PreviewFrame};
+use crate::app::media::model::PreviewFrame;
+use crate::app::media::playback::dto::{HardwareDecodeMode, PlaybackQualityMode};
 use crate::app::media::playback::decode_context::open_video_decode_context;
 use crate::app::media::playback::render::preview_config::{
     PREVIEW_MAX_HEIGHT, PREVIEW_MAX_WIDTH, PREVIEW_MIN_HEIGHT, PREVIEW_MIN_WIDTH,

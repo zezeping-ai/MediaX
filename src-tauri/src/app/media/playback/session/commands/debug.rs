@@ -21,6 +21,6 @@ pub fn playback_set_debug_log_enabled(
     state: State<'_, MediaState>,
     enabled: bool,
 ) -> Result<bool, MediaCommandError> {
-    state.debug_controls.set_playback_log_enabled(enabled);
+    state.controls.debug.set_playback_log_enabled(enabled);
     Ok(enabled)
 }

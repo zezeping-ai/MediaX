@@ -97,6 +97,7 @@ pub fn media_set_library_roots(
 ) -> Result<MediaSnapshot, String> {
     {
         let mut library = state
+            .session
             .library
             .lock()
             .map_err(|_| MediaError::state_poisoned_lock("media library state").to_string())?;
@@ -112,6 +113,7 @@ pub fn media_rescan_library(
 ) -> Result<MediaSnapshot, String> {
     {
         let mut library = state
+            .session
             .library
             .lock()
             .map_err(|_| MediaError::state_poisoned_lock("media library state").to_string())?;

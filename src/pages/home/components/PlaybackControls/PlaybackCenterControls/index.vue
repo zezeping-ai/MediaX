@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
 import { computed, ref, toRef } from "vue";
+import { formatPlaybackRate, normalizePlaybackRate } from "@/modules/player-constraints";
 import type { PlaybackChannelRouting } from "@/modules/media-types";
 import {
   CIRCLE_BTN_BASE,
@@ -57,6 +58,8 @@ const emit = defineEmits<{
 }>();
 
 const rootRef = ref<HTMLElement | null>(null);
+const normalizedPlaybackRate = computed(() => normalizePlaybackRate(props.playbackRate));
+const playbackRateLabel = computed(() => formatPlaybackRate(props.playbackRate));
 const {
   channelPanelOpen,
   leftVolumePreview,
@@ -151,11 +154,11 @@ function updateRightChannelVolume(value: number | [number, number]) {
           @update:open="$emit('toggle-speed-open', $event)"
         >
           <a-button size="small" :class="TINY_PILL_BTN" :disabled="disabled" title="调整播放倍速">
-            <span class="tabular-nums">{{ playbackRate }}x</span>
+            <span class="tabular-nums">{{ playbackRateLabel }}</span>
             <Icon icon="mdi:chevron-up" width="14" height="14" class="shrink-0 opacity-75" aria-hidden="true" />
           </a-button>
           <template #overlay>
-            <a-menu :selected-keys="[String(playbackRate)]" @click="$emit('change-speed', $event.key)">
+            <a-menu :selected-keys="[String(normalizedPlaybackRate)]" @click="$emit('change-speed', $event.key)">
               <a-menu-item v-for="value in SPEED_OPTIONS" :key="String(value)">
                 {{ value }}x
               </a-menu-item>

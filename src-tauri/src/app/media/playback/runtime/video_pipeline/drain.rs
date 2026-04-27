@@ -18,11 +18,18 @@ use tauri::Manager;
 
 pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), String> {
     let mut decoded = frame::Video::empty();
-    while let Ok(()) = ctx.decoder.receive_frame(&mut decoded) {
+    loop {
         let frame_cost_start = Instant::now();
+        let receive_cost_start = Instant::now();
+        let receive_result = ctx.decoder.receive_frame(&mut decoded);
+        let receive_cost = receive_cost_start.elapsed();
+        if receive_result.is_err() {
+            break;
+        }
         if !ctx
             .app
             .state::<MediaState>()
+            .runtime
             .stream
             .is_generation_current(ctx.stream_generation)
         {
@@ -46,7 +53,7 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
             continue;
         }
         wait_for_render_capacity(ctx)?;
-        let Some(nv12_frame) = scale_frame_for_render(ctx, &decoded) else {
+        let Some((nv12_frame, hw_transfer_cost, scale_cost)) = scale_frame_for_render(ctx, &decoded) else {
             continue;
         };
         let estimated_pts = update_playback_position(ctx, hinted_seconds, hinted_valid);
@@ -67,14 +74,24 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
         if !ctx
             .app
             .state::<MediaState>()
+            .runtime
             .stream
             .is_generation_current(ctx.stream_generation)
         {
             return Ok(());
         }
+        let submit_cost_start = Instant::now();
         ctx.renderer.submit_frame(render_frame);
+        let submit_cost = submit_cost_start.elapsed();
         ctx.frame_pipeline
             .record_frame_cost(frame_cost_start.elapsed());
+        ctx.frame_pipeline.record_stage_costs(
+            receive_cost,
+            hw_transfer_cost,
+            scale_cost,
+            submit_cost,
+            frame_cost_start.elapsed(),
+        );
         if let Some(render_fps) = ctx.fps_window.record_frame_and_compute() {
             emit_video_telemetry(ctx, pict_type, render_fps, estimated_pts, &nv12_frame);
         }
@@ -131,7 +148,8 @@ fn wait_for_render_capacity(ctx: &DrainFramesContext<'_>) -> Result<(), String> 
 fn scale_frame_for_render(
     ctx: &mut DrainFramesContext<'_>,
     decoded: &frame::Video,
-) -> Option<frame::Video> {
+) -> Option<(frame::Video, Duration, Duration)> {
+    let hw_transfer_cost_start = Instant::now();
     let frame_for_scale = match transfer_hw_frame_if_needed(decoded) {
         Ok(frame) => frame,
         Err(err) => {
@@ -139,6 +157,8 @@ fn scale_frame_for_render(
             return None;
         }
     };
+    let hw_transfer_cost = hw_transfer_cost_start.elapsed();
+    let scale_cost_start = Instant::now();
     if let Err(err) = ensure_scaler(
         ctx.scaler,
         ScalerSpec {
@@ -165,7 +185,7 @@ fn scale_frame_for_render(
     let _ = ctx
         .frame_pipeline
         .resolve_color_profile(ctx.app, &nv12_frame);
-    Some(nv12_frame)
+    Some((nv12_frame, hw_transfer_cost, scale_cost_start.elapsed()))
 }
 
 fn update_playback_position(
@@ -189,6 +209,7 @@ fn update_playback_position(
     });
     if let Some(previous_pts) = *ctx.last_video_pts_seconds {
         let gap = estimated_pts - previous_pts;
+        *ctx.video_timestamp_metrics.last_gap_seconds = Some(gap);
         let expected = ctx.playback_clock.frame_duration_seconds();
         if gap < 0.0 {
             *ctx.video_timestamp_metrics.pts_backtrack =
@@ -208,6 +229,8 @@ fn update_playback_position(
                 format!("detected frame pts gap={gap:.3}s expected~{expected:.3}s"),
             );
         }
+    } else {
+        *ctx.video_timestamp_metrics.last_gap_seconds = None;
     }
     *ctx.last_video_pts_seconds = Some(estimated_pts);
     *ctx.current_position_seconds = if ctx.duration_seconds > 0.0 {

@@ -44,11 +44,13 @@ pub(crate) fn build_audio_pipeline(
         output,
         stats: Default::default(),
         discontinuity_fade_in_frames_remaining: 0,
+        discontinuity_fade_in_total_frames: 0,
         output_staging_channels: 0,
         output_staging_samples: Vec::new(),
         recent_output_tail_channels: 0,
         recent_output_tail_samples: Vec::new(),
         discontinuity_crossfade_tail_channels: 0,
         discontinuity_crossfade_tail_samples: Vec::new(),
+        discontinuity_crossfade_frames: 0,
     }))
 }

@@ -1,7 +1,8 @@
 use super::command_result;
 use crate::app::media::error::MediaCommandError;
-use crate::app::media::model::{
-    HardwareDecodeMode, MediaSnapshot, PlaybackChannelRouting, PlaybackQualityMode,
+use crate::app::media::model::MediaSnapshot;
+use crate::app::media::playback::dto::{
+    HardwareDecodeMode, PlaybackChannelRouting, PlaybackQualityMode,
 };
 use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::session::coordinator;

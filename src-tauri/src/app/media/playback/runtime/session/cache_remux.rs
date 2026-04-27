@@ -80,7 +80,7 @@ impl CacheRemuxWriter {
 }
 
 pub(crate) fn update_cache_session_error(app: &AppHandle, source: &str, message: String) {
-    if let Ok(mut guard) = app.state::<MediaState>().cache_recorder.lock() {
+    if let Ok(mut guard) = app.state::<MediaState>().cache.recorder.lock() {
         if let Some(session) = guard.as_mut() {
             if session.source == source {
                 session.active = false;

@@ -34,10 +34,18 @@ export function createPipelineSections(
 
   const sourceFps = telemetry?.source_fps;
   const frameBudgetMs = isFiniteNumber(sourceFps) && sourceFps > 0 ? 1000 / sourceFps : null;
-  if (isFiniteNumber(telemetry?.decode_avg_frame_cost_ms)) decodeRows.push({ key: "pipe_decode_avg", label: "avg", value: `${telemetry.decode_avg_frame_cost_ms.toFixed(2)}ms` });
-  if (isFiniteNumber(telemetry?.decode_max_frame_cost_ms)) decodeRows.push({ key: "pipe_decode_max", label: "max", value: `${telemetry.decode_max_frame_cost_ms.toFixed(2)}ms` });
-  if (frameBudgetMs !== null && isFiniteNumber(telemetry?.decode_avg_frame_cost_ms)) {
-    decodeRows.push({ key: "pipe_decode_budget", label: "budget", value: `${telemetry.decode_avg_frame_cost_ms.toFixed(2)} / ${frameBudgetMs.toFixed(2)}ms` });
+  const stageCosts = telemetry?.video_stage_costs ?? null;
+  if (isFiniteNumber(telemetry?.decode_avg_frame_cost_ms)) decodeRows.push({ key: "pipe_decode_avg", label: "total avg", value: `${telemetry.decode_avg_frame_cost_ms.toFixed(2)}ms` });
+  if (isFiniteNumber(telemetry?.decode_max_frame_cost_ms)) decodeRows.push({ key: "pipe_decode_max", label: "total max", value: `${telemetry.decode_max_frame_cost_ms.toFixed(2)}ms` });
+  if (isFiniteNumber(stageCosts?.receive_avg_ms)) decodeRows.push({ key: "pipe_decode_receive_avg", label: "receive", value: `${stageCosts.receive_avg_ms.toFixed(2)}ms` });
+  if (isFiniteNumber(stageCosts?.hw_transfer_avg_ms)) decodeRows.push({ key: "pipe_decode_transfer_avg", label: "transfer", value: `${stageCosts.hw_transfer_avg_ms.toFixed(2)}ms` });
+  if (isFiniteNumber(stageCosts?.scale_avg_ms)) decodeRows.push({ key: "pipe_decode_scale_avg", label: "scale/convert", value: `${stageCosts.scale_avg_ms.toFixed(2)}ms` });
+  if (isFiniteNumber(stageCosts?.submit_avg_ms)) decodeRows.push({ key: "pipe_decode_submit_avg", label: "submit", value: `${stageCosts.submit_avg_ms.toFixed(2)}ms` });
+  if (frameBudgetMs !== null && isFiniteNumber(stageCosts?.total_avg_ms)) {
+    decodeRows.push({ key: "pipe_decode_budget", label: "frame budget", value: `${stageCosts.total_avg_ms.toFixed(2)} / ${frameBudgetMs.toFixed(2)}ms` });
+    decodeRows.push({ key: "pipe_decode_state", label: "state", value: classifyBudgetState(stageCosts.total_avg_ms, frameBudgetMs) });
+  } else if (frameBudgetMs !== null && isFiniteNumber(telemetry?.decode_avg_frame_cost_ms)) {
+    decodeRows.push({ key: "pipe_decode_budget", label: "frame budget", value: `${telemetry.decode_avg_frame_cost_ms.toFixed(2)} / ${frameBudgetMs.toFixed(2)}ms` });
     decodeRows.push({ key: "pipe_decode_state", label: "state", value: classifyBudgetState(telemetry.decode_avg_frame_cost_ms, frameBudgetMs) });
   }
   if (typeof telemetry?.video_packet_soft_error_count === "number") {

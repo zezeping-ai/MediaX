@@ -1,4 +1,4 @@
-use crate::app::media::model::HardwareDecodeMode;
+use crate::app::media::playback::dto::HardwareDecodeMode;
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::state::{AudioControls, TimingControls};
 use std::sync::atomic::AtomicBool;

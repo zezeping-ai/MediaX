@@ -5,7 +5,7 @@ mod metadata;
 use super::hw_decode::configure_hw_decode;
 use super::output_size::compute_output_size;
 use super::types::{HwDecodeStatus, VideoDecodeContext};
-use crate::app::media::model::{HardwareDecodeMode, PlaybackQualityMode};
+use crate::app::media::playback::dto::{HardwareDecodeMode, PlaybackQualityMode};
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::codec;
 use ffmpeg_next::format;

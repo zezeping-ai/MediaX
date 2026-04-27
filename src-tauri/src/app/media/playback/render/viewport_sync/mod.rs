@@ -31,7 +31,7 @@ pub fn sync_main_viewport_to(
 ) -> Result<(), String> {
     let epoch = begin_paused_seek_epoch(media);
     let clamped = position_seconds.max(0.0);
-    let rate = media.timing_controls.playback_rate() as f64;
+    let rate = media.controls.timing.playback_rate() as f64;
     renderer.reset_timeline(clamped, rate);
     render_preview_frame_at(renderer, source, position_seconds, || {
         is_epoch_stale(media, epoch)

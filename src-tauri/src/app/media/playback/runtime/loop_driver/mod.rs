@@ -17,6 +17,7 @@ mod tail;
 
 use self::pacing::{
     refresh_audio_rate, refresh_tail_audio_rate, should_wait_for_audio_queue_drain,
+    should_wait_for_rate_switch_drain,
     should_wait_for_decode_lead,
 };
 use self::packet_flow::{drain_video_frames, handle_packet};
@@ -35,7 +36,11 @@ pub(super) fn run_decode_loop(
         if should_exit_loop(app, stop_flag, stream_generation) {
             return Ok(());
         }
-        refresh_audio_rate(runtime, timing_controls);
+        refresh_audio_rate(app, runtime, timing_controls);
+        if should_wait_for_rate_switch_drain(app, runtime) {
+            std::thread::sleep(Duration::from_millis(video_pipeline::DECODE_LEAD_SLEEP_MS));
+            continue;
+        }
         if should_wait_for_decode_lead(runtime) {
             std::thread::sleep(Duration::from_millis(video_pipeline::DECODE_LEAD_SLEEP_MS));
             continue;
@@ -101,6 +106,7 @@ fn sleep_for_read_retry(err: &FfmpegError) {
 fn should_exit_loop(app: &AppHandle, stop_flag: &Arc<AtomicBool>, stream_generation: u32) -> bool {
     if !app
         .state::<MediaState>()
+        .runtime
         .stream
         .is_generation_current(stream_generation)
     {

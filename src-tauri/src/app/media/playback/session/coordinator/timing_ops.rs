@@ -1,5 +1,6 @@
 use crate::app::media::error::{MediaError, MediaResult};
-use crate::app::media::model::{MediaSnapshot, PlaybackChannelRouting};
+use crate::app::media::model::MediaSnapshot;
+use crate::app::media::playback::dto::PlaybackChannelRouting;
 use crate::app::media::playback::session::constraints;
 use crate::app::media::state;
 use crate::app::media::state::MediaState;
@@ -15,9 +16,12 @@ pub fn set_rate(
     let playback_rate = constraints::normalize_playback_rate(playback_rate)?;
     {
         let mut playback = state::playback(&state)?;
-        playback.set_rate(playback_rate);
+        playback.set_rate(playback_rate.as_f64());
     }
-    state.timing_controls.set_playback_rate(playback_rate as f32);
+    state
+        .controls
+        .timing
+        .set_playback_rate(playback_rate.as_f32());
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
@@ -32,11 +36,11 @@ pub fn set_volume(
         let mut playback = state::playback(&state)?;
         playback.set_volume(volume);
     }
-    state.audio_controls.set_volume(volume as f32);
+    state.controls.audio.set_volume(volume as f32);
     if volume <= 0.0 {
-        state.audio_controls.set_muted(true);
+        state.controls.audio.set_muted(true);
     } else {
-        state.audio_controls.set_muted(false);
+        state.controls.audio.set_muted(false);
     }
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
@@ -51,7 +55,7 @@ pub fn set_muted(
         let mut playback = state::playback(&state)?;
         playback.set_muted(muted);
     }
-    state.audio_controls.set_muted(muted);
+    state.controls.audio.set_muted(muted);
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
@@ -66,8 +70,8 @@ pub fn set_left_channel_volume(
         let mut playback = state::playback(&state)?;
         playback.set_left_channel_volume(volume);
     }
-    state.audio_controls.set_left_volume(volume as f32);
-    state.audio_controls.set_left_muted(volume <= 0.0);
+    state.controls.audio.set_left_volume(volume as f32);
+    state.controls.audio.set_left_muted(volume <= 0.0);
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
@@ -82,8 +86,8 @@ pub fn set_right_channel_volume(
         let mut playback = state::playback(&state)?;
         playback.set_right_channel_volume(volume);
     }
-    state.audio_controls.set_right_volume(volume as f32);
-    state.audio_controls.set_right_muted(volume <= 0.0);
+    state.controls.audio.set_right_volume(volume as f32);
+    state.controls.audio.set_right_muted(volume <= 0.0);
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
@@ -97,7 +101,7 @@ pub fn set_left_channel_muted(
         let mut playback = state::playback(&state)?;
         playback.set_left_channel_muted(muted);
     }
-    state.audio_controls.set_left_muted(muted);
+    state.controls.audio.set_left_muted(muted);
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
@@ -111,7 +115,7 @@ pub fn set_right_channel_muted(
         let mut playback = state::playback(&state)?;
         playback.set_right_channel_muted(muted);
     }
-    state.audio_controls.set_right_muted(muted);
+    state.controls.audio.set_right_muted(muted);
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
@@ -125,7 +129,7 @@ pub fn set_channel_routing(
         let mut playback = state::playback(&state)?;
         playback.set_channel_routing(routing);
     }
-    state.audio_controls.set_channel_routing(routing);
+    state.controls.audio.set_channel_routing(routing);
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 

@@ -157,6 +157,20 @@ export interface MediaDecodeQuantileStats {
   p99_ms: number;
 }
 
+export interface MediaVideoStageCostStats {
+  sample_count: number;
+  receive_avg_ms: number;
+  receive_max_ms: number;
+  hw_transfer_avg_ms: number;
+  hw_transfer_max_ms: number;
+  scale_avg_ms: number;
+  scale_max_ms: number;
+  submit_avg_ms: number;
+  submit_max_ms: number;
+  total_avg_ms: number;
+  total_max_ms: number;
+}
+
 export interface MediaTelemetryPayload {
   source_fps: number;
   render_fps: number;
@@ -179,6 +193,7 @@ export interface MediaTelemetryPayload {
   decode_max_frame_cost_ms: number | null;
   decode_samples: number | null;
   decode_quantiles?: MediaDecodeQuantileStats | null;
+  video_stage_costs?: MediaVideoStageCostStats | null;
   video_timestamps?: MediaVideoTimestampStats | null;
   frame_types?: MediaFrameTypeStats | null;
   process_cpu_percent: number | null;

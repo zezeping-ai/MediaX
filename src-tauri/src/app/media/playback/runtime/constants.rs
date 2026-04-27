@@ -1,7 +1,5 @@
 pub(crate) const MAX_EMIT_FPS: u32 = 60;
 pub(crate) const METRICS_EMIT_INTERVAL_MS: u64 = 1000;
-pub(crate) const RATE_SWITCH_SETTLE_WINDOW_MS: u64 = 320;
-pub(crate) const BASE_AUDIO_QUEUE_SOURCE_DEPTH_LIMIT: usize = 24;
 pub(crate) const AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT: f64 = 0.0;
 pub(crate) const AUDIO_ALLOWED_LEAD_SECONDS_DURING_SETTLE: f64 = 0.015;
 pub(crate) const MAX_DECODE_LEAD_SECONDS_DEFAULT: f64 = 0.25;

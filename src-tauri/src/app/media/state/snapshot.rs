@@ -3,7 +3,7 @@ use crate::app::media::error::MediaError;
 use crate::app::media::library::MediaLibraryService;
 use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::events::{
-    MediaEventEnvelope, MEDIA_PLAYBACK_STATE_EVENT, MEDIA_PROTOCOL_VERSION,
+    build_media_event, MEDIA_PLAYBACK_STATE_EVENT,
 };
 use crate::app::media::playback::session::service::MediaPlaybackService;
 use std::sync::MutexGuard;
@@ -13,6 +13,7 @@ pub fn playback<'a>(
     state: &'a State<'a, MediaState>,
 ) -> Result<MutexGuard<'a, MediaPlaybackService>, String> {
     state
+        .session
         .playback
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())
@@ -22,6 +23,7 @@ pub fn library<'a>(
     state: &'a State<'a, MediaState>,
 ) -> Result<MutexGuard<'a, MediaLibraryService>, String> {
     state
+        .session
         .library
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("media library state").to_string())
@@ -40,16 +42,7 @@ pub fn emit_snapshot_with_request_id(
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, String> {
     let snapshot = snapshot_from_state(state)?;
-    let envelope = MediaEventEnvelope {
-        protocol_version: MEDIA_PROTOCOL_VERSION,
-        event_type: "playback_state",
-        request_id: request_id.clone(),
-        emitted_at_ms: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|duration| duration.as_millis() as u64)
-            .unwrap_or(0),
-        payload: snapshot.clone(),
-    };
+    let envelope = build_media_event("playback_state", request_id.clone(), snapshot.clone());
     app.emit(MEDIA_PLAYBACK_STATE_EVENT, &envelope)
         .map_err(|err| format!("emit playback state failed: {err}"))?;
     Ok(snapshot)
@@ -57,16 +50,18 @@ pub fn emit_snapshot_with_request_id(
 
 pub fn snapshot_from_state(state: &State<'_, MediaState>) -> Result<MediaSnapshot, String> {
     let library = state
+        .session
         .library
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("media library state").to_string())?
         .state();
     let playback = {
-        let mut playback = state
+        let playback = state
+            .session
             .playback
             .lock()
             .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())?;
-        playback.state()
+        playback.snapshot(library.clone())
     };
-    Ok(MediaSnapshot { playback, library })
+    Ok(playback)
 }

@@ -1,4 +1,4 @@
-use crate::app::media::model::PlaybackQualityMode;
+use crate::app::media::playback::dto::PlaybackQualityMode;
 
 pub(super) fn compute_output_size(
     width: u32,

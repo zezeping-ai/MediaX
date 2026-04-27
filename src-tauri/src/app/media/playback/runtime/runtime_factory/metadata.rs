@@ -1,4 +1,4 @@
-use crate::app::media::model::PlaybackMediaKind;
+use crate::app::media::playback::dto::PlaybackMediaKind;
 use crate::app::media::playback::decode_context::VideoDecodeContext;
 use crate::app::media::playback::events::MediaMetadataPayload;
 use crate::app::media::playback::render::renderer::RendererState;

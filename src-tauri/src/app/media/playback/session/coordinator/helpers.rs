@@ -10,7 +10,8 @@ pub(super) fn finalize_active_cache_recording(
     reason: &str,
 ) -> MediaResult<()> {
     let mut guard = state
-        .cache_recorder
+        .cache
+        .recorder
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
     let Some(mut session) = guard.take() else {
@@ -41,6 +42,7 @@ pub(super) fn set_pending_seek(
     position_seconds: f64,
 ) -> MediaResult<()> {
     state
+        .runtime
         .stream
         .set_pending_seek_seconds(position_seconds.max(0.0))
         .map_err(Into::into)
@@ -54,6 +56,7 @@ pub(super) fn activate_playback_and_resume_position(
         .position_seconds
         .max(
             state
+                .runtime
                 .stream
                 .latest_position_seconds()
                 .map_err(MediaError::from)?,
@@ -70,11 +73,12 @@ pub(super) fn activate_playback_and_resume_position(
 
 pub(super) fn sync_pause_resume_position(state: &State<'_, MediaState>) -> MediaResult<()> {
     let latest = state
+        .runtime
         .stream
         .latest_position_seconds()
         .map_err(MediaError::from)?;
     let (current_path, current_position) = {
-        let mut playback = state::playback(state)?;
+        let playback = state::playback(state)?;
         (
             playback.state().current_path.clone(),
             playback.state().position_seconds.max(0.0),
@@ -90,7 +94,10 @@ pub(super) fn sync_pause_resume_position(state: &State<'_, MediaState>) -> Media
         playback.pause();
     }
     if current_path.is_some() {
-        state.paused_seek_epoch.fetch_add(1, Ordering::Relaxed);
+        state
+            .runtime
+            .paused_seek_epoch
+            .fetch_add(1, Ordering::Relaxed);
     }
     Ok(())
 }

@@ -2,6 +2,7 @@ mod diagnostics;
 mod sync;
 
 use super::types::AudioPipeline;
+use crate::app::media::playback::rate::PlaybackRate;
 use crate::app::media::playback::runtime::audio::clamp_playback_rate;
 use crate::app::media::playback::runtime::clock::AudioClock;
 use crate::app::media::playback::runtime::emit_debug;
@@ -45,12 +46,12 @@ pub(crate) fn drain_audio_frames(
 
         let channels = converted.channels().max(1) as usize;
         let samples_per_channel = converted.samples();
-        let mut pcm = audio_state.time_stretch.process_frame(
-            &converted,
-            clamp_playback_rate(timing_controls.playback_rate()),
-        )?;
+        let playback_rate = PlaybackRate::new(clamp_playback_rate(timing_controls.playback_rate()));
+        let mut pcm = audio_state
+            .time_stretch
+            .process_frame(&converted, playback_rate.as_f32())?;
         if pcm.is_empty() {
-            if (clamp_playback_rate(timing_controls.playback_rate()) - 1.0).abs() > 1e-3 {
+            if !playback_rate.is_neutral() {
                 emit_debug(
                     app,
                     "audio_time_stretch_pending",
@@ -107,8 +108,12 @@ pub(crate) fn drain_audio_frames(
         audio_state.apply_discontinuity_smoothing(&mut pcm, converted.channels());
         audio_state.mark_refill_completed();
         let force_flush_partial = audio_state.output.queue_depth() <= 1;
-        let output_blocks =
-            audio_state.stage_output_pcm(&pcm, converted.channels(), force_flush_partial);
+        let output_blocks = audio_state.stage_output_pcm(
+            &pcm,
+            converted.channels(),
+            playback_rate,
+            force_flush_partial,
+        );
         for block in output_blocks {
             audio_state.stats.queued_samples = audio_state
                 .stats

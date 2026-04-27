@@ -1,7 +1,6 @@
 use crate::app::media::error::MediaError;
-use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::events::{
-    MediaEventEnvelope, MEDIA_PLAYBACK_STATE_EVENT, MEDIA_PROTOCOL_VERSION,
+    build_media_event, MEDIA_PLAYBACK_STATE_EVENT,
 };
 use crate::app::media::state::MediaState;
 use tauri::{AppHandle, Emitter, Manager};
@@ -14,48 +13,39 @@ pub fn update_playback_progress(
     finalize: bool,
 ) -> Result<(), String> {
     let state = app.state::<MediaState>();
-    if !state.stream.is_generation_current(stream_generation) {
+    if !state.runtime.stream.is_generation_current(stream_generation) {
         return Ok(());
     }
     let snapshot = {
         let library = state
+            .session
             .library
             .lock()
             .map_err(|_| MediaError::state_poisoned_lock("media library state").to_string())?
             .state();
         let mut playback = state
+            .session
             .playback
             .lock()
             .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())?;
         if finalize {
             playback.stop();
             state
+                .runtime
                 .stream
                 .set_latest_position_seconds(0.0)
                 .map_err(|err| err.to_string())?;
             state
+                .runtime
                 .stream
                 .reset_pending_seek_to_zero()
                 .map_err(|err| err.to_string())?;
         } else {
             playback.sync_position(position_seconds, duration_seconds);
         }
-        let playback_state = playback.state();
-        MediaSnapshot {
-            playback: playback_state,
-            library,
-        }
+        playback.snapshot(library)
     };
-    let envelope = MediaEventEnvelope {
-        protocol_version: MEDIA_PROTOCOL_VERSION,
-        event_type: "playback_state",
-        request_id: None,
-        emitted_at_ms: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0),
-        payload: snapshot,
-    };
+    let envelope = build_media_event("playback_state", None, snapshot);
     app.emit(MEDIA_PLAYBACK_STATE_EVENT, &envelope)
         .map_err(|err| format!("emit playback state failed: {err}"))?;
     Ok(())

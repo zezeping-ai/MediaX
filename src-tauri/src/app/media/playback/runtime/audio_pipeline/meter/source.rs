@@ -1,4 +1,4 @@
-use crate::app::media::model::PlaybackChannelRouting;
+use crate::app::media::playback::dto::PlaybackChannelRouting;
 use crate::app::media::state::AudioControls;
 use rodio::Source;
 use std::collections::VecDeque;

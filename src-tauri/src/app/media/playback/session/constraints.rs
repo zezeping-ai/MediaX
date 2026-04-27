@@ -1,7 +1,6 @@
 use crate::app::media::error::{MediaError, MediaResult};
+use crate::app::media::playback::rate::{PlaybackRate, MAX_PLAYBACK_RATE, MIN_PLAYBACK_RATE};
 
-pub const MIN_PLAYBACK_RATE: f64 = 0.25;
-pub const MAX_PLAYBACK_RATE: f64 = 4.0;
 pub const MIN_PREVIEW_EDGE: u32 = 32;
 pub const MAX_PREVIEW_EDGE: u32 = 4096;
 
@@ -23,13 +22,15 @@ pub fn normalize_unit_interval(value: f64, field: &str) -> MediaResult<f64> {
     Ok(value.clamp(0.0, 1.0))
 }
 
-pub fn normalize_playback_rate(playback_rate: f64) -> MediaResult<f64> {
+pub fn normalize_playback_rate(playback_rate: f64) -> MediaResult<PlaybackRate> {
     if !playback_rate.is_finite() {
         return Err(MediaError::invalid_input(
             "playback_rate must be a finite number",
         ));
     }
-    Ok(playback_rate.clamp(MIN_PLAYBACK_RATE, MAX_PLAYBACK_RATE))
+    Ok(PlaybackRate::from_f64(
+        playback_rate.clamp(f64::from(MIN_PLAYBACK_RATE), f64::from(MAX_PLAYBACK_RATE)),
+    ))
 }
 
 pub fn normalize_preview_edge(edge: u32) -> u32 {

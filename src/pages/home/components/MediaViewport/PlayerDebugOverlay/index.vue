@@ -112,6 +112,8 @@ const {
 
       <template v-else-if="activeTab === 'pipeline'">
         <PipelineTab
+          :source="source"
+          :playback="playback"
           :telemetry="latestTelemetry"
           :history="telemetryHistory"
           :sections="pipelineSections"

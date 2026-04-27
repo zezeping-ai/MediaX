@@ -8,7 +8,8 @@ pub(crate) fn current_recording_target(
 ) -> Result<Option<String>, String> {
     let media_state = app.state::<MediaState>();
     let guard = media_state
-        .cache_recorder
+        .cache
+        .recorder
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("cache recorder").to_string())?;
     Ok(guard.as_ref().and_then(|session| {

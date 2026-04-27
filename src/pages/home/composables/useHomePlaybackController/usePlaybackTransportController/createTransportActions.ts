@@ -1,5 +1,6 @@
 import { clamp } from "lodash-es";
 import type { Ref } from "vue";
+import { normalizePlaybackRate } from "@/modules/player-constraints";
 import type { UsePlaybackTransportControllerOptions } from "./types";
 
 interface CreateTransportActionsOptions {
@@ -35,8 +36,9 @@ export function createTransportActions({
   }
 
   async function changePlaybackRate(rate: number) {
-    playbackRate.value = rate;
-    await options.setRate(rate);
+    const normalized = normalizePlaybackRate(rate);
+    playbackRate.value = normalized;
+    await options.setRate(normalized);
   }
 
   async function changeVolume(nextVolume: number) {
@@ -52,12 +54,12 @@ export function createTransportActions({
   }
 
   function increasePlaybackRate() {
-    const nextRate = Math.min(3, Number((playbackRate.value + 0.1).toFixed(1)));
+    const nextRate = normalizePlaybackRate(playbackRate.value + 0.1);
     void changePlaybackRate(nextRate);
   }
 
   function decreasePlaybackRate() {
-    const nextRate = Math.max(0.1, Number((playbackRate.value - 0.1).toFixed(1)));
+    const nextRate = normalizePlaybackRate(playbackRate.value - 0.1);
     void changePlaybackRate(nextRate);
   }
 

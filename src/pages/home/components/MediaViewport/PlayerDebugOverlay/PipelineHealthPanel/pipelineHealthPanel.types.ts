@@ -1,4 +1,6 @@
-import type { MediaTelemetryPayload } from "@/modules/media-types";
+import type { MediaTelemetryPayload, PlaybackState } from "@/modules/media-types";
+
+export type HealthLaneTone = "unknown" | "headroom" | "healthy" | "tight" | "risk";
 
 export interface HealthLane {
   id: string;
@@ -6,14 +8,16 @@ export interface HealthLane {
   percent: number;
   state: string;
   detail: string;
-  toneClass: string;
-  points: string;
+  tone: HealthLaneTone;
   trendLabel: string;
   trendDelta: string;
   markerPercents: number[];
+  samples: number[];
 }
 
 export interface PipelineHealthPanelProps {
+  source: string;
+  playback: PlaybackState | null;
   telemetry: MediaTelemetryPayload | null;
   history: Array<{ at_ms: number; telemetry: MediaTelemetryPayload }>;
 }

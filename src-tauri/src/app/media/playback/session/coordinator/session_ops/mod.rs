@@ -5,8 +5,9 @@ use super::helpers::{
     sync_pause_resume_position,
 };
 use crate::app::media::error::{MediaError, MediaResult};
-use crate::app::media::model::{
-    HardwareDecodeMode, MediaSnapshot, PlaybackMediaKind, PlaybackQualityMode, PlaybackStatus,
+use crate::app::media::model::MediaSnapshot;
+use crate::app::media::playback::dto::{
+    HardwareDecodeMode, PlaybackMediaKind, PlaybackQualityMode, PlaybackStatus,
 };
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::render::viewport_sync;
@@ -28,7 +29,7 @@ pub fn open(
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
     finalize_active_cache_recording(&state, "播放源已切换，录制已自动停止")?;
-    state.stream.advance_generation();
+    state.runtime.stream.advance_generation();
     stop_decode_stream_non_blocking(&state)?;
     if let Err(err) = (*app.state::<RendererState>()).clone().clear_surface(&app) {
         eprintln!("clear renderer surface on source switch failed: {err}");
@@ -37,8 +38,8 @@ pub fn open(
         let mut playback = state::playback(&state)?;
         playback.open(path.clone());
     }
-    state.stream.set_latest_position_seconds(0.0)?;
-    state.stream.reset_pending_seek_to_zero()?;
+    state.runtime.stream.set_latest_position_seconds(0.0)?;
+    state.runtime.stream.reset_pending_seek_to_zero()?;
     {
         let mut library = state::library(&state)?;
         library.mark_playback_progress(&path, 0.0);
@@ -64,7 +65,7 @@ pub fn pause(
     state: State<'_, MediaState>,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
-    state.stream.advance_generation();
+    state.runtime.stream.advance_generation();
     stop_decode_stream_non_blocking(&state)?;
     sync_pause_resume_position(&state)?;
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
@@ -76,14 +77,14 @@ pub fn stop(
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
     finalize_active_cache_recording(&state, "播放已停止，录制已自动停止")?;
-    state.stream.advance_generation();
+    state.runtime.stream.advance_generation();
     stop_decode_stream_non_blocking(&state)?;
-    state.stream.set_latest_position_seconds(0.0)?;
+    state.runtime.stream.set_latest_position_seconds(0.0)?;
     {
         let mut playback = state::playback(&state)?;
         playback.stop();
     }
-    state.stream.reset_pending_seek_to_zero()?;
+    state.runtime.stream.reset_pending_seek_to_zero()?;
     if let Err(err) = (*app.state::<RendererState>()).clone().clear_surface(&app) {
         eprintln!("clear renderer surface on stop failed: {err}");
     }

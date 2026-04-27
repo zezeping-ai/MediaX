@@ -7,6 +7,7 @@ pub(crate) struct VideoTimestampMetricsRef<'a> {
     pub pts_backtrack: &'a mut u64,
     pub pts_jitter_abs_sum_ms: &'a mut f64,
     pub pts_jitter_max_ms: &'a mut f64,
+    pub last_gap_seconds: &'a mut Option<f64>,
 }
 
 pub(crate) struct VideoFrameTypeMetricsRef<'a> {

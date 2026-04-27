@@ -1,3 +1,4 @@
+use crate::app::media::playback::rate::PlaybackRate;
 use crate::app::media::state::MediaState;
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::format;
@@ -9,6 +10,7 @@ use super::clock::PlaybackClock;
 pub fn take_pending_seek_seconds(app: &AppHandle) -> Result<Option<f64>, String> {
     let media_state = app.state::<MediaState>();
     media_state
+        .runtime
         .stream
         .take_pending_seek_seconds()
         .map_err(|err| err.to_string())
@@ -41,7 +43,8 @@ pub fn apply_seek_to_stream(
     if let Some(audio_state) = audio_pipeline {
         audio_state.decoder.flush();
         // Clearing queued sources pauses rodio playback. Resume immediately after seek.
-        audio_state.restart_after_discontinuity();
+        let current_rate = PlaybackRate::from_f64(playback_clock.playback_rate());
+        audio_state.restart_after_discontinuity(current_rate, current_rate);
     }
     playback_clock.reset_to(clamped);
     *current_position_seconds = clamped;

@@ -11,6 +11,7 @@ fn take_decode_stream_handles(
     state: &State<'_, MediaState>,
 ) -> Result<DecodeStreamHandles, String> {
     state
+        .runtime
         .stream
         .take_decode_stream_handles()
         .map_err(|err| err.to_string())
@@ -49,7 +50,7 @@ pub fn start_decode_stream(
     source: String,
 ) -> Result<(), String> {
     stop_decode_stream_blocking(state)?;
-    let stream_generation = state.stream.advance_generation();
+    let stream_generation = state.runtime.stream.advance_generation();
     super::emit_debug(
         app,
         "stream_start",
@@ -57,6 +58,7 @@ pub fn start_decode_stream(
     );
     let (stop_flag, handle) = spawn_decode_stream(app, state, source, stream_generation)?;
     state
+        .runtime
         .stream
         .install_decode_stream_handle(stop_flag, handle)
         .map_err(|err| err.to_string())?;
@@ -68,6 +70,7 @@ pub fn write_latest_stream_position(
     position_seconds: f64,
 ) -> Result<(), String> {
     state
+        .runtime
         .stream
         .set_latest_position_seconds(position_seconds)
         .map_err(|err| err.to_string())
@@ -75,6 +78,7 @@ pub fn write_latest_stream_position(
 
 pub fn read_latest_stream_position(state: &State<'_, MediaState>) -> Result<f64, String> {
     state
+        .runtime
         .stream
         .latest_position_seconds()
         .map_err(|err| err.to_string())

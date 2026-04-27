@@ -11,7 +11,8 @@ pub fn get_cache_recording_status(
     state: State<'_, MediaState>,
 ) -> MediaResult<CacheRecordingStatus> {
     let guard = state
-        .cache_recorder
+        .cache
+        .recorder
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
     if let Some(session) = guard.as_ref() {
@@ -45,7 +46,7 @@ pub fn start_cache_recording(
     output_dir: Option<String>,
 ) -> MediaResult<CacheRecordingStatus> {
     let source = {
-        let mut playback = state::playback(&state)?;
+        let playback = state::playback(&state)?;
         let current = playback.state().current_path;
         current.ok_or_else(|| MediaError::invalid_input("no active source to cache"))?
     };
@@ -77,7 +78,8 @@ pub fn start_cache_recording(
     );
 
     let mut recorder_guard = state
-        .cache_recorder
+        .cache
+        .recorder
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
     if recorder_guard.is_some() {
@@ -116,7 +118,8 @@ pub fn start_cache_recording(
 
 pub fn stop_cache_recording(state: State<'_, MediaState>) -> MediaResult<CacheRecordingStatus> {
     let mut recorder_guard = state
-        .cache_recorder
+        .cache
+        .recorder
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
     let Some(session) = recorder_guard.take() else {

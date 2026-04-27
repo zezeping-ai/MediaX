@@ -1,14 +1,7 @@
 use serde::Serialize;
 
-use crate::app::media::model::{MediaLyricLine, PlaybackMediaKind};
-
-pub const MEDIA_PLAYBACK_STATE_EVENT: &str = "media://playback/state";
-pub const MEDIA_PLAYBACK_METADATA_EVENT: &str = "media://playback/metadata";
-pub const MEDIA_PLAYBACK_ERROR_EVENT: &str = "media://playback/error";
-pub const MEDIA_PLAYBACK_DEBUG_EVENT: &str = "media://playback/debug";
-pub const MEDIA_PLAYBACK_TELEMETRY_EVENT: &str = "media://playback/telemetry";
-pub const MEDIA_PLAYBACK_AUDIO_METER_EVENT: &str = "media://playback/audio-meter";
-pub const MEDIA_PROTOCOL_VERSION: u32 = 2;
+use crate::app::media::model::MediaLyricLine;
+use crate::app::media::playback::dto::PlaybackMediaKind;
 
 #[derive(Clone, Serialize)]
 pub struct MediaMetadataPayload {
@@ -48,18 +41,6 @@ pub struct MediaDebugPayload {
 }
 
 #[derive(Clone, Serialize)]
-pub struct MediaEventEnvelope<T>
-where
-    T: Serialize + Clone,
-{
-    pub protocol_version: u32,
-    pub event_type: &'static str,
-    pub request_id: Option<String>,
-    pub emitted_at_ms: u64,
-    pub payload: T,
-}
-
-#[derive(Clone, Serialize)]
 pub struct MediaVideoTimestampStats {
     pub samples: u64,
     pub pts_missing_ratio_percent: f64,
@@ -88,6 +69,21 @@ pub struct MediaDecodeQuantileStats {
 }
 
 #[derive(Clone, Serialize)]
+pub struct MediaVideoStageCostStats {
+    pub sample_count: u64,
+    pub receive_avg_ms: f64,
+    pub receive_max_ms: f64,
+    pub hw_transfer_avg_ms: f64,
+    pub hw_transfer_max_ms: f64,
+    pub scale_avg_ms: f64,
+    pub scale_max_ms: f64,
+    pub submit_avg_ms: f64,
+    pub submit_max_ms: f64,
+    pub total_avg_ms: f64,
+    pub total_max_ms: f64,
+}
+
+#[derive(Clone, Serialize)]
 pub struct MediaTelemetryPayload {
     pub source_fps: f64,
     pub render_fps: f64,
@@ -110,6 +106,7 @@ pub struct MediaTelemetryPayload {
     pub decode_max_frame_cost_ms: Option<f64>,
     pub decode_samples: Option<u64>,
     pub decode_quantiles: Option<MediaDecodeQuantileStats>,
+    pub video_stage_costs: Option<MediaVideoStageCostStats>,
     pub video_timestamps: Option<MediaVideoTimestampStats>,
     pub frame_types: Option<MediaFrameTypeStats>,
     pub process_cpu_percent: Option<f32>,

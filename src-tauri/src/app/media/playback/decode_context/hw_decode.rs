@@ -1,5 +1,5 @@
 use super::types::HwDecodeStatus;
-use crate::app::media::model::HardwareDecodeMode;
+use crate::app::media::playback::dto::HardwareDecodeMode;
 use ffmpeg_next::codec;
 use ffmpeg_next::ffi;
 use std::ffi::CString;

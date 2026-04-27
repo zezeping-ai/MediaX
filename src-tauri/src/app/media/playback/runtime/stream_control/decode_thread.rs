@@ -1,6 +1,6 @@
 use super::error_events::emit_error_events;
 use crate::app::media::error::MediaErrorCode;
-use crate::app::media::model::HardwareDecodeMode;
+use crate::app::media::playback::dto::HardwareDecodeMode;
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::{DecodeDependencies, DecodeRequest};
 use crate::app::media::state::{AudioControls, MediaState, TimingControls};
@@ -21,8 +21,8 @@ pub(super) fn spawn_decode_stream(
         let handle = app.clone();
         (*handle.state::<RendererState>()).clone()
     };
-    let audio_controls: Arc<AudioControls> = state.audio_controls.clone();
-    let timing_controls: Arc<TimingControls> = state.timing_controls.clone();
+    let audio_controls: Arc<AudioControls> = state.controls.audio.clone();
+    let timing_controls: Arc<TimingControls> = state.controls.timing.clone();
     let app_handle = app.clone();
     let requested_hw_mode = read_requested_hw_mode(&app_handle)?;
     let handle = thread::spawn(move || {
@@ -36,7 +36,7 @@ pub(super) fn spawn_decode_stream(
             stream_generation,
             requested_hw_mode,
         ) {
-            if let Ok(mut playback) = app_handle.state::<MediaState>().playback.lock() {
+            if let Ok(mut playback) = app_handle.state::<MediaState>().session.playback.lock() {
                 playback.update_hw_decode_status(false, None, Some(err.clone()));
             }
             super::super::emit_debug(&app_handle, "decode_error", err.clone());
@@ -49,6 +49,7 @@ pub(super) fn spawn_decode_stream(
 fn read_requested_hw_mode(app: &AppHandle) -> Result<HardwareDecodeMode, String> {
     let media_state = app.state::<MediaState>();
     let playback = media_state
+        .session
         .playback
         .lock()
         .map_err(|_| "playback state poisoned".to_string())?;
@@ -101,13 +102,14 @@ fn run_decode_stream_with_auto_fallback(
 fn should_retry_as_software(app: &AppHandle, source: &str, stream_generation: u32) -> bool {
     if !app
         .state::<MediaState>()
+        .runtime
         .stream
         .is_generation_current(stream_generation)
     {
         return false;
     }
     let media_state = app.state::<MediaState>();
-    let Ok(mut playback) = media_state.playback.lock() else {
+    let Ok(playback) = media_state.session.playback.lock() else {
         return false;
     };
     let state = playback.state();

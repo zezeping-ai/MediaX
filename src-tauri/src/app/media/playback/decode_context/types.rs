@@ -1,7 +1,8 @@
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::format;
 
-use crate::app::media::model::{MediaLyricLine, PlaybackMediaKind};
+use crate::app::media::model::MediaLyricLine;
+use crate::app::media::playback::dto::PlaybackMediaKind;
 use crate::app::media::playback::render::renderer::VideoFrame;
 
 pub(crate) struct VideoDecodeContext {

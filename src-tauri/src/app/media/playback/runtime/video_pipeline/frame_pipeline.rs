@@ -30,6 +30,7 @@ pub(crate) struct VideoFramePipeline {
     locked_color_profile: Option<ColorProfile>,
     integrity: VideoIntegrityStats,
     perf_window: VideoPerfWindow,
+    stage_perf_window: VideoStagePerfWindow,
     first_frame_emitted: bool,
 }
 
@@ -41,6 +42,22 @@ struct VideoPerfWindow {
     cost_samples_ms: Vec<f64>,
 }
 
+#[derive(Default)]
+struct VideoStagePerfWindow {
+    samples: u64,
+    receive: StageCostWindow,
+    hw_transfer: StageCostWindow,
+    scale: StageCostWindow,
+    submit: StageCostWindow,
+    total: StageCostWindow,
+}
+
+#[derive(Default)]
+struct StageCostWindow {
+    total_micros: u128,
+    max_micros: u64,
+}
+
 pub(crate) struct VideoPerfSnapshot {
     pub avg_ms: f64,
     pub max_ms: f64,
@@ -48,6 +65,20 @@ pub(crate) struct VideoPerfSnapshot {
     pub p95_ms: f64,
     pub p99_ms: f64,
     pub samples: u64,
+}
+
+pub(crate) struct VideoStagePerfSnapshot {
+    pub sample_count: u64,
+    pub receive_avg_ms: f64,
+    pub receive_max_ms: f64,
+    pub hw_transfer_avg_ms: f64,
+    pub hw_transfer_max_ms: f64,
+    pub scale_avg_ms: f64,
+    pub scale_max_ms: f64,
+    pub submit_avg_ms: f64,
+    pub submit_max_ms: f64,
+    pub total_avg_ms: f64,
+    pub total_max_ms: f64,
 }
 
 impl VideoFramePipeline {
@@ -85,6 +116,44 @@ impl VideoFramePipeline {
             p99_ms,
             samples,
         })
+    }
+
+    pub(super) fn record_stage_costs(
+        &mut self,
+        receive: Duration,
+        hw_transfer: Duration,
+        scale: Duration,
+        submit: Duration,
+        total: Duration,
+    ) {
+        self.stage_perf_window.samples = self.stage_perf_window.samples.saturating_add(1);
+        record_stage_cost(&mut self.stage_perf_window.receive, receive);
+        record_stage_cost(&mut self.stage_perf_window.hw_transfer, hw_transfer);
+        record_stage_cost(&mut self.stage_perf_window.scale, scale);
+        record_stage_cost(&mut self.stage_perf_window.submit, submit);
+        record_stage_cost(&mut self.stage_perf_window.total, total);
+    }
+
+    pub(super) fn take_stage_perf_snapshot(&mut self) -> Option<VideoStagePerfSnapshot> {
+        if self.stage_perf_window.samples == 0 {
+            return None;
+        }
+        let samples = self.stage_perf_window.samples;
+        let snapshot = VideoStagePerfSnapshot {
+            sample_count: samples,
+            receive_avg_ms: stage_avg_ms(&self.stage_perf_window.receive, samples),
+            receive_max_ms: stage_max_ms(&self.stage_perf_window.receive),
+            hw_transfer_avg_ms: stage_avg_ms(&self.stage_perf_window.hw_transfer, samples),
+            hw_transfer_max_ms: stage_max_ms(&self.stage_perf_window.hw_transfer),
+            scale_avg_ms: stage_avg_ms(&self.stage_perf_window.scale, samples),
+            scale_max_ms: stage_max_ms(&self.stage_perf_window.scale),
+            submit_avg_ms: stage_avg_ms(&self.stage_perf_window.submit, samples),
+            submit_max_ms: stage_max_ms(&self.stage_perf_window.submit),
+            total_avg_ms: stage_avg_ms(&self.stage_perf_window.total, samples),
+            total_max_ms: stage_max_ms(&self.stage_perf_window.total),
+        };
+        self.stage_perf_window = VideoStagePerfWindow::default();
+        Some(snapshot)
     }
 
     pub(super) fn on_hw_transfer_failed(&mut self, app: &AppHandle, err: &str) {
@@ -218,6 +287,25 @@ impl VideoFramePipeline {
             dropped_scale: self.integrity.dropped_scale,
         }
     }
+}
+
+fn record_stage_cost(window: &mut StageCostWindow, cost: Duration) {
+    let micros = cost.as_micros();
+    window.total_micros = window.total_micros.saturating_add(micros);
+    window.max_micros = window
+        .max_micros
+        .max(u64::try_from(micros).unwrap_or(u64::MAX));
+}
+
+fn stage_avg_ms(window: &StageCostWindow, samples: u64) -> f64 {
+    if samples == 0 {
+        return 0.0;
+    }
+    ((window.total_micros as f64) / (samples as f64)) / 1000.0
+}
+
+fn stage_max_ms(window: &StageCostWindow) -> f64 {
+    (window.max_micros as f64) / 1000.0
 }
 
 fn describe_video_frame(frame: &frame::Video) -> String {

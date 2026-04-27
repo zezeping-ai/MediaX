@@ -55,10 +55,11 @@ pub fn handle_close_requested(window: &tauri::Window, event: &tauri::WindowEvent
             tauri::async_runtime::spawn_blocking(move || {
                 let state = app.state::<MediaState>();
                 let is_playing = state
+                    .session
                     .playback
                     .lock()
                     .ok()
-                    .map(|mut playback| playback.state().status == PlaybackStatus::Playing)
+                    .map(|playback| playback.state().status == PlaybackStatus::Playing)
                     .unwrap_or(false);
                 if is_playing {
                     let _ = coordinator::pause(app.clone(), state, None);

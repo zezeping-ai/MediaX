@@ -1,14 +1,13 @@
 mod output_format;
 mod stats;
 
+use crate::app::media::playback::rate::{
+    discontinuity_smoothing_profile, output_staging_frames, PlaybackRate,
+};
 use ffmpeg_next::software::resampling::context::Context as ResamplingContext;
 
 pub(crate) use output_format::AudioOutputSampleFormat;
 pub(crate) use stats::AudioStats;
-
-const DISCONTINUITY_FADE_IN_FRAMES: usize = 256;
-const DISCONTINUITY_CROSSFADE_FRAMES: usize = 192;
-const OUTPUT_STAGING_FRAMES: usize = 1024;
 
 pub(crate) struct AudioPipeline {
     pub stream_index: usize,
@@ -20,12 +19,14 @@ pub(crate) struct AudioPipeline {
     pub output: super::output::AudioOutput,
     pub stats: AudioStats,
     pub(crate) discontinuity_fade_in_frames_remaining: usize,
+    pub(crate) discontinuity_fade_in_total_frames: usize,
     pub(crate) output_staging_channels: u16,
     pub(crate) output_staging_samples: Vec<f32>,
     pub(crate) recent_output_tail_channels: u16,
     pub(crate) recent_output_tail_samples: Vec<f32>,
     pub(crate) discontinuity_crossfade_tail_channels: u16,
     pub(crate) discontinuity_crossfade_tail_samples: Vec<f32>,
+    pub(crate) discontinuity_crossfade_frames: usize,
 }
 
 impl AudioPipeline {
@@ -37,11 +38,18 @@ impl AudioPipeline {
         self.output.clear_queue();
     }
 
-    pub fn restart_after_discontinuity(&mut self) {
+    pub fn restart_after_discontinuity(
+        &mut self,
+        previous_rate: PlaybackRate,
+        next_rate: PlaybackRate,
+    ) {
         self.reset_processing_state();
         self.clear_output_queue();
         self.stats.intentional_refill_pending = true;
-        self.discontinuity_fade_in_frames_remaining = DISCONTINUITY_FADE_IN_FRAMES;
+        let smoothing = discontinuity_smoothing_profile(previous_rate, next_rate);
+        self.discontinuity_fade_in_total_frames = smoothing.fade_in_frames;
+        self.discontinuity_fade_in_frames_remaining = smoothing.fade_in_frames;
+        self.discontinuity_crossfade_frames = smoothing.crossfade_frames;
         self.output_staging_channels = 0;
         self.output_staging_samples.clear();
         self.discontinuity_crossfade_tail_channels = self.recent_output_tail_channels;
@@ -65,11 +73,12 @@ impl AudioPipeline {
         if fade_frames == 0 {
             return;
         }
+        let total_fade_frames = self.discontinuity_fade_in_total_frames.max(1);
         let progressed_frames =
-            DISCONTINUITY_FADE_IN_FRAMES.saturating_sub(self.discontinuity_fade_in_frames_remaining);
+            total_fade_frames.saturating_sub(self.discontinuity_fade_in_frames_remaining);
         for frame_index in 0..fade_frames {
             let absolute_index = progressed_frames + frame_index;
-            let gain = ((absolute_index + 1) as f32) / (DISCONTINUITY_FADE_IN_FRAMES as f32);
+            let gain = ((absolute_index + 1) as f32) / (total_fade_frames as f32);
             let frame_offset = frame_index * channel_count;
             for sample in &mut pcm[frame_offset..frame_offset + channel_count] {
                 *sample *= gain;
@@ -83,6 +92,7 @@ impl AudioPipeline {
         &mut self,
         pcm: &[f32],
         channels: u16,
+        playback_rate: PlaybackRate,
         force_flush_partial: bool,
     ) -> Vec<Vec<f32>> {
         if pcm.is_empty() || channels == 0 {
@@ -94,7 +104,8 @@ impl AudioPipeline {
         }
         self.output_staging_samples.extend_from_slice(pcm);
         let mut blocks = Vec::new();
-        let samples_per_block = OUTPUT_STAGING_FRAMES.saturating_mul(usize::from(channels));
+        let samples_per_block =
+            output_staging_frames(playback_rate).saturating_mul(usize::from(channels));
         while self.output_staging_samples.len() >= samples_per_block {
             let block: Vec<f32> = self.output_staging_samples.drain(..samples_per_block).collect();
             self.remember_output_tail(&block, channels);
@@ -132,7 +143,7 @@ impl AudioPipeline {
         let tail_frames = self.discontinuity_crossfade_tail_samples.len() / channel_count;
         let crossfade_frames = available_frames
             .min(tail_frames)
-            .min(DISCONTINUITY_CROSSFADE_FRAMES);
+            .min(self.discontinuity_crossfade_frames.max(1));
         if crossfade_frames == 0 {
             self.discontinuity_crossfade_tail_samples.clear();
             self.discontinuity_crossfade_tail_channels = 0;
@@ -166,7 +177,10 @@ impl AudioPipeline {
         if pcm.is_empty() || channel_count == 0 {
             return;
         }
-        let tail_samples = DISCONTINUITY_CROSSFADE_FRAMES.saturating_mul(channel_count);
+        let tail_samples = self
+            .discontinuity_crossfade_frames
+            .max(1)
+            .saturating_mul(channel_count);
         let start = pcm.len().saturating_sub(tail_samples);
         self.recent_output_tail_channels = channels;
         self.recent_output_tail_samples.clear();

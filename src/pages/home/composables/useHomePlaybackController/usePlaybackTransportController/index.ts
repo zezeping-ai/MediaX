@@ -1,4 +1,5 @@
 import { ref, watch } from "vue";
+import { normalizePlaybackRate } from "@/modules/player-constraints";
 import { usePlaybackShortcuts } from "../usePlaybackShortcuts";
 import { createTransportActions } from "./createTransportActions";
 import type { UsePlaybackTransportControllerOptions } from "./types";
@@ -32,7 +33,7 @@ export function usePlaybackTransportController(options: UsePlaybackTransportCont
       muted.value = false;
       return;
     }
-    playbackRate.value = value.playback_rate ?? 1;
+    playbackRate.value = normalizePlaybackRate(value.playback_rate ?? 1);
     volume.value = value.volume ?? 1;
     muted.value = value.muted ?? false;
   });

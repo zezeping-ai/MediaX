@@ -1,6 +1,7 @@
 use super::cover_art::extract_cover_frame;
 use super::lyrics::load_source_lyrics;
-use crate::app::media::model::{MediaLyricLine, PlaybackMediaKind};
+use crate::app::media::model::MediaLyricLine;
+use crate::app::media::playback::dto::PlaybackMediaKind;
 use crate::app::media::playback::render::renderer::VideoFrame;
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::format;
@@ -96,7 +97,7 @@ fn resolve_media_kind_from_stream_flags(
 #[cfg(test)]
 mod tests {
     use super::resolve_media_kind_from_stream_flags;
-    use crate::app::media::model::PlaybackMediaKind;
+    use crate::app::media::playback::dto::PlaybackMediaKind;
 
     #[test]
     fn classifies_audio_only_sources_as_audio() {
