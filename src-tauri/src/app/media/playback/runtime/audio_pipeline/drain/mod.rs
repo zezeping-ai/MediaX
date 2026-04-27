@@ -1,5 +1,4 @@
 mod diagnostics;
-mod samples;
 mod sync;
 
 use super::types::AudioPipeline;
@@ -15,7 +14,6 @@ use std::sync::Arc;
 use tauri::AppHandle;
 
 use self::diagnostics::emit_audio_debug_if_needed;
-use self::samples::extract_output_samples;
 use self::sync::{should_drop_pre_seek_audio_frame, sync_audio_clock};
 
 pub(crate) fn drain_audio_frames(
@@ -41,19 +39,46 @@ pub(crate) fn drain_audio_frames(
             .resampler
             .run(&decoded, &mut converted)
             .map_err(|err| format!("audio resample failed: {err}"))?;
+        if converted.pts().is_none() {
+            converted.set_pts(decoded.pts().or(decoded.timestamp()));
+        }
 
         let channels = converted.channels().max(1) as usize;
         let samples_per_channel = converted.samples();
-        let pcm = extract_output_samples(&converted, audio_state.output_sample_format)?;
+        let mut pcm = audio_state.time_stretch.process_frame(
+            &converted,
+            clamp_playback_rate(timing_controls.playback_rate()),
+        )?;
         if pcm.is_empty() {
+            if (clamp_playback_rate(timing_controls.playback_rate()) - 1.0).abs() > 1e-3 {
+                emit_debug(
+                    app,
+                    "audio_time_stretch_pending",
+                    format!(
+                        "rate={:.2} decoded_pts={:?} converted_pts={:?} samples_per_ch={}",
+                        timing_controls.playback_rate(),
+                        decoded.pts().or(decoded.timestamp()),
+                        converted.pts(),
+                        samples_per_channel,
+                    ),
+                );
+            }
             continue;
         }
-
-        audio_state
-            .output
-            .set_speed(clamp_playback_rate(timing_controls.playback_rate()));
         if audio_state.output.queue_depth() == 0 {
-            audio_state.stats.underrun_count = audio_state.stats.underrun_count.saturating_add(1);
+            if audio_state.stats.intentional_refill_pending {
+                emit_debug(
+                    app,
+                    "audio_refill",
+                    format!(
+                        "planned queue refill after discontinuity rate={:.2}",
+                        timing_controls.playback_rate(),
+                    ),
+                );
+            } else {
+                audio_state.stats.underrun_count =
+                    audio_state.stats.underrun_count.saturating_add(1);
+            }
         }
         if audio_state.output.is_paused() {
             audio_state.output.resume();
@@ -79,13 +104,20 @@ pub(crate) fn drain_audio_frames(
             active_seek_target_seconds,
         );
 
-        audio_state.stats.queued_samples = audio_state
-            .stats
-            .queued_samples
-            .saturating_add(pcm.len() as u64);
-        audio_state
-            .output
-            .append_pcm_f32(converted.rate(), converted.channels(), &pcm);
+        audio_state.apply_discontinuity_smoothing(&mut pcm, converted.channels());
+        audio_state.mark_refill_completed();
+        let force_flush_partial = audio_state.output.queue_depth() <= 1;
+        let output_blocks =
+            audio_state.stage_output_pcm(&pcm, converted.channels(), force_flush_partial);
+        for block in output_blocks {
+            audio_state.stats.queued_samples = audio_state
+                .stats
+                .queued_samples
+                .saturating_add(block.len() as u64);
+            audio_state
+                .output
+                .append_pcm_f32(converted.rate(), converted.channels(), &block);
+        }
         *audio_queue_depth_sources = Some(audio_state.output.queue_depth());
 
         emit_audio_debug_if_needed(

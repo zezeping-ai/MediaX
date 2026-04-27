@@ -3,11 +3,20 @@ use crate::app::media::playback::events::{
     MediaTelemetryPayload, MEDIA_PLAYBACK_AUDIO_METER_EVENT, MEDIA_PLAYBACK_DEBUG_EVENT,
     MEDIA_PLAYBACK_METADATA_EVENT, MEDIA_PLAYBACK_TELEMETRY_EVENT, MEDIA_PROTOCOL_VERSION,
 };
-use tauri::{AppHandle, Emitter};
+use crate::app::media::playback::debug_log::append_playback_debug_log;
+use crate::app::media::state::MediaState;
+use tauri::{AppHandle, Emitter, Manager};
 
-pub(super) fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) {
+pub(crate) fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) {
     let at_ms = unix_epoch_ms_now();
     let message = message.into();
+    if app
+        .state::<MediaState>()
+        .debug_controls
+        .playback_log_enabled()
+    {
+        append_playback_debug_log(app, at_ms, stage, &message);
+    }
     let _ = app.emit(
         MEDIA_PLAYBACK_DEBUG_EVENT,
         MediaEventEnvelope {

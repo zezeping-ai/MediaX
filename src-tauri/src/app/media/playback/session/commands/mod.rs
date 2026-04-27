@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod debug;
 pub mod preview;
 pub mod session;
 pub mod timing;

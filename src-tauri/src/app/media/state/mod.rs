@@ -7,7 +7,7 @@ use crate::app::media::playback::session::service::MediaPlaybackService;
 use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, Mutex};
 
-pub use controls::{AudioControls, TimingControls};
+pub use controls::{AudioControls, DebugControls, TimingControls};
 pub use snapshot::{
     emit_snapshot, emit_snapshot_with_request_id, library, playback, snapshot_from_state,
 };
@@ -22,7 +22,6 @@ pub struct CacheRecorderSession {
     pub error_message: Option<String>,
 }
 
-#[derive(Default)]
 pub struct MediaState {
     pub library: Mutex<MediaLibraryService>,
     pub playback: Mutex<MediaPlaybackService>,
@@ -31,5 +30,22 @@ pub struct MediaState {
     pub preview_frame_epoch: AtomicU32,
     pub audio_controls: Arc<AudioControls>,
     pub timing_controls: Arc<TimingControls>,
+    pub debug_controls: Arc<DebugControls>,
     pub cache_recorder: Mutex<Option<CacheRecorderSession>>,
+}
+
+impl Default for MediaState {
+    fn default() -> Self {
+        Self {
+            library: Mutex::default(),
+            playback: Mutex::default(),
+            stream: StreamRuntimeState::default(),
+            paused_seek_epoch: AtomicU32::default(),
+            preview_frame_epoch: AtomicU32::default(),
+            audio_controls: Arc::new(AudioControls::default()),
+            timing_controls: Arc::new(TimingControls::default()),
+            debug_controls: Arc::new(DebugControls::default()),
+            cache_recorder: Mutex::default(),
+        }
+    }
 }

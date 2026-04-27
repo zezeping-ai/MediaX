@@ -12,6 +12,7 @@ use super::frame_queue::{pick_frame_for_present, submit_frame_to_queue};
 use super::helpers::wait_for_render_signal;
 
 pub(super) const FRAME_QUEUE_CAPACITY: usize = 6;
+const RENDER_LOOP_IDLE_TICK: Duration = Duration::from_millis(8);
 
 #[derive(Clone)]
 pub struct RendererState {
@@ -99,9 +100,8 @@ impl RendererState {
         thread::spawn(move || {
             // Present continuously to align cadence with display vsync. When no new video
             // frame is due, we'll still present the previously uploaded texture.
-            let idle_tick = Duration::from_millis(16);
             while !inner.stop.load(Ordering::Relaxed) {
-                let _timed_out = wait_for_render_signal(&inner, idle_tick);
+                let _timed_out = wait_for_render_signal(&inner, RENDER_LOOP_IDLE_TICK);
                 if inner.render_task_in_flight.swap(true, Ordering::AcqRel) {
                     continue;
                 }

@@ -4,7 +4,7 @@ use crate::app::media::playback::runtime::audio_pipeline::{
     build_audio_pipeline, AudioPipeline,
 };
 use crate::app::media::playback::runtime::emit::emit_debug;
-use crate::app::media::state::{AudioControls, TimingControls};
+use crate::app::media::state::AudioControls;
 use ffmpeg_next::media::Type;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -13,7 +13,6 @@ pub(super) fn prepare_audio_pipeline(
     app: &AppHandle,
     video_ctx: &VideoDecodeContext,
     audio_controls: &Arc<AudioControls>,
-    timing_controls: &Arc<TimingControls>,
 ) -> Result<Option<AudioPipeline>, String> {
     let audio_stream_index = video_ctx
         .input_ctx
@@ -26,7 +25,6 @@ pub(super) fn prepare_audio_pipeline(
         &video_ctx.input_ctx,
         audio_stream_index,
         audio_controls,
-        timing_controls,
     )?;
     let debug_message = match audio_pipeline.as_ref() {
         Some(pipeline) => format!(

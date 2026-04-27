@@ -2,7 +2,7 @@ mod resampler;
 
 use super::output::AudioOutput;
 use super::types::AudioPipeline;
-use crate::app::media::state::{AudioControls, TimingControls};
+use crate::app::media::state::AudioControls;
 use ffmpeg_next::codec;
 use ffmpeg_next::format;
 use std::sync::Arc;
@@ -15,7 +15,6 @@ pub(crate) fn build_audio_pipeline(
     input_ctx: &format::context::Input,
     audio_stream_index: Option<usize>,
     audio_controls: &Arc<AudioControls>,
-    timing_controls: &Arc<TimingControls>,
 ) -> Result<Option<AudioPipeline>, String> {
     let Some(stream_index) = audio_stream_index else {
         return Ok(None);
@@ -34,14 +33,22 @@ pub(crate) fn build_audio_pipeline(
     let (resampler, output_sample_format) =
         create_compatible_resampler(&decoder, channel_layout)
             .map_err(|err| format!("audio resampler create failed: {err}"))?;
-    let output = AudioOutput::new(app, audio_controls.clone(), timing_controls.clone())?;
+    let output = AudioOutput::new(app, audio_controls.clone())?;
     Ok(Some(AudioPipeline {
         stream_index,
         decoder,
         time_base: input_stream.time_base(),
         resampler,
         output_sample_format,
+        time_stretch: super::time_stretch::AudioTimeStretch::new(output_sample_format),
         output,
         stats: Default::default(),
+        discontinuity_fade_in_frames_remaining: 0,
+        output_staging_channels: 0,
+        output_staging_samples: Vec::new(),
+        recent_output_tail_channels: 0,
+        recent_output_tail_samples: Vec::new(),
+        discontinuity_crossfade_tail_channels: 0,
+        discontinuity_crossfade_tail_samples: Vec::new(),
     }))
 }

@@ -3,6 +3,7 @@ use crate::app::media::error::MediaCommandError;
 use crate::app::media::model::{
     HardwareDecodeMode, MediaSnapshot, PlaybackChannelRouting, PlaybackQualityMode,
 };
+use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::session::coordinator;
 use crate::app::media::state::MediaState;
 use tauri::{AppHandle, State};
@@ -31,6 +32,7 @@ pub fn playback_set_rate(
     playback_rate: f64,
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, MediaCommandError> {
+    emit_debug(&app, "rate_request", format!("requested playback_rate={playback_rate:.3}"));
     command_result(coordinator::set_rate(app, state, playback_rate, request_id))
 }
 

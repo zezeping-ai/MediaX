@@ -104,4 +104,13 @@ impl DecodeLoopState {
         self.rate_switch_settle_until =
             Some(Instant::now() + Duration::from_millis(RATE_SWITCH_SETTLE_WINDOW_MS));
     }
+
+    pub fn reset_audio_sync_state(&mut self) {
+        self.audio_clock = None;
+        self.audio_queue_depth_sources = None;
+    }
+
+    pub fn commit_audio_playback_rate(&mut self, playback_rate: f32) {
+        self.last_applied_audio_rate = playback_rate;
+    }
 }

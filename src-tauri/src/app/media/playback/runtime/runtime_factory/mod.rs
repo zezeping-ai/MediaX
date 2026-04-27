@@ -56,7 +56,6 @@ pub(super) fn create_decode_runtime(
         dependencies.app,
         &video_ctx,
         dependencies.audio_controls,
-        dependencies.timing_controls,
     )?;
     emit_runtime_metadata(dependencies.app, &video_ctx);
     dependencies.renderer.reset_timeline(

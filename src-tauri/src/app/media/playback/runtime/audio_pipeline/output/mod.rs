@@ -1,8 +1,7 @@
 use super::meter::{
     create_shared_audio_meter, spawn_audio_meter_emitter, MeteredSource, SharedAudioMeter,
 };
-use crate::app::media::playback::runtime::audio::clamp_playback_rate;
-use crate::app::media::state::{AudioControls, TimingControls};
+use crate::app::media::state::AudioControls;
 use rodio::{buffer::SamplesBuffer, DeviceSinkBuilder, MixerDeviceSink, Player};
 use std::num::{NonZeroU16, NonZeroU32};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,18 +13,13 @@ pub(crate) struct AudioOutput {
     pub _stream: MixerDeviceSink,
     pub player: Player,
     pub controls: Arc<AudioControls>,
-    pub timing_controls: Arc<TimingControls>,
     pub meter_stop_flag: Arc<AtomicBool>,
     pub meter_thread: Option<JoinHandle<()>>,
     pub meter_shared: SharedAudioMeter,
 }
 
 impl AudioOutput {
-    pub fn new(
-        app: &AppHandle,
-        controls: Arc<AudioControls>,
-        timing_controls: Arc<TimingControls>,
-    ) -> Result<Self, String> {
+    pub fn new(app: &AppHandle, controls: Arc<AudioControls>) -> Result<Self, String> {
         let mut stream = DeviceSinkBuilder::open_default_sink()
             .map_err(|err| format!("open default audio output failed: {err}"))?;
         stream.log_on_drop(false);
@@ -38,27 +32,16 @@ impl AudioOutput {
             _stream: stream,
             player,
             controls,
-            timing_controls,
             meter_stop_flag,
             meter_thread: Some(meter_thread),
             meter_shared,
         };
         output.player.play();
-        output.apply_controls();
         Ok(output)
-    }
-
-    pub fn apply_controls(&self) {
-        self.player
-            .set_speed(clamp_playback_rate(self.timing_controls.playback_rate()));
     }
 
     pub fn queue_depth(&self) -> usize {
         self.player.len()
-    }
-
-    pub fn set_speed(&self, speed: f32) {
-        self.player.set_speed(speed);
     }
 
     pub fn is_paused(&self) -> bool {
@@ -84,7 +67,6 @@ impl AudioOutput {
         if pcm.is_empty() {
             return;
         }
-        self.apply_controls();
         let source = SamplesBuffer::new(channels, sample_rate, pcm.to_vec());
         self.player.append(MeteredSource::new(
             source,

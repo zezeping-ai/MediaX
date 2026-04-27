@@ -41,7 +41,7 @@ pub fn apply_seek_to_stream(
     if let Some(audio_state) = audio_pipeline {
         audio_state.decoder.flush();
         // Clearing queued sources pauses rodio playback. Resume immediately after seek.
-        audio_state.output.clear_queue();
+        audio_state.restart_after_discontinuity();
     }
     playback_clock.reset_to(clamped);
     *current_position_seconds = clamped;

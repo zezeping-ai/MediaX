@@ -15,8 +15,9 @@ mod video_pipeline;
 
 pub(crate) use self::constants::*;
 pub(crate) use self::decode_params::{DecodeDependencies, DecodeRequest};
+pub(crate) use self::emit::emit_debug;
 use self::decode_runtime::DecodeRuntime;
-use self::emit::{emit_debug, emit_telemetry_payloads};
+use self::emit::emit_telemetry_payloads;
 use self::loop_driver::{finish_decode_runtime, run_decode_loop};
 use self::runtime_factory::create_decode_runtime;
 

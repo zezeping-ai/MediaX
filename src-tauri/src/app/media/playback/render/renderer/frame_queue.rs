@@ -5,14 +5,18 @@ pub(super) fn pick_frame_for_present(
     inner: &RendererInner,
     now_media_seconds: f64,
 ) -> Option<VideoFrame> {
-    let present_lead = 0.002;
+    let present_lead = 0.004;
     let deadline = now_media_seconds + present_lead;
     let mut queue = inner.queued_frames.lock().ok()?;
-    let pts_seconds = queue.front()?.pts_seconds;
-    if !pts_seconds.is_finite() || pts_seconds <= deadline {
-        return queue.pop_front();
+    let mut selected = None;
+    while let Some(frame) = queue.front() {
+        if !frame.pts_seconds.is_finite() || frame.pts_seconds <= deadline {
+            selected = queue.pop_front();
+            continue;
+        }
+        break;
     }
-    None
+    selected
 }
 
 pub(super) fn submit_frame_to_queue(inner: &RendererInner, frame: VideoFrame) {

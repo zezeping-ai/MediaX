@@ -90,6 +90,16 @@ fn flush_audio_decoder(
         &mut runtime.loop_state.audio_queue_depth_sources,
         &mut runtime.loop_state.active_seek_target_seconds,
     )?;
+    if let Some((channels, block)) = audio_state.flush_staged_output_pcm() {
+        audio_state.stats.queued_samples = audio_state
+            .stats
+            .queued_samples
+            .saturating_add(block.len() as u64);
+        audio_state
+            .output
+            .append_pcm_f32(audio_state.decoder.rate(), channels, &block);
+        runtime.loop_state.audio_queue_depth_sources = Some(audio_state.output.queue_depth());
+    }
     if audio_state.stats.packets > 0 && audio_state.stats.decoded_frames == 0 {
         emit_debug(
             app,

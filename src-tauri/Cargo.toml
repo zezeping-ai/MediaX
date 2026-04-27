@@ -37,6 +37,7 @@ sysinfo = "0.38.4"
 ffmpeg-next = { version = "7", default-features = false, features = [
     "static",
     "codec",
+    "filter",
     "format",
     "software-resampling",
     "software-scaling",
@@ -45,6 +46,7 @@ ffmpeg-next = { version = "7", default-features = false, features = [
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 ffmpeg-next = { version = "7", default-features = false, features = [
     "codec",
+    "filter",
     "format",
     "software-resampling",
     "software-scaling",

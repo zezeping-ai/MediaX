@@ -15,7 +15,10 @@ mod pacing;
 mod packet_flow;
 mod tail;
 
-use self::pacing::{refresh_audio_rate, refresh_tail_audio_rate, should_wait_for_decode_lead};
+use self::pacing::{
+    refresh_audio_rate, refresh_tail_audio_rate, should_wait_for_audio_queue_drain,
+    should_wait_for_decode_lead,
+};
 use self::packet_flow::{drain_video_frames, handle_packet};
 pub(super) use self::tail::finish_decode_runtime;
 
@@ -34,6 +37,10 @@ pub(super) fn run_decode_loop(
         }
         refresh_audio_rate(runtime, timing_controls);
         if should_wait_for_decode_lead(runtime) {
+            std::thread::sleep(Duration::from_millis(video_pipeline::DECODE_LEAD_SLEEP_MS));
+            continue;
+        }
+        if should_wait_for_audio_queue_drain(app, runtime) {
             std::thread::sleep(Duration::from_millis(video_pipeline::DECODE_LEAD_SLEEP_MS));
             continue;
         }
@@ -133,8 +140,7 @@ fn apply_pending_seek(
         target_seconds.max(0.0),
         timing_controls.playback_rate() as f64,
     );
-    runtime.loop_state.audio_clock = None;
-    runtime.loop_state.audio_queue_depth_sources = None;
+    runtime.loop_state.reset_audio_sync_state();
     runtime.loop_state.active_seek_target_seconds = Some(target_seconds.max(0.0));
     runtime.loop_state.last_video_pts_seconds = None;
     runtime.loop_state.last_progress_emit = Instant::now() - Duration::from_millis(250);

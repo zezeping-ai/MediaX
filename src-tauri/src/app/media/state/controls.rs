@@ -17,6 +17,10 @@ pub struct TimingControls {
     playback_rate_bits: AtomicU32,
 }
 
+pub struct DebugControls {
+    playback_log_enabled: AtomicBool,
+}
+
 impl AudioControls {
     pub fn volume(&self) -> f32 {
         let bits = self.volume_bits.load(Ordering::Relaxed);
@@ -120,5 +124,23 @@ impl TimingControls {
         let normalized = value.clamp(0.25, 3.0);
         self.playback_rate_bits
             .store(normalized.to_bits(), Ordering::Relaxed);
+    }
+}
+
+impl DebugControls {
+    pub fn playback_log_enabled(&self) -> bool {
+        self.playback_log_enabled.load(Ordering::Relaxed)
+    }
+
+    pub fn set_playback_log_enabled(&self, value: bool) {
+        self.playback_log_enabled.store(value, Ordering::Relaxed);
+    }
+}
+
+impl Default for DebugControls {
+    fn default() -> Self {
+        Self {
+            playback_log_enabled: AtomicBool::new(true),
+        }
     }
 }
