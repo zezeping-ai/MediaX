@@ -1,5 +1,5 @@
 import { useWindowSize } from "@vueuse/core";
-import { computed, onBeforeUnmount, ref, watch, type ComputedRef } from "vue";
+import { computed, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import type {
   MediaAudioMeterPayload,
   MediaLyricLine,
@@ -23,14 +23,14 @@ type StereoBridgeChannel = {
 };
 
 type UseAudioLyricsOverlayOptions = {
-  mediaKind: ComputedRef<"video" | "audio">;
-  playback: ComputedRef<PlaybackState | null>;
-  audioMeter: ComputedRef<MediaAudioMeterPayload | null>;
-  lyrics: ComputedRef<MediaLyricLine[]>;
-  title: ComputedRef<string>;
-  artist: ComputedRef<string>;
-  album: ComputedRef<string>;
-  hasCoverArt: ComputedRef<boolean>;
+  mediaKind: Readonly<Ref<"video" | "audio">>;
+  playback: Readonly<Ref<PlaybackState | null>>;
+  audioMeter: Readonly<Ref<MediaAudioMeterPayload | null>>;
+  lyrics: Readonly<Ref<MediaLyricLine[]>>;
+  title: Readonly<Ref<string>>;
+  artist: Readonly<Ref<string>>;
+  album: Readonly<Ref<string>>;
+  hasCoverArt: Readonly<Ref<boolean>>;
 };
 
 const SPECTRUM_BAR_COUNT = 24;

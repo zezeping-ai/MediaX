@@ -5,54 +5,144 @@ on:
     tags:
       - "v*"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
 
 jobs:
   publish-tauri:
+    name: Release ${{ matrix.os_name }}-${{ matrix.arch }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
-          - platform: macos-latest
+          - os_name: macos
+            arch: arm64
+            platform: macos-15
             args: ""
-          - platform: ubuntu-22.04
+          - os_name: macos
+            arch: x64
+            platform: macos-15-intel
             args: ""
-          - platform: windows-latest
+          - os_name: ubuntu
+            arch: x64
+            platform: ubuntu-24.04
+            args: ""
+          - os_name: ubuntu
+            arch: arm64
+            platform: ubuntu-24.04-arm
+            args: ""
+          - os_name: windows
+            arch: x64
+            platform: windows-2025
+            args: ""
+          - os_name: windows
+            arch: arm64
+            platform: windows-11-arm
             args: ""
 
     runs-on: ${{ matrix.platform }}
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.cache/vcpkg
+      PNPM_STORE_DIR: ${{ github.workspace }}/.pnpm-store
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Install pnpm
+        shell: bash
+        run: npm install -g pnpm@9
+
+      - name: Cache pnpm store
+        uses: actions/cache@v5
         with:
-          version: 9
-          run_install: false
+          path: ${{ env.PNPM_STORE_DIR }}
+          key: pnpm-store-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-${{ matrix.arch }}-
+            pnpm-store-${{ runner.os }}-
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+          shared-key: release-${{ matrix.os_name }}-${{ matrix.arch }}
+
+      - name: Cache vcpkg
+        if: matrix.os_name == 'windows'
+        uses: actions/cache@v5
+        with:
+          # Keep Windows on the FFmpeg 7-era vcpkg ports line to match `ffmpeg-next = "7"`.
+          path: ${{ env.VCPKG_ROOT }}
+          key: vcpkg-${{ matrix.os_name }}-${{ matrix.arch }}-2025.10.17-ffmpeg7-v1
+          restore-keys: |
+            vcpkg-${{ matrix.os_name }}-${{ matrix.arch }}-2025.10.17-
+            vcpkg-${{ matrix.os_name }}-${{ matrix.arch }}-
+
       - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.os_name == 'ubuntu'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            ffmpeg \
+            libavcodec-dev \
+            libavfilter-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libswresample-dev \
+            libswscale-dev \
+            libasound2-dev \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
+            xdg-utils \
             patchelf
 
+      - name: Install macOS dependencies
+        if: matrix.os_name == 'macos'
+        run: |
+          brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
+          brew list ffmpeg@7 >/dev/null 2>&1 || brew install ffmpeg@7
+          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg@7)/lib/pkgconfig:$(brew --prefix)/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "CPATH=$(brew --prefix ffmpeg@7)/include" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=$(brew --prefix ffmpeg@7)/lib" >> "$GITHUB_ENV"
+
+      - name: Setup vcpkg
+        if: matrix.os_name == 'windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:VCPKG_ROOT\.git")) {
+            git clone --branch 2025.10.17 --depth 1 https://github.com/microsoft/vcpkg "$env:VCPKG_ROOT"
+          }
+          git -C "$env:VCPKG_ROOT" fetch --depth 1 origin refs/tags/2025.10.17
+          git -C "$env:VCPKG_ROOT" checkout --force 2025.10.17
+          if (-not (Test-Path "$env:VCPKG_ROOT\vcpkg.exe")) {
+            & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          }
+
+      - name: Install Windows FFmpeg dependencies
+        if: matrix.os_name == 'windows'
+        shell: pwsh
+        run: |
+          $triplet = if ("${{ matrix.arch }}" -eq "arm64") { "arm64-windows-static-md" } else { "x64-windows-static-md" }
+          & "$env:VCPKG_ROOT\vcpkg.exe" install "ffmpeg[avcodec,avfilter,avformat,swresample,swscale]:$triplet" --x-install-root="$env:VCPKG_ROOT\installed"
+          "VCPKGRS_TRIPLET=$triplet" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCPKG_DEFAULT_TRIPLET=$triplet" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --store-dir "${PNPM_STORE_DIR}"
 
       # Tauri updater key notes (for future key rotation):
       # 1) Generate a new key pair locally:
@@ -65,16 +155,261 @@ jobs:
       #    Then update repository secret `TAURI_SIGNING_PRIVATE_KEY` with the new value.
       #    If the key is encrypted, also set `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
       # 4) Commit the updated `tauri.conf.json` and workflow, then create a new release tag.
-      - name: Build and publish release
-        uses: tauri-apps/tauri-action@v0
+      - name: Normalize updater signing secrets
+        shell: bash
+        env:
+          RAW_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          RAW_TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          key="$(printf '%s' "$RAW_TAURI_SIGNING_PRIVATE_KEY" | tr -d '\r\n\t ')"
+          if [ -z "$key" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY secret is empty"
+            exit 1
+          fi
+
+          {
+            echo "TAURI_SIGNING_PRIVATE_KEY<<EOF"
+            echo "$key"
+            echo "EOF"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$RAW_TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build app bundles
+        uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: "dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5ClJXUlRZMEl5Qlc1VzNpeHQwaGwzZFJsSFN6aDZrVlZ2blk1SG1QYThBWUZuWXQ3SHlRRUFBQkFBQUFBQUFBQUFBQUlBQUFBQXQrem9NR1BrWXkzTmQrZFd6OUtHNDJCZ1pLcStXRm9jVytVWXZKVHdONFVZZHVrZDNub0I5djV2MndXQlo4d3IvcVBpVFAvMDhGV3BoZzFUalNtWG9kRm00Rlpvbmp0SDhTTWRWQVY3YjhGYVhKL1RVV3ZxVzkvNXM5aittL3laM3VLZzdJNDB1TW89Cg=="
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "mediax-updater-2026"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ env.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "MediaX ${{ github.ref_name }}"
-          releaseBody: "Automated release for ${{ github.ref_name }}"
-          releaseDraft: false
-          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
+
+      - name: Prepare release assets
+        shell: bash
+        env:
+          MATRIX_OS_NAME: ${{ matrix.os_name }}
+          MATRIX_ARCH: ${{ matrix.arch }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const bundleRoot = path.join(process.cwd(), 'src-tauri', 'target', 'release', 'bundle');
+          const outputRoot = path.join(process.cwd(), 'release-staging');
+          const osName = process.env.MATRIX_OS_NAME;
+          const arch = process.env.MATRIX_ARCH;
+          const repository = process.env.GITHUB_REPOSITORY;
+          const tagName = process.env.GITHUB_REF_NAME;
+          const version = tagName.replace(/^v/, '');
+
+          const platformKey = {
+            macos: arch === 'arm64' ? 'darwin-aarch64' : 'darwin-x86_64',
+            ubuntu: arch === 'arm64' ? 'linux-aarch64' : 'linux-x86_64',
+            windows: arch === 'arm64' ? 'windows-aarch64' : 'windows-x86_64',
+          }[osName];
+
+          fs.rmSync(outputRoot, { recursive: true, force: true });
+          fs.mkdirSync(outputRoot, { recursive: true });
+
+          function walk(dir) {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            const files = [];
+
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                files.push(...walk(fullPath));
+              } else {
+                files.push(fullPath);
+              }
+            }
+
+            return files;
+          }
+
+          const files = walk(bundleRoot);
+          let updaterAssetName = null;
+          let updaterSignaturePath = null;
+
+          for (const filePath of files) {
+            const fileName = path.basename(filePath);
+
+            if (osName === 'macos') {
+              if (fileName.endsWith('.dmg')) {
+                fs.copyFileSync(filePath, path.join(outputRoot, fileName));
+                continue;
+              }
+              if (fileName.endsWith('.app.tar.gz')) {
+                const targetName = fileName.endsWith('.app.tar.gz')
+                  ? `mediax_${arch}.app.tar.gz`
+                  : fileName;
+                fs.copyFileSync(filePath, path.join(outputRoot, targetName));
+                updaterAssetName = targetName;
+                continue;
+              }
+              if (fileName.endsWith('.app.tar.gz.sig')) {
+                updaterSignaturePath = filePath;
+              }
+              continue;
+            }
+
+            if (osName === 'ubuntu') {
+              if (fileName.endsWith('.deb')) {
+                fs.copyFileSync(filePath, path.join(outputRoot, fileName));
+                continue;
+              }
+              if (fileName.endsWith('.AppImage')) {
+                fs.copyFileSync(filePath, path.join(outputRoot, fileName));
+                updaterAssetName = fileName;
+                continue;
+              }
+              if (fileName.endsWith('.AppImage.sig')) {
+                updaterSignaturePath = filePath;
+              }
+              continue;
+            }
+
+            if (osName === 'windows') {
+              if (fileName.endsWith('-setup.exe')) {
+                fs.copyFileSync(filePath, path.join(outputRoot, fileName));
+                updaterAssetName = fileName;
+                continue;
+              }
+              if (fileName.endsWith('-setup.exe.sig')) {
+                updaterSignaturePath = filePath;
+              }
+            }
+          }
+
+          if (!updaterAssetName) {
+            throw new Error(`updater asset not found for ${platformKey}`);
+          }
+          if (!updaterSignaturePath) {
+            throw new Error(`updater signature not found for ${platformKey}`);
+          }
+
+          const signature = fs.readFileSync(updaterSignaturePath, 'utf8').trim();
+          const latestFragment = {
+            version,
+            notes: '',
+            pub_date: new Date().toISOString(),
+            platforms: {
+              [platformKey]: {
+                signature,
+                url: `https://github.com/${repository}/releases/download/${tagName}/${updaterAssetName}`,
+              },
+            },
+          };
+
+          fs.writeFileSync(
+            path.join(outputRoot, `latest-${platformKey}.json`),
+            `${JSON.stringify(latestFragment, null, 2)}\n`,
+          );
+          NODE
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: tauri-${{ matrix.os_name }}-${{ matrix.arch }}
+          path: |
+            release-staging/*
+          if-no-files-found: error
+
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-24.04
+    needs: publish-tauri
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: release-artifacts
+          merge-multiple: false
+
+      - name: Merge updater manifests and collect release files
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const artifactsRoot = path.join(process.cwd(), 'release-artifacts');
+          const releaseRoot = path.join(process.cwd(), 'release-assets');
+
+          fs.rmSync(releaseRoot, { recursive: true, force: true });
+          fs.mkdirSync(releaseRoot, { recursive: true });
+
+          function walk(dir) {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            const files = [];
+
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                files.push(...walk(fullPath));
+              } else {
+                files.push(fullPath);
+              }
+            }
+
+            return files;
+          }
+
+          const files = walk(artifactsRoot);
+          const latestFragments = [];
+
+          for (const filePath of files) {
+            const fileName = path.basename(filePath);
+            if (/^latest-.*\.json$/i.test(fileName)) {
+              latestFragments.push(filePath);
+              continue;
+            }
+
+            fs.copyFileSync(filePath, path.join(releaseRoot, fileName));
+          }
+
+          if (latestFragments.length === 0) {
+            throw new Error('no updater fragments found');
+          }
+
+          const mergedLatest = {
+            version: null,
+            notes: '',
+            pub_date: null,
+            platforms: {},
+          };
+
+          for (const fragmentPath of latestFragments.sort()) {
+            const fragment = JSON.parse(fs.readFileSync(fragmentPath, 'utf8'));
+            if (!mergedLatest.version) {
+              mergedLatest.version = fragment.version;
+              mergedLatest.notes = fragment.notes ?? '';
+              mergedLatest.pub_date = fragment.pub_date ?? new Date().toISOString();
+            }
+
+            Object.assign(mergedLatest.platforms, fragment.platforms ?? {});
+          }
+
+          if (!mergedLatest.version || Object.keys(mergedLatest.platforms).length === 0) {
+            throw new Error('merged latest.json is incomplete');
+          }
+
+          fs.writeFileSync(
+            path.join(releaseRoot, 'latest.json'),
+            `${JSON.stringify(mergedLatest, null, 2)}\n`,
+          );
+          NODE
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "MediaX ${{ github.ref_name }}"
+          body: "Automated multi-arch release for ${{ github.ref_name }}"
+          draft: false
+          prerelease: false
+          files: release-assets/*

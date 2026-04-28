@@ -109,8 +109,6 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
   };
 
   return {
-    OpenUrlModal: viewModel.OpenUrlModal,
-    PlaybackControls: viewModel.PlaybackControls,
     controlsVisible: viewModel.controlsVisible,
     hasSource: viewModel.hasSource,
     mediaViewportEvents,

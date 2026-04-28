@@ -1,15 +1,4 @@
-import { defineAsyncComponent } from "vue";
 import { useHomePlaybackController } from "./composables/useHomePlaybackController";
-
-const PlaybackControls = defineAsyncComponent({
-  loader: () => import("./components/PlaybackControls"),
-  delay: 120,
-});
-
-const OpenUrlModal = defineAsyncComponent({
-  loader: () => import("./components/OpenUrlModal"),
-  delay: 120,
-});
 
 export function useHomePageViewModel() {
   const controller = useHomePlaybackController();
@@ -19,8 +8,6 @@ export function useHomePageViewModel() {
   }
 
   return {
-    PlaybackControls,
-    OpenUrlModal,
     handleVideoEnded,
     ...controller,
   };

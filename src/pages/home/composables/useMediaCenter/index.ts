@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { usePreferences } from "@/modules/preferences";
-import type { HardwareDecodeMode } from "@/modules/media-types";
+import type { HardwareDecodeMode, PreviewFrame } from "@/modules/media-types";
 import { useCacheRecordingController } from "./useCacheRecordingController";
 import { createMediaCenterActions } from "./createMediaCenterActions";
 import { createMediaInfoSnapshot } from "./createMediaInfoSnapshot";
@@ -83,7 +83,11 @@ export function useMediaCenter() {
     await playbackSettings.applyVideoScaleMode(mode);
   }
 
-  async function requestPreviewFrame(positionSeconds: number, maxWidth = 160, maxHeight = 90) {
+  async function requestPreviewFrame(
+    positionSeconds: number,
+    maxWidth = 160,
+    maxHeight = 90,
+  ): Promise<PreviewFrame | null> {
     try {
       return await playbackSettings.requestTimelinePreview(positionSeconds, maxWidth, maxHeight);
     } catch {

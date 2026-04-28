@@ -1,4 +1,8 @@
-import type { PlaybackChannelRouting, PlaybackQualityMode } from "@/modules/media-types";
+import type {
+  PlaybackChannelRouting,
+  PlaybackQualityMode,
+  PreviewFrame,
+} from "@/modules/media-types";
 import type { createPlaybackCommandRunner } from "./createPlaybackCommandRunner";
 import type { useCacheRecordingController } from "./useCacheRecordingController";
 import type { useMediaUrlInputController } from "./useMediaUrlInputController";
@@ -16,7 +20,7 @@ type CreateMediaCenterActionsOptions = {
     positionSeconds: number,
     maxWidth?: number,
     maxHeight?: number,
-  ) => Promise<unknown>;
+  ) => Promise<PreviewFrame | null>;
 };
 
 export function createMediaCenterActions(options: CreateMediaCenterActionsOptions) {

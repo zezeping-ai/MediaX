@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useResizeObserver } from "@vueuse/core";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import type { ECharts, EChartsOption } from "echarts/core";
+import type { ECharts, EChartsCoreOption } from "echarts/core";
 
 const props = defineProps<{
   bars: number[];
@@ -49,7 +49,7 @@ function axisDbLabel(value: number) {
   return matched === undefined ? "" : `${matched}`;
 }
 
-function buildOption(): EChartsOption {
+function buildOption(): EChartsCoreOption {
   const peakLine = peakHoldValue.value;
   const isCompact = Boolean(props.compact);
   return {

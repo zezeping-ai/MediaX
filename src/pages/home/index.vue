@@ -1,12 +1,12 @@
 <script setup lang="ts">
+import OpenUrlModal from "./components/OpenUrlModal";
+import PlaybackControls from "./components/PlaybackControls";
 import MediaViewport from "./components/MediaViewport";
 import StatusAlerts from "./components/StatusAlerts.vue";
 import { useHomePageBindings } from "./useHomePageBindings";
 import { useHomePageViewModel } from "./useHomePageViewModel";
 
 const {
-  OpenUrlModal,
-  PlaybackControls,
   controlsVisible,
   hasSource,
   mediaViewportEvents,
@@ -35,8 +35,7 @@ const {
         @quick-open-local="mediaViewportEvents.onQuickOpenLocal"
         @quick-open-url="mediaViewportEvents.onQuickOpenUrl"
       />
-      <component
-        :is="PlaybackControls"
+      <PlaybackControls
         v-if="hasSource"
         class="absolute bottom-0 left-1/2 z-30 w-[min(760px,calc(100vw-32px))] -translate-x-1/2 opacity-100 transition-[opacity,transform] duration-300 ease-out will-change-transform"
         :class="!controlsVisible ? 'pointer-events-none translate-y-[120%] opacity-0' : ''"
@@ -63,8 +62,7 @@ const {
         @toggle-lock="playbackControlsEvents.onToggleLock"
       />
       <StatusAlerts v-bind="statusAlertProps" />
-      <component
-        :is="OpenUrlModal"
+      <OpenUrlModal
         v-if="urlDialogVisible"
         v-model:open="urlDialogVisible"
         v-model:input-value="urlDialogInputValue"
