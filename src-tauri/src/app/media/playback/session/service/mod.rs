@@ -11,6 +11,7 @@ use crate::app::media::playback::dto::{
 use crate::app::media::playback::rate::PlaybackRate;
 
 use self::model::PlaybackSessionModel;
+pub(super) use self::source_capabilities::supports_timeline_seek;
 use self::snapshot::{export_media_snapshot, export_playback_state};
 use self::source_capabilities::supports_adaptive_quality;
 use self::state_transitions::{
@@ -150,9 +151,15 @@ impl MediaPlaybackService {
         self.session.source.adaptive_quality_supported
     }
 
-    pub fn sync_position(&mut self, position_seconds: f64, duration_seconds: f64) -> PlaybackState {
+    pub fn sync_position(
+        &mut self,
+        position_seconds: f64,
+        duration_seconds: f64,
+        buffered_position_seconds: f64,
+    ) -> PlaybackState {
         self.session.transport.position_seconds = position_seconds.max(0.0);
         self.session.transport.duration_seconds = duration_seconds.max(0.0);
+        self.session.transport.buffered_position_seconds = buffered_position_seconds.max(0.0);
         self.state()
     }
 }

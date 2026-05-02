@@ -64,8 +64,10 @@ export function playbackSeekTo(positionSeconds: number, options: SeekMediaOption
 }
 
 export function playbackSetRate(playbackRate: number) {
+  const normalized = normalizePlaybackRate(playbackRate);
   return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>("playback_set_rate", isMediaSnapshot, {
-    playbackRate: normalizePlaybackRate(playbackRate),
+    playback_rate: normalized,
+    playbackRate: normalized,
   });
 }
 

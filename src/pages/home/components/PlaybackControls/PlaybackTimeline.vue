@@ -10,6 +10,7 @@ const TimelineHoverPreview = defineAsyncComponent({
 
 const props = defineProps<{
   currentTime: number;
+  bufferedTime: number;
   duration: number;
   decodeBadgeClass: string;
   decodeBadgeLabel: string;
@@ -31,6 +32,13 @@ defineEmits<{
 }>();
 
 const previewDuration = computed(() => Math.max(props.duration, props.sliderMax));
+const bufferedPercent = computed(() => {
+  const max = Math.max(props.sliderMax, 1);
+  const buffered = Math.max(props.currentTime, Math.min(props.bufferedTime, max));
+  return (buffered / max) * 100;
+});
+
+const timelineRailInsetPx = 5;
 </script>
 
 <template>
@@ -53,21 +61,39 @@ const previewDuration = computed(() => Math.max(props.duration, props.sliderMax)
       </div>
     </div>
 
-    <TimelineHoverPreview
-      :duration-seconds="previewDuration"
-      :source-key="sourceKey"
-      :request-preview-frame="requestPreviewFrame"
-    >
-      <a-slider
-        class="w-full [&_.ant-slider]:m-0! [&_.ant-slider-handle::after]:bg-white [&_.ant-slider-handle::after]:shadow-[0_0_0_2px_rgba(255,255,255,0.26)] [&_.ant-slider-handle:hover]:opacity-100 [&_.ant-slider-handle]:opacity-95 [&_.ant-slider-rail]:h-[3px] [&_.ant-slider-rail]:bg-white/12 [&_.ant-slider-track]:h-[3px] [&_.ant-slider-track]:bg-white/85"
-        :value="currentTime"
-        :max="sliderMax"
-        :disabled="timelineDisabled"
-        :title="timelineTitle"
-        :tooltip-open="false"
-        @update:value="$emit('preview', $event)"
-        @change="$emit('commit', $event)"
-      />
-    </TimelineHoverPreview>
+    <div class="relative">
+      <div
+        class="pointer-events-none absolute top-1/2 z-0 h-[3px] -translate-y-1/2 overflow-hidden rounded-full"
+        :style="{
+          left: `${timelineRailInsetPx}px`,
+          right: `${timelineRailInsetPx}px`,
+        }"
+      >
+        <div
+          class="h-full rounded-full bg-white/25 transition-[width] duration-150"
+          :style="{ width: `${bufferedPercent}%` }"
+        />
+      </div>
+
+      <TimelineHoverPreview
+        :duration-seconds="previewDuration"
+        :source-key="sourceKey"
+        :request-preview-frame="requestPreviewFrame"
+      >
+        <a-slider
+          class="relative z-10 w-full [&_.ant-slider]:m-0! [&_.ant-slider-handle::after]:bg-white [&_.ant-slider-handle::after]:shadow-[0_0_0_2px_rgba(255,255,255,0.26)] [&_.ant-slider-handle:hover]:opacity-100 [&_.ant-slider-handle]:opacity-95 [&_.ant-slider-rail]:h-[3px] [&_.ant-slider-rail]:bg-white/12 [&_.ant-slider-track]:h-[3px] [&_.ant-slider-track]:bg-white/85"
+          :style="{
+            paddingInline: `${timelineRailInsetPx}px`,
+          }"
+          :value="currentTime"
+          :max="sliderMax"
+          :disabled="timelineDisabled"
+          :title="timelineTitle"
+          :tooltip-open="false"
+          @update:value="$emit('preview', $event)"
+          @change="$emit('commit', $event)"
+        />
+      </TimelineHoverPreview>
+    </div>
   </div>
 </template>

@@ -11,6 +11,7 @@ pub(super) fn export_playback_state(model: &PlaybackSessionModel) -> PlaybackSta
         current_path: model.source.current_path.clone(),
         position_seconds: model.transport.position_seconds,
         duration_seconds: model.transport.duration_seconds,
+        buffered_position_seconds: model.transport.buffered_position_seconds,
         playback_rate: model.transport.playback_rate.as_f64(),
         error: model.transport.error.clone(),
         hw_decode_mode: model.decode.hw_decode_mode,

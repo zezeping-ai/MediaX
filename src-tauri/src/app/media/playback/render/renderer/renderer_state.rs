@@ -1,4 +1,5 @@
-use super::{Renderer, VideoFrame, VideoScaleMode};
+use super::{DecodedVideoFrame, QueuedFrame, Renderer, VideoFrame, VideoScaleMode};
+use ffmpeg_next::frame;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -6,18 +7,22 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::app::media::error::MediaError;
+use crate::app::media::playback::runtime::emit_debug;
 use tauri::Manager;
 
 use super::frame_queue::{pick_frame_for_present, submit_frame_to_queue};
 use super::helpers::wait_for_render_signal;
 
 pub(super) const FRAME_QUEUE_HARD_CAPACITY: usize = 6;
-const FRAME_QUEUE_TARGET_BASE: usize = 3;
+const FRAME_QUEUE_TARGET_BASE_REALTIME: usize = 1;
+const FRAME_QUEUE_TARGET_BASE_NON_REALTIME: usize = 4;
 const RENDER_LOOP_IDLE_TICK: Duration = Duration::from_millis(8);
 const QUEUE_GROW_LAG_MS: f64 = 24.0;
 const QUEUE_SHRINK_LAG_MS: f64 = 8.0;
 const QUEUE_GROW_STREAK: u8 = 2;
 const QUEUE_SHRINK_STREAK: u8 = 18;
+const QUEUE_GROW_HOLD_AFTER_RESET_REALTIME: Duration = Duration::from_millis(3000);
+const QUEUE_GROW_HOLD_AFTER_RESET_NON_REALTIME: Duration = Duration::from_millis(350);
 
 #[derive(Clone)]
 pub struct RendererState {
@@ -27,18 +32,24 @@ pub struct RendererState {
 pub(super) struct RendererInner {
     pub(super) stop: AtomicBool,
     pub(super) renderer: Mutex<Option<Renderer>>,
-    pub(super) queued_frames: Mutex<VecDeque<VideoFrame>>,
+    pub(super) app_handle: Mutex<Option<tauri::AppHandle>>,
+    pub(super) queued_frames: Mutex<VecDeque<QueuedFrame>>,
     pub(super) last_queued_pts: Mutex<Option<f64>>,
     pub(super) clock: Mutex<ClockState>,
     pub(super) render_task_in_flight: AtomicBool,
     pub(super) pending_render: Mutex<bool>,
     pub(super) render_cv: Condvar,
+    pub(super) frame_slot_cv: Condvar,
     pub(super) video_scale_mode: AtomicU8,
+    pub(super) is_realtime_source: AtomicBool,
     pub(super) target_queue_capacity: AtomicUsize,
     pub(super) last_render_cost_micros: AtomicU64,
     pub(super) last_present_lag_ms_bits: AtomicU32,
     pub(super) last_presented_pts_bits: AtomicU64,
     pub(super) queue_tuning: Mutex<QueueTuningState>,
+    pub(super) queue_growth_hold_until: Mutex<Option<Instant>>,
+    pub(super) last_frame_queue_trace_at: Mutex<Option<Instant>>,
+    pub(super) last_render_schedule_trace_at: Mutex<Option<Instant>>,
 }
 
 #[derive(Clone, Copy)]
@@ -61,6 +72,7 @@ impl RendererState {
             inner: Arc::new(RendererInner {
                 stop: AtomicBool::new(false),
                 renderer: Mutex::new(None),
+                app_handle: Mutex::new(None),
                 queued_frames: Mutex::new(VecDeque::with_capacity(16)),
                 last_queued_pts: Mutex::new(None),
                 clock: Mutex::new(ClockState {
@@ -71,12 +83,17 @@ impl RendererState {
                 render_task_in_flight: AtomicBool::new(false),
                 pending_render: Mutex::new(false),
                 render_cv: Condvar::new(),
+                frame_slot_cv: Condvar::new(),
                 video_scale_mode: AtomicU8::new(VideoScaleMode::Contain.as_u8()),
-                target_queue_capacity: AtomicUsize::new(FRAME_QUEUE_TARGET_BASE),
+                is_realtime_source: AtomicBool::new(false),
+                target_queue_capacity: AtomicUsize::new(FRAME_QUEUE_TARGET_BASE_NON_REALTIME),
                 last_render_cost_micros: AtomicU64::new(0),
                 last_present_lag_ms_bits: AtomicU32::new(0f32.to_bits()),
                 last_presented_pts_bits: AtomicU64::new(f64::NAN.to_bits()),
                 queue_tuning: Mutex::new(QueueTuningState::default()),
+                queue_growth_hold_until: Mutex::new(None),
+                last_frame_queue_trace_at: Mutex::new(None),
+                last_render_schedule_trace_at: Mutex::new(None),
             }),
         }
     }
@@ -87,7 +104,22 @@ impl RendererState {
             .store(mode.as_u8(), Ordering::Relaxed);
     }
 
+    pub fn set_realtime_source(&self, is_realtime_source: bool) {
+        self.inner
+            .is_realtime_source
+            .store(is_realtime_source, Ordering::Relaxed);
+        self.inner
+            .target_queue_capacity
+            .store(base_target_queue_capacity(&self.inner), Ordering::Relaxed);
+        if let Ok(mut tuning) = self.inner.queue_tuning.lock() {
+            *tuning = QueueTuningState::default();
+        }
+    }
+
     pub fn start_render_loop(&self, app: &tauri::AppHandle) -> Result<(), String> {
+        if let Ok(mut app_handle) = self.inner.app_handle.lock() {
+            *app_handle = Some(app.clone());
+        }
         let window = app
             .get_webview_window("main")
             .ok_or_else(|| "main window not found".to_string())?;
@@ -122,9 +154,11 @@ impl RendererState {
                 if inner.render_task_in_flight.swap(true, Ordering::AcqRel) {
                     continue;
                 }
+                let scheduled_at = Instant::now();
                 let _ = app_handle.run_on_main_thread({
                     let inner = inner.clone();
                     move || {
+                        maybe_emit_render_schedule_delay(&inner, scheduled_at);
                         let now_media_seconds = {
                             let clock = match inner.clock.lock() {
                                 Ok(guard) => *guard,
@@ -155,14 +189,17 @@ impl RendererState {
                                 );
                                 let lag_ms = frame
                                     .as_ref()
-                                    .map(|f| ((now_media_seconds - f.pts_seconds).max(0.0) * 1000.0) as f32)
+                                    .map(|f| {
+                                        ((now_media_seconds - f.pts_seconds()).max(0.0) * 1000.0)
+                                            as f32
+                                    })
                                     .unwrap_or(0.0);
                                 inner
                                     .last_present_lag_ms_bits
                                     .store(lag_ms.to_bits(), Ordering::Relaxed);
                                 let presented_pts = frame
                                     .as_ref()
-                                    .map(|value| value.pts_seconds)
+                                    .map(QueuedFrame::pts_seconds)
                                     .filter(|value| value.is_finite());
                                 inner.last_presented_pts_bits.store(
                                     presented_pts.unwrap_or(f64::NAN).to_bits(),
@@ -201,8 +238,11 @@ impl RendererState {
 
     pub fn reset_timeline(&self, media_seconds: f64, playback_rate: f64) {
         if let Ok(mut queue) = self.inner.queued_frames.lock() {
-            queue.clear();
+            while let Some(frame) = queue.pop_front() {
+                recycle_frame(&self.inner, frame);
+            }
         }
+        self.inner.frame_slot_cv.notify_all();
         if let Ok(mut last_pts) = self.inner.last_queued_pts.lock() {
             *last_pts = None;
         }
@@ -211,9 +251,15 @@ impl RendererState {
             .store(f64::NAN.to_bits(), Ordering::Relaxed);
         self.inner
             .target_queue_capacity
-            .store(FRAME_QUEUE_TARGET_BASE, Ordering::Relaxed);
+            .store(base_target_queue_capacity(&self.inner), Ordering::Relaxed);
         if let Ok(mut tuning) = self.inner.queue_tuning.lock() {
             *tuning = QueueTuningState::default();
+        }
+        if let Ok(mut hold_until) = self.inner.queue_growth_hold_until.lock() {
+            // After seek/restart/pause-resume we still debounce reactive growth, but for
+            // non-realtime playback the hold must stay short so heavy GOP/B-frame content can
+            // rebuild a useful render lead immediately instead of starving at depth 1.
+            *hold_until = Some(Instant::now() + queue_growth_hold_after_reset(&self.inner));
         }
         self.update_clock(media_seconds, playback_rate);
         if let Ok(mut pending) = self.inner.pending_render.lock() {
@@ -224,8 +270,11 @@ impl RendererState {
 
     pub fn clear_surface(&self, app: &tauri::AppHandle) -> Result<(), String> {
         if let Ok(mut queue) = self.inner.queued_frames.lock() {
-            queue.clear();
+            while let Some(frame) = queue.pop_front() {
+                recycle_frame(&self.inner, frame);
+            }
         }
+        self.inner.frame_slot_cv.notify_all();
         if let Ok(mut last_pts) = self.inner.last_queued_pts.lock() {
             *last_pts = None;
         }
@@ -253,6 +302,30 @@ impl RendererState {
             .unwrap_or(true)
     }
 
+    pub fn wait_for_frame_slot(
+        &self,
+        stop_flag: &std::sync::atomic::AtomicBool,
+        timeout: Duration,
+    ) -> Result<(), String> {
+        let mut queue = self
+            .inner
+            .queued_frames
+            .lock()
+            .map_err(|_| MediaError::state_poisoned_lock("renderer queue"))?;
+        while queue.len() >= self.queue_capacity() {
+            if stop_flag.load(Ordering::Relaxed) {
+                return Ok(());
+            }
+            let (guard, _) = self
+                .inner
+                .frame_slot_cv
+                .wait_timeout(queue, timeout)
+                .map_err(|_| MediaError::state_poisoned_lock("renderer frame slot wait"))?;
+            queue = guard;
+        }
+        Ok(())
+    }
+
     pub fn queue_depth(&self) -> usize {
         self.inner
             .queued_frames
@@ -262,11 +335,38 @@ impl RendererState {
             .unwrap_or(0)
     }
 
+    pub fn queued_pts_range(&self) -> (Option<f64>, Option<f64>) {
+        self.inner
+            .queued_frames
+            .lock()
+            .ok()
+            .map(|queue| {
+                let head = queue.front().map(QueuedFrame::pts_seconds).filter(|v| v.is_finite());
+                let tail = queue.back().map(QueuedFrame::pts_seconds).filter(|v| v.is_finite());
+                (head, tail)
+            })
+            .unwrap_or((None, None))
+    }
+
     pub fn queue_capacity(&self) -> usize {
+        let min_capacity = base_target_queue_capacity(&self.inner);
+        let max_capacity = max_target_queue_capacity(&self.inner);
         self.inner
             .target_queue_capacity
             .load(Ordering::Relaxed)
-            .clamp(FRAME_QUEUE_TARGET_BASE, FRAME_QUEUE_HARD_CAPACITY)
+            .clamp(min_capacity, max_capacity)
+    }
+
+    pub fn current_clock_seconds(&self) -> f64 {
+        self.inner
+            .clock
+            .lock()
+            .ok()
+            .map(|clock| {
+                let elapsed = Instant::now().saturating_duration_since(clock.anchor_instant);
+                clock.anchor_media_seconds + elapsed.as_secs_f64() * clock.rate.max(0.25)
+            })
+            .unwrap_or(0.0)
     }
 
     pub fn last_presented_pts_seconds(&self) -> Option<f64> {
@@ -275,17 +375,78 @@ impl RendererState {
     }
 
     pub fn last_submitted_pts_seconds(&self) -> Option<f64> {
-        self.inner
-            .last_queued_pts
-            .lock()
-            .ok()
-            .and_then(|value| *value)
-            .filter(|value| value.is_finite())
+        self.queued_pts_range().1.or_else(|| {
+            self.inner
+                .last_queued_pts
+                .lock()
+                .ok()
+                .and_then(|value| *value)
+                .filter(|value| value.is_finite())
+        })
     }
 
     pub fn submit_frame(&self, frame: VideoFrame) {
-        submit_frame_to_queue(&self.inner, frame);
+        submit_frame_to_queue(&self.inner, QueuedFrame::Prepared(frame));
     }
+
+    pub fn submit_decoded_frame(
+        &self,
+        frame: frame::Video,
+        pts_seconds: f64,
+        color_matrix: [[f32; 3]; 3],
+        y_offset: f32,
+        y_scale: f32,
+        uv_offset: f32,
+        uv_scale: f32,
+    ) {
+        submit_frame_to_queue(
+            &self.inner,
+            QueuedFrame::Decoded(DecodedVideoFrame {
+                pts_seconds,
+                frame,
+                color_matrix,
+                y_offset,
+                y_scale,
+                uv_offset,
+                uv_scale,
+            }),
+        );
+    }
+}
+
+fn maybe_emit_render_schedule_delay(inner: &RendererInner, scheduled_at: Instant) {
+    let delay = Instant::now().saturating_duration_since(scheduled_at);
+    if delay < Duration::from_millis(20) {
+        return;
+    }
+    let Ok(mut last_trace_at) = inner.last_render_schedule_trace_at.lock() else {
+        return;
+    };
+    let now = Instant::now();
+    if last_trace_at
+        .as_ref()
+        .is_some_and(|last| now.saturating_duration_since(*last) < Duration::from_millis(700))
+    {
+        return;
+    }
+    *last_trace_at = Some(now);
+    drop(last_trace_at);
+    let Some(app_handle) = inner
+        .app_handle
+        .lock()
+        .ok()
+        .and_then(|value| value.clone())
+    else {
+        return;
+    };
+    emit_debug(
+        &app_handle,
+        "render_schedule_delay",
+        format!("main_thread_delay_ms={:.3}", delay.as_secs_f64() * 1000.0),
+    );
+}
+
+pub(super) fn recycle_frame(_inner: &RendererInner, _frame: QueuedFrame) {
 }
 
 fn update_dynamic_queue_capacity(
@@ -297,17 +458,49 @@ fn update_dynamic_queue_capacity(
     let Ok(mut tuning) = inner.queue_tuning.lock() else {
         return;
     };
+    let min_capacity = base_target_queue_capacity(inner);
+    let max_capacity = max_target_queue_capacity(inner);
     let current_capacity = inner
         .target_queue_capacity
         .load(Ordering::Relaxed)
-        .clamp(FRAME_QUEUE_TARGET_BASE, FRAME_QUEUE_HARD_CAPACITY);
-    if has_presented_frame && (lag_ms >= QUEUE_GROW_LAG_MS || (lag_ms >= 12.0 && remaining_queue_depth == 0)) {
-        tuning.late_present_streak = tuning.late_present_streak.saturating_add(1);
-        tuning.healthy_present_streak = 0;
-        if tuning.late_present_streak >= QUEUE_GROW_STREAK && current_capacity < FRAME_QUEUE_HARD_CAPACITY {
+        .clamp(min_capacity, max_capacity);
+    if max_capacity <= min_capacity {
+        if current_capacity != min_capacity {
             inner
                 .target_queue_capacity
-                .store(current_capacity + 1, Ordering::Relaxed);
+                .store(min_capacity, Ordering::Relaxed);
+        }
+        *tuning = QueueTuningState::default();
+        return;
+    }
+    let queue_growth_held = inner
+        .queue_growth_hold_until
+        .lock()
+        .ok()
+        .and_then(|value| *value)
+        .map(|deadline| Instant::now() < deadline)
+        .unwrap_or(false);
+    if has_presented_frame && (lag_ms >= QUEUE_GROW_LAG_MS || (lag_ms >= 12.0 && remaining_queue_depth == 0)) {
+        if queue_growth_held {
+            tuning.late_present_streak = 0;
+            tuning.healthy_present_streak = 0;
+            return;
+        }
+        tuning.late_present_streak = tuning.late_present_streak.saturating_add(1);
+        tuning.healthy_present_streak = 0;
+        if tuning.late_present_streak >= QUEUE_GROW_STREAK && current_capacity < max_capacity {
+            let next_capacity = current_capacity + 1;
+            inner
+                .target_queue_capacity
+                .store(next_capacity, Ordering::Relaxed);
+            emit_queue_capacity_debug(
+                inner,
+                "renderer_queue_grow",
+                current_capacity,
+                next_capacity,
+                lag_ms,
+                remaining_queue_depth,
+            );
             tuning.late_present_streak = 0;
         }
         return;
@@ -315,14 +508,77 @@ fn update_dynamic_queue_capacity(
     if has_presented_frame && lag_ms <= QUEUE_SHRINK_LAG_MS && remaining_queue_depth >= 1 {
         tuning.healthy_present_streak = tuning.healthy_present_streak.saturating_add(1);
         tuning.late_present_streak = 0;
-        if tuning.healthy_present_streak >= QUEUE_SHRINK_STREAK && current_capacity > FRAME_QUEUE_TARGET_BASE {
+        if tuning.healthy_present_streak >= QUEUE_SHRINK_STREAK && current_capacity > min_capacity {
+            let next_capacity = current_capacity - 1;
             inner
                 .target_queue_capacity
-                .store(current_capacity - 1, Ordering::Relaxed);
+                .store(next_capacity, Ordering::Relaxed);
+            emit_queue_capacity_debug(
+                inner,
+                "renderer_queue_shrink",
+                current_capacity,
+                next_capacity,
+                lag_ms,
+                remaining_queue_depth,
+            );
             tuning.healthy_present_streak = 0;
         }
         return;
     }
     tuning.late_present_streak = 0;
     tuning.healthy_present_streak = 0;
+}
+
+fn base_target_queue_capacity(inner: &RendererInner) -> usize {
+    if inner.is_realtime_source.load(Ordering::Relaxed) {
+        FRAME_QUEUE_TARGET_BASE_REALTIME
+    } else {
+        FRAME_QUEUE_TARGET_BASE_NON_REALTIME
+    }
+}
+
+fn max_target_queue_capacity(inner: &RendererInner) -> usize {
+    if inner.is_realtime_source.load(Ordering::Relaxed) {
+        FRAME_QUEUE_TARGET_BASE_REALTIME
+    } else {
+        FRAME_QUEUE_HARD_CAPACITY
+    }
+}
+
+fn queue_growth_hold_after_reset(inner: &RendererInner) -> Duration {
+    if inner.is_realtime_source.load(Ordering::Relaxed) {
+        QUEUE_GROW_HOLD_AFTER_RESET_REALTIME
+    } else {
+        QUEUE_GROW_HOLD_AFTER_RESET_NON_REALTIME
+    }
+}
+
+fn emit_queue_capacity_debug(
+    inner: &RendererInner,
+    stage: &'static str,
+    from_capacity: usize,
+    to_capacity: usize,
+    lag_ms: f64,
+    remaining_queue_depth: usize,
+) {
+    let Some(app_handle) = inner
+        .app_handle
+        .lock()
+        .ok()
+        .and_then(|value| value.clone())
+    else {
+        return;
+    };
+    emit_debug(
+        &app_handle,
+        stage,
+        format!(
+            "capacity {}->{} lag_ms={:.3} remaining_queue_depth={} realtime={}",
+            from_capacity,
+            to_capacity,
+            lag_ms,
+            remaining_queue_depth,
+            inner.is_realtime_source.load(Ordering::Relaxed),
+        ),
+    );
 }

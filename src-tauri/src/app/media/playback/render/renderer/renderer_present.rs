@@ -1,7 +1,7 @@
-use super::{Renderer, VideoFrame, VideoScaleMode};
+use super::{QueuedFrame, Renderer, VideoScaleMode};
 
 impl Renderer {
-    pub(super) fn render(&mut self, frame: Option<&VideoFrame>, force_if_idle: bool) -> Result<(), String> {
+    pub(super) fn render(&mut self, frame: Option<&QueuedFrame>, force_if_idle: bool) -> Result<(), String> {
         let resized = self.resize_if_needed();
         if frame.is_none() && !resized && !force_if_idle {
             return Ok(());

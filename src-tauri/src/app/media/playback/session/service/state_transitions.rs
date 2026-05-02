@@ -5,6 +5,7 @@ use super::model::PlaybackSessionModel;
 pub(super) fn reset_playback_metrics(model: &mut PlaybackSessionModel) {
     model.transport.position_seconds = 0.0;
     model.transport.duration_seconds = 0.0;
+    model.transport.buffered_position_seconds = 0.0;
 }
 
 pub(super) fn reset_runtime_decode_state(model: &mut PlaybackSessionModel) {

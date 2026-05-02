@@ -1,18 +1,18 @@
 use super::super::types::AudioPipeline;
+use crate::app::media::playback::rate::PlaybackRate;
 use crate::app::media::playback::runtime::clock::AudioClock;
 use crate::app::media::playback::runtime::{emit_debug, METRICS_EMIT_INTERVAL_MS};
-use crate::app::media::state::TimingControls;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 
 pub(super) fn emit_audio_debug_if_needed(
     app: &AppHandle,
     audio_state: &mut AudioPipeline,
-    timing_controls: &Arc<TimingControls>,
+    playback_rate: PlaybackRate,
     channels: usize,
     samples_per_channel: usize,
     queued_samples: usize,
+    queued_seconds: f64,
     audio_clock: &Option<AudioClock>,
 ) {
     let now = Instant::now();
@@ -31,24 +31,26 @@ pub(super) fn emit_audio_debug_if_needed(
         app,
         "audio_output",
         format!(
-            "volume={:.2} muted={} rate={:.2} queue_sources={}",
+            "volume={:.2} muted={} rate={:.2} queue_sources={} queue_seconds={:.3}",
             audio_state.output.controls.volume(),
             audio_state.output.controls.muted(),
-            timing_controls.playback_rate(),
-            audio_state.output.queue_depth()
+            playback_rate.as_f32(),
+            audio_state.output.queue_depth(),
+            queued_seconds,
         ),
     );
     emit_debug(
         app,
         "audio_stats",
         format!(
-            "packets={} frames={} queued_samples={} underruns={} queue_sources={} rate={:.2} channels={} samples_per_ch={} output_samples={} out_fmt={} pts={}",
+            "packets={} frames={} queued_samples={} underruns={} queue_sources={} queue_seconds={:.3} rate={:.2} channels={} samples_per_ch={} output_samples={} out_fmt={} pts={}",
             audio_state.stats.packets,
             audio_state.stats.decoded_frames,
             audio_state.stats.queued_samples,
             audio_state.stats.underrun_count,
             audio_state.output.queue_depth(),
-            timing_controls.playback_rate(),
+            queued_seconds,
+            playback_rate.as_f32(),
             channels,
             samples_per_channel,
             queued_samples,

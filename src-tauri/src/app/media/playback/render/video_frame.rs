@@ -1,4 +1,3 @@
-use crate::app::media::playback::render::renderer::VideoFrame;
 use ffmpeg_next::ffi;
 use ffmpeg_next::format;
 use ffmpeg_next::frame;
@@ -77,6 +76,22 @@ pub fn transfer_hw_frame_if_needed(decoded: &frame::Video) -> Result<frame::Vide
     Ok(sw_frame)
 }
 
+pub fn can_bypass_scaler_for_renderer(
+    frame: &frame::Video,
+    output_width: u32,
+    output_height: u32,
+) -> bool {
+    frame.width() == output_width
+        && frame.height() == output_height
+        && matches!(
+            frame.format(),
+            format::pixel::Pixel::NV12
+                | format::pixel::Pixel::P010LE
+                | format::pixel::Pixel::P010BE
+                | format::pixel::Pixel::YUV420P
+        )
+}
+
 fn is_hardware_frame(frame: &frame::Video) -> Result<bool, String> {
     let pix_fmt = frame.format().into();
     // SAFETY: Descriptor lookup is read-only for a valid pixel format enum.
@@ -110,88 +125,10 @@ pub fn detect_color_profile(frame: &frame::Video) -> ColorProfile {
     }
 }
 
-pub fn video_frame_to_nv12_planes_from_yuv420p(
-    frame: &frame::Video,
-    pts_seconds: Option<f64>,
-    color_profile: Option<ColorProfile>,
-) -> Result<VideoFrame, String> {
-    let width = frame.width() as usize;
-    let height = frame.height() as usize;
-    if width == 0 || height == 0 {
-        return Err("invalid frame dimension for nv12 extraction".to_string());
-    }
-
-    let y_stride = frame.stride(0);
-    let y_data = frame.data(0);
-    if y_stride < width {
-        return Err(format!("invalid y stride: stride={y_stride} width={width}"));
-    }
-    let y_required = y_stride.saturating_mul(height);
-    if y_data.len() < y_required {
-        return Err(format!(
-            "insufficient y plane bytes: have={} need={}",
-            y_data.len(),
-            y_required
-        ));
-    }
-    let mut y_plane = Vec::with_capacity(width * height);
-    for y in 0..height {
-        let start = y * y_stride;
-        let end = start + width;
-        y_plane.extend_from_slice(&y_data[start..end]);
-    }
-
-    let uv_height = height / 2;
-    let uv_row_bytes = width / 2;
-    let u_stride = frame.stride(1);
-    let u_data = frame.data(1);
-    let v_stride = frame.stride(2);
-    let v_data = frame.data(2);
-    if uv_height > 0 {
-        if u_stride < uv_row_bytes || v_stride < uv_row_bytes {
-            return Err(format!(
-                "invalid u/v stride: u_stride={u_stride} v_stride={v_stride} row_bytes={uv_row_bytes}"
-            ));
-        }
-        let u_required = u_stride.saturating_mul(uv_height);
-        let v_required = v_stride.saturating_mul(uv_height);
-        if u_data.len() < u_required || v_data.len() < v_required {
-            return Err(format!(
-                "insufficient u/v plane bytes: u_have={} u_need={} v_have={} v_need={}",
-                u_data.len(),
-                u_required,
-                v_data.len(),
-                v_required
-            ));
-        }
-    }
-    let mut uv_plane = Vec::with_capacity(width * uv_height);
-    for y in 0..uv_height {
-        let u_row_start = y * u_stride;
-        let v_row_start = y * v_stride;
-        for x in 0..uv_row_bytes {
-            uv_plane.push(u_data[u_row_start + x]);
-            uv_plane.push(v_data[v_row_start + x]);
-        }
-    }
-
-    let profile = color_profile.unwrap_or_else(|| detect_color_profile(frame));
-    Ok(VideoFrame {
-        pts_seconds: pts_seconds.unwrap_or(0.0),
-        width: frame.width(),
-        height: frame.height(),
-        y_plane,
-        uv_plane,
-        color_matrix: profile.color_matrix,
-        y_offset: profile.y_offset,
-        y_scale: profile.y_scale,
-        uv_offset: profile.uv_offset,
-        uv_scale: profile.uv_scale,
-    })
-}
-
 fn color_conversion_params(frame: &frame::Video) -> ([[f32; 3]; 3], f32, f32, f32, f32) {
     use ffmpeg_next::color::{Range, Space};
+    let bit_depth = bit_depth_for_format(frame.format()) as f32;
+    let sample_max = (1u32 << bit_depth_for_format(frame.format())) as f32 - 1.0;
     let matrix = match frame.color_space() {
         Space::BT2020NCL | Space::BT2020CL => [
             [1.0, 0.0, 1.4746],
@@ -210,7 +147,32 @@ fn color_conversion_params(frame: &frame::Video) -> ([[f32; 3]; 3], f32, f32, f3
         ],
     };
     match frame.color_range() {
-        Range::JPEG => (matrix, 0.0, 1.0, 0.5, 1.0),
-        _ => (matrix, 16.0 / 255.0, 255.0 / 219.0, 0.5, 255.0 / 224.0),
+        Range::JPEG => (
+            matrix,
+            0.0,
+            1.0,
+            (1u32 << (bit_depth as u32 - 1)) as f32 / sample_max,
+            1.0,
+        ),
+        _ => {
+            let luma_offset = (16u32 << (bit_depth as u32 - 8)) as f32 / sample_max;
+            let luma_range = (219u32 << (bit_depth as u32 - 8)) as f32;
+            let chroma_center = (1u32 << (bit_depth as u32 - 1)) as f32 / sample_max;
+            let chroma_range = (224u32 << (bit_depth as u32 - 8)) as f32;
+            (
+                matrix,
+                luma_offset,
+                sample_max / luma_range,
+                chroma_center,
+                sample_max / chroma_range,
+            )
+        }
+    }
+}
+
+fn bit_depth_for_format(format: format::pixel::Pixel) -> u32 {
+    match format {
+        format::pixel::Pixel::P010LE | format::pixel::Pixel::P010BE => 10,
+        _ => 8,
     }
 }

@@ -3,15 +3,14 @@ mod payloads;
 use serde::Serialize;
 
 pub use payloads::{
-    MediaAudioMeterPayload, MediaDebugPayload, MediaDecodeQuantileStats, MediaErrorPayload,
-    MediaFrameTypeStats, MediaMetadataPayload, MediaTelemetryPayload, MediaVideoStageCostStats,
+    MediaAudioMeterPayload, MediaDecodeQuantileStats, MediaErrorPayload, MediaFrameTypeStats,
+    MediaMetadataPayload, MediaTelemetryPayload, MediaVideoStageCostStats,
     MediaVideoTimestampStats,
 };
 
 pub const MEDIA_PLAYBACK_STATE_EVENT: &str = "media://playback/state";
 pub const MEDIA_PLAYBACK_METADATA_EVENT: &str = "media://playback/metadata";
 pub const MEDIA_PLAYBACK_ERROR_EVENT: &str = "media://playback/error";
-pub const MEDIA_PLAYBACK_DEBUG_EVENT: &str = "media://playback/debug";
 pub const MEDIA_PLAYBACK_TELEMETRY_EVENT: &str = "media://playback/telemetry";
 pub const MEDIA_PLAYBACK_AUDIO_METER_EVENT: &str = "media://playback/audio-meter";
 pub const MEDIA_PROTOCOL_VERSION: u32 = 2;

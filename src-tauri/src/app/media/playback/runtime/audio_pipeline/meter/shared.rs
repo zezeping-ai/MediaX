@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use super::spectrum::compute_spectrum;
 
@@ -47,6 +47,15 @@ pub(crate) fn spawn_audio_meter_emitter(
     thread::spawn(move || {
         let mut last_emitted_sequence = 0u64;
         while !stop_flag.load(Ordering::Relaxed) {
+            if !app
+                .state::<crate::app::media::state::MediaState>()
+                .controls
+                .debug
+                .frontend_diagnostics_enabled()
+            {
+                thread::sleep(Duration::from_millis(AUDIO_METER_POLL_MS));
+                continue;
+            }
             let next_payload = shared.lock().ok().and_then(|state| {
                 if state.sequence > last_emitted_sequence {
                     Some((state.sequence, state.snapshot.clone()))

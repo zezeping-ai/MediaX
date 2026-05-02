@@ -3,10 +3,12 @@ use super::telemetry::emit_video_telemetry;
 use super::DrainFramesContext;
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::render::video_frame::{
-    ensure_scaler, transfer_hw_frame_if_needed, ScalerSpec,
+    can_bypass_scaler_for_renderer, ensure_scaler, transfer_hw_frame_if_needed, ScalerSpec,
 };
 use crate::app::media::playback::runtime::emit_debug;
-use crate::app::media::playback::runtime::progress::update_playback_progress;
+use crate::app::media::playback::runtime::progress::{
+    resolve_buffered_position_seconds, update_playback_progress,
+};
 use crate::app::media::playback::runtime::write_latest_stream_position;
 use crate::app::media::state::MediaState;
 use ffmpeg_next::ffi;
@@ -18,7 +20,14 @@ use tauri::Manager;
 
 pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), String> {
     let mut decoded = frame::Video::empty();
+    let mut processed_frames = 0usize;
     loop {
+        if ctx
+            .max_frames_per_pass
+            .is_some_and(|limit| processed_frames >= limit)
+        {
+            break;
+        }
         let frame_cost_start = Instant::now();
         let receive_cost_start = Instant::now();
         let receive_result = ctx.decoder.receive_frame(&mut decoded);
@@ -52,8 +61,12 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
         if should_skip_pre_seek_frame(ctx, hinted_valid) {
             continue;
         }
+        let queue_wait_start = Instant::now();
         wait_for_render_capacity(ctx)?;
-        let Some((nv12_frame, hw_transfer_cost, scale_cost)) = scale_frame_for_render(ctx, &decoded) else {
+        let queue_wait_cost = queue_wait_start.elapsed();
+        let Some((render_source_frame, hw_transfer_cost, scale_cost)) =
+            scale_frame_for_render(ctx, &decoded)
+        else {
             continue;
         };
         let estimated_pts = update_playback_position(ctx, hinted_seconds, hinted_valid);
@@ -62,15 +75,17 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
             *ctx.current_position_seconds,
         )?;
         ctx.renderer.update_clock(
-            *ctx.current_position_seconds,
+            render_clock_anchor_seconds(ctx),
             ctx.playback_clock.playback_rate(),
         );
-        let Some(render_frame) =
+        let upload_prep_start = Instant::now();
+        let Some((render_frame, color_profile_cost, frame_extract_cost)) =
             ctx.frame_pipeline
-                .frame_to_renderer(ctx.app, &nv12_frame, estimated_pts)
+                .frame_to_renderer(ctx.app, render_source_frame, estimated_pts, None)
         else {
             continue;
         };
+        let upload_prep_cost = upload_prep_start.elapsed();
         if !ctx
             .app
             .state::<MediaState>()
@@ -80,31 +95,65 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
         {
             return Ok(());
         }
+        let render_frame_width = render_frame.frame.width();
+        let render_frame_height = render_frame.frame.height();
+        let render_frame_format = render_frame.frame.format();
         let submit_cost_start = Instant::now();
-        ctx.renderer.submit_frame(render_frame);
+        ctx.renderer.submit_decoded_frame(
+            render_frame.frame,
+            render_frame.pts_seconds,
+            render_frame.color_matrix,
+            render_frame.y_offset,
+            render_frame.y_scale,
+            render_frame.uv_offset,
+            render_frame.uv_scale,
+        );
         let submit_cost = submit_cost_start.elapsed();
         ctx.frame_pipeline
             .record_frame_cost(frame_cost_start.elapsed());
         ctx.frame_pipeline.record_stage_costs(
             receive_cost,
+            queue_wait_cost,
             hw_transfer_cost,
             scale_cost,
+            color_profile_cost,
+            frame_extract_cost,
+            upload_prep_cost,
             submit_cost,
             frame_cost_start.elapsed(),
         );
         if let Some(render_fps) = ctx.fps_window.record_frame_and_compute() {
-            emit_video_telemetry(ctx, pict_type, render_fps, estimated_pts, &nv12_frame);
+            let mut telemetry_frame = frame::Video::empty();
+            telemetry_frame.set_width(render_frame_width);
+            telemetry_frame.set_height(render_frame_height);
+            telemetry_frame.set_format(render_frame_format);
+            emit_video_telemetry(
+                ctx,
+                pict_type,
+                render_fps,
+                estimated_pts,
+                &telemetry_frame,
+            );
         }
         if ctx.last_progress_emit.elapsed() >= Duration::from_millis(200) {
+            let buffered_position_seconds = resolve_buffered_position_seconds(
+                ctx.input_ctx,
+                ctx.duration_seconds,
+                *ctx.current_position_seconds,
+                ctx.is_network_source,
+                ctx.is_realtime_source,
+            );
             update_playback_progress(
                 ctx.app,
                 ctx.stream_generation,
                 *ctx.current_position_seconds,
                 ctx.duration_seconds,
+                buffered_position_seconds,
                 false,
             )?;
             *ctx.last_progress_emit = Instant::now();
         }
+        processed_frames = processed_frames.saturating_add(1);
     }
     Ok(())
 }
@@ -137,10 +186,10 @@ fn should_skip_pre_seek_frame(ctx: &mut DrainFramesContext<'_>, hinted_valid: Op
 
 fn wait_for_render_capacity(ctx: &DrainFramesContext<'_>) -> Result<(), String> {
     while !ctx.renderer.can_accept_frame() {
-        if ctx.stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(RENDER_BACKPRESSURE_SLEEP_MS));
+        ctx.renderer.wait_for_frame_slot(
+            ctx.stop_flag,
+            Duration::from_millis(RENDER_BACKPRESSURE_SLEEP_MS),
+        )?;
     }
     Ok(())
 }
@@ -159,6 +208,9 @@ fn scale_frame_for_render(
     };
     let hw_transfer_cost = hw_transfer_cost_start.elapsed();
     let scale_cost_start = Instant::now();
+    if can_bypass_scaler_for_renderer(&frame_for_scale, ctx.output_width, ctx.output_height) {
+        return Some((frame_for_scale, hw_transfer_cost, scale_cost_start.elapsed()));
+    }
     if let Err(err) = ensure_scaler(
         ctx.scaler,
         ScalerSpec {
@@ -182,9 +234,6 @@ fn scale_frame_for_render(
             return None;
         }
     }
-    let _ = ctx
-        .frame_pipeline
-        .resolve_color_profile(ctx.app, &nv12_frame);
     Some((nv12_frame, hw_transfer_cost, scale_cost_start.elapsed()))
 }
 
@@ -239,4 +288,14 @@ fn update_playback_position(
         position_seconds
     };
     estimated_pts
+}
+
+fn render_clock_anchor_seconds(ctx: &DrainFramesContext<'_>) -> f64 {
+    // Keep decode/progress advancement separate from the render presentation clock.
+    // With audio present, rebasing the renderer to the decode thread's newest position can
+    // collapse queued future frames into "already due", which hurts smoothness on heavier GOPs.
+    ctx.audio_clock
+        .map(|clock| clock.now_seconds())
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .unwrap_or_else(|| (*ctx.current_position_seconds).max(0.0))
 }

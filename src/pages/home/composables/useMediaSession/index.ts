@@ -24,9 +24,6 @@ export function useMediaSession() {
       onAudioMeter: state.applyAudioMeterPayload,
     });
     timerDisposer = startSessionTimers({
-      getSnapshot: async () => {
-        state.updateSnapshot(await getSnapshot());
-      },
       markTelemetryStaleIfNeeded: state.markTelemetryStaleIfNeeded,
     });
   }

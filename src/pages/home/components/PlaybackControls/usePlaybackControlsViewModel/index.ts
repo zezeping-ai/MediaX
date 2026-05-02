@@ -32,6 +32,13 @@ export function usePlaybackControlsViewModel(
     const normalizedOverride = Number.isFinite(override) ? Math.max(0, override) : 0;
     return Math.max(normalizedBase, normalizedOverride);
   });
+  const bufferedPosition = computed(() => {
+    const base = props.playback?.buffered_position_seconds ?? 0;
+    const override = props.bufferedPositionSecondsOverride ?? 0;
+    const normalizedBase = Number.isFinite(base) ? Math.max(0, base) : 0;
+    const normalizedOverride = Number.isFinite(override) ? Math.max(0, override) : 0;
+    return Math.max(normalizedBase, normalizedOverride, currentTime.value);
+  });
   const interactionState = createPlaybackInteractionState(props, emit);
   const derivedState = createPlaybackDerivedState(
     props,
@@ -60,6 +67,7 @@ export function usePlaybackControlsViewModel(
 
   return {
     cacheIcon: derivedState.cacheIcon,
+    bufferedPosition,
     currentTime,
     decodeBadgeClass: derivedState.decodeBadgeClass,
     decodeBadgeLabel: derivedState.decodeBadgeLabel,

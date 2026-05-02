@@ -17,6 +17,7 @@ pub(crate) struct VideoDecodeContext {
     pub(crate) media_kind: PlaybackMediaKind,
     pub(crate) has_cover_art: bool,
     pub(crate) cover_frame: Option<VideoFrame>,
+    pub(crate) deferred_cover_bytes: Option<Vec<u8>>,
     pub(crate) title: Option<String>,
     pub(crate) artist: Option<String>,
     pub(crate) album: Option<String>,

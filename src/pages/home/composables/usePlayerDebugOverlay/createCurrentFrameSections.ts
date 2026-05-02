@@ -48,8 +48,12 @@ export function createCurrentFrameSections(
   }
   const audioQueueDepth = telemetry?.audio_queue_depth_sources;
   if (typeof audioQueueDepth === "number") outputRows.push({ key: "audio_queue_depth", label: "audio queue", value: `${audioQueueDepth} buffers` });
-  const playbackRate = telemetry?.playback_rate ?? playback?.playback_rate;
-  if (isFiniteNumber(playbackRate)) outputRows.push({ key: "playback_rate", label: "rate", value: `${playbackRate.toFixed(2)}x` });
+  const requestedRate = telemetry?.requested_playback_rate ?? playback?.playback_rate;
+  const effectiveRate = telemetry?.effective_playback_rate ?? telemetry?.playback_rate ?? playback?.playback_rate;
+  if (isFiniteNumber(requestedRate)) outputRows.push({ key: "requested_playback_rate", label: "req rate", value: `${requestedRate.toFixed(2)}x` });
+  if (isFiniteNumber(effectiveRate)) outputRows.push({ key: "effective_playback_rate", label: "eff rate", value: `${effectiveRate.toFixed(2)}x` });
+  const rateLimitedReason = telemetry?.playback_rate_limited_reason?.trim();
+  if (rateLimitedReason) outputRows.push({ key: "playback_rate_limited_reason", label: "rate limit", value: rateLimitedReason });
 
   const renderLag = telemetry?.render_present_lag_ms;
   if (isFiniteNumber(renderLag)) decodeRows.push({ key: "render_present_lag_ms", label: "present lag", value: `${renderLag.toFixed(2)}ms` });

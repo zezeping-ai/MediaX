@@ -6,6 +6,8 @@ type HomePageViewModel = ReturnType<typeof useHomePageViewModel>;
 export function useHomePageBindings(viewModel: HomePageViewModel) {
   const shellEvents = {
     onPointerMove: viewModel.markMouseActive,
+    onPointerActivate: viewModel.markMouseActive,
+    onFocusIn: viewModel.markMouseActive,
     onPointerLeave: viewModel.hideControlsImmediately,
   };
 
@@ -57,6 +59,7 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     cacheRecording: viewModel.cacheRecording.value,
     cacheOutputPath: viewModel.cacheOutputPath.value,
     durationSecondsOverride: viewModel.effectiveDurationSeconds.value,
+    bufferedPositionSecondsOverride: viewModel.playback.value?.buffered_position_seconds ?? 0,
     qualityOptions: viewModel.playbackQualityOptions.value,
     selectedQuality: viewModel.selectedQuality.value,
     disabled: !viewModel.currentSource.value || viewModel.isBusy.value,

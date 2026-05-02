@@ -1,6 +1,8 @@
 use super::DecodeRuntime;
+use crate::app::media::playback::runtime::audio::effective_playback_rate;
 use crate::app::media::playback::rate::{
-    audio_queue_depth_limit, rate_switch_queue_drain_threshold, PlaybackRate,
+    audio_queue_depth_limit, audio_queue_seconds_limit, audio_rate_switch_cover_seconds,
+    audio_rate_switch_min_apply_seconds, audio_queue_prefill_target, seek_settle_queue_depth_limit,
 };
 use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::runtime::{
@@ -16,10 +18,33 @@ pub(super) fn refresh_audio_rate(
     runtime: &mut DecodeRuntime,
     timing_controls: &Arc<TimingControls>,
 ) {
+    let has_video_stream = runtime.has_video_stream();
+    let is_realtime_source = runtime.is_realtime_source;
+    let is_network_source = runtime.is_network_source;
     let Some(audio_state) = runtime.audio_pipeline.as_mut() else {
         return;
     };
-    let requested_rate = timing_controls.playback_rate_value();
+    let requested_rate = effective_playback_rate(
+        timing_controls.playback_rate_value(),
+        is_realtime_source,
+    );
+    if requested_rate.delta(runtime.loop_state.last_applied_audio_rate) > 1e-3 {
+        emit_debug(
+            app,
+            "audio_rate_refresh",
+            format!(
+                "requested={:.2}x applied={:.2}x pending={} realtime={}",
+                requested_rate.as_f32(),
+                runtime.loop_state.last_applied_audio_rate.as_f32(),
+                runtime
+                    .loop_state
+                    .pending_audio_rate
+                    .map(|value| format!("{:.2}x", value.as_f32()))
+                    .unwrap_or_else(|| "none".to_string()),
+                is_realtime_source,
+            ),
+        );
+    }
     if requested_rate.delta(runtime.loop_state.last_applied_audio_rate) <= 1e-3 {
         runtime.loop_state.clear_pending_audio_rate_switch();
         return;
@@ -43,13 +68,47 @@ pub(super) fn refresh_audio_rate(
             requested_rate
         }
     };
-    if should_delay_audio_rate_switch(
-        audio_state.output.queue_depth(),
-        runtime.loop_state.last_applied_audio_rate,
+    let queued_seconds = audio_state.output.queued_duration_seconds();
+    let queued_sources = audio_state.output.queue_depth();
+    let cover_seconds = audio_rate_switch_cover_seconds(
+        has_video_stream,
+        is_realtime_source,
+        is_network_source,
+    );
+    let min_apply_seconds = audio_rate_switch_min_apply_seconds(
+        has_video_stream,
+        is_realtime_source,
+        is_network_source,
+    );
+    let min_apply_queue_depth = audio_queue_prefill_target(
         pending_rate,
-    ) {
+        has_video_stream,
+        is_realtime_source,
+        is_network_source,
+    );
+    let cover_ready = queued_seconds + 1e-3 >= cover_seconds;
+    let min_cover_ready =
+        queued_sources >= min_apply_queue_depth && queued_seconds + 1e-3 >= min_apply_seconds;
+    if queued_seconds > 0.0 && !cover_ready && !min_cover_ready {
+        if !runtime.loop_state.rate_switch_hold_logged {
+            emit_debug(
+                app,
+                "audio_rate_switch_cover_wait",
+                format!(
+                    "delay audio rate switch {:.2}x -> {:.2}x until cover queue is ready queued_sources={} queued={:.3}s min_target={:.3}s cover_target={:.3}s",
+                    runtime.loop_state.last_applied_audio_rate.as_f32(),
+                    pending_rate.as_f32(),
+                    queued_sources,
+                    queued_seconds,
+                    min_apply_seconds,
+                    cover_seconds,
+                ),
+            );
+            runtime.loop_state.rate_switch_hold_logged = true;
+        }
         return;
     }
+    let preserved_queue_depth = queued_sources;
     runtime.loop_state.begin_rate_switch_settle();
     if let Some(clock) = runtime.loop_state.audio_clock.as_mut() {
         clock.rebase_rate(pending_rate.as_f64());
@@ -57,6 +116,7 @@ pub(super) fn refresh_audio_rate(
     audio_state.restart_after_discontinuity(
         runtime.loop_state.last_applied_audio_rate,
         pending_rate,
+        preserved_queue_depth > 0,
     );
     runtime.loop_state.reset_audio_sync_state();
     runtime.loop_state.commit_audio_playback_rate(pending_rate);
@@ -64,50 +124,27 @@ pub(super) fn refresh_audio_rate(
         app,
         "audio_rate_switch_apply",
         format!(
-            "apply audio rate switch -> {:.2}x after drain queue_sources={}",
+            "apply audio rate switch -> {:.2}x preserve_queue={} queue_sources={} queue_seconds={:.3}",
             pending_rate.as_f32(),
-            audio_state.output.queue_depth(),
+            preserved_queue_depth > 0,
+            preserved_queue_depth,
+            queued_seconds,
         ),
     );
 }
 
 pub(super) fn should_wait_for_rate_switch_drain(
-    app: &AppHandle,
-    runtime: &mut DecodeRuntime,
+    _app: &AppHandle,
+    _runtime: &mut DecodeRuntime,
 ) -> bool {
-    let Some(audio_state) = runtime.audio_pipeline.as_ref() else {
-        return false;
-    };
-    let Some(target_rate) = runtime.loop_state.pending_audio_rate else {
-        return false;
-    };
-    if !should_delay_audio_rate_switch(
-        audio_state.output.queue_depth(),
-        runtime.loop_state.last_applied_audio_rate,
-        target_rate,
-    ) {
-        runtime.loop_state.rate_switch_hold_logged = false;
-        return false;
-    }
-    if !runtime.loop_state.rate_switch_hold_logged {
-        emit_debug(
-            app,
-            "audio_rate_switch_hold",
-            format!(
-                "hold packet decode until queue drains for cleaner switch current={:.2}x target={:.2}x queue_sources={}",
-                runtime.loop_state.last_applied_audio_rate.as_f32(),
-                target_rate.as_f32(),
-                audio_state.output.queue_depth(),
-            ),
-        );
-        runtime.loop_state.rate_switch_hold_logged = true;
-    }
-    true
+    false
 }
 
 pub(super) fn should_wait_for_decode_lead(runtime: &DecodeRuntime) -> bool {
     let in_rate_switch_settle = runtime.loop_state.in_rate_switch_settle();
-    let max_lead_seconds = if in_rate_switch_settle {
+    let max_lead_seconds = if runtime.is_realtime_source {
+        if in_rate_switch_settle { 0.12 } else { 0.08 }
+    } else if in_rate_switch_settle {
         MAX_DECODE_LEAD_SECONDS_DURING_SETTLE
     } else {
         MAX_DECODE_LEAD_SECONDS_DEFAULT
@@ -131,19 +168,107 @@ pub(super) fn should_wait_for_audio_queue_drain(
     runtime: &mut DecodeRuntime,
 ) -> bool {
     let has_video_stream = runtime.has_video_stream();
+    let in_rate_switch_settle = runtime.loop_state.in_rate_switch_settle();
+    let in_seek_refill = runtime.loop_state.in_seek_refill();
+    let in_seek_settle = runtime.loop_state.in_seek_settle();
     let Some(audio) = runtime.audio_pipeline.as_mut() else {
         return false;
     };
-    let queue_depth_limit = audio_queue_depth_limit(runtime.loop_state.last_applied_audio_rate);
-    let should_wait = audio.output.queue_depth() >= queue_depth_limit;
+    if in_seek_refill && !runtime.is_realtime_source {
+        if audio.stats.audio_only_backpressure_logged {
+            emit_debug(
+                app,
+                "audio_queue_backpressure",
+                format!(
+                    "resume packet read during seek refill queue_sources={} queue_seconds={:.3} has_video={}",
+                    audio.output.queue_depth(),
+                    audio.output.queued_duration_seconds(),
+                    has_video_stream,
+                ),
+            );
+            audio.stats.audio_only_backpressure_logged = false;
+        }
+        return false;
+    }
+    if runtime.loop_state.pending_audio_rate.is_some() && !in_rate_switch_settle {
+        let cover_seconds = audio_rate_switch_cover_seconds(
+            has_video_stream,
+            runtime.is_realtime_source,
+            runtime.is_network_source,
+        );
+        let queued_seconds = audio.output.queued_duration_seconds();
+        if queued_seconds + 1e-3 < cover_seconds {
+            if audio.stats.audio_only_backpressure_logged {
+                emit_debug(
+                    app,
+                    "audio_queue_backpressure",
+                    format!(
+                        "resume packet read to build rate-switch cover queue queue_sources={} queue_seconds={:.3} target={:.3} has_video={}",
+                        audio.output.queue_depth(),
+                        queued_seconds,
+                        cover_seconds,
+                        has_video_stream,
+                    ),
+                );
+                audio.stats.audio_only_backpressure_logged = false;
+            }
+            return false;
+        }
+    }
+    let queue_depth_limit = audio_queue_depth_limit(
+        runtime.loop_state.last_applied_audio_rate,
+        has_video_stream,
+        runtime.is_realtime_source,
+        runtime.is_network_source,
+    );
+    let queue_depth_limit = if in_seek_settle {
+        seek_settle_queue_depth_limit(
+            queue_depth_limit,
+            has_video_stream,
+            runtime.is_realtime_source,
+            runtime.is_network_source,
+        )
+    } else {
+        queue_depth_limit
+    };
+    let queue_depth = audio.output.queue_depth();
+    let queued_seconds = audio.output.queued_duration_seconds();
+    let queue_seconds_limit = audio_queue_seconds_limit(
+        runtime.loop_state.last_applied_audio_rate,
+        has_video_stream,
+        runtime.is_realtime_source,
+        runtime.is_network_source,
+    );
+    let resume_queue_depth_limit = audio_queue_resume_depth_limit(
+        queue_depth_limit,
+        has_video_stream,
+        runtime.is_realtime_source,
+        runtime.is_network_source,
+        in_seek_settle,
+    );
+    let resume_queue_seconds_limit =
+        queue_seconds_limit.map(|seconds| (seconds * 0.6_f64).max(0.05_f64));
+    let should_wait = if audio.stats.audio_only_backpressure_logged {
+        queue_depth > resume_queue_depth_limit
+            && resume_queue_seconds_limit
+                .map(|seconds| queued_seconds > seconds)
+                .unwrap_or(true)
+    } else {
+        queue_depth >= queue_depth_limit
+            && queue_seconds_limit
+                .map(|seconds| queued_seconds >= seconds)
+                .unwrap_or(true)
+    };
     if should_wait && !audio.stats.audio_only_backpressure_logged {
         emit_debug(
             app,
             "audio_queue_backpressure",
             format!(
-                "pause packet read to protect shared audio speed pipeline queue_sources={} threshold={} has_video={}",
-                audio.output.queue_depth(),
+                "pause packet read to protect shared audio speed pipeline queue_sources={} queue_seconds={:.3} threshold={} seconds_limit={:?} has_video={}",
+                queue_depth,
+                queued_seconds,
                 queue_depth_limit,
+                queue_seconds_limit,
                 has_video_stream,
             ),
         );
@@ -153,19 +278,50 @@ pub(super) fn should_wait_for_audio_queue_drain(
             app,
             "audio_queue_backpressure",
             format!(
-                "resume packet read after shared audio speed pipeline drain queue_sources={} threshold={} has_video={}",
-                audio.output.queue_depth(),
+                "resume packet read after shared audio speed pipeline drain queue_sources={} queue_seconds={:.3} threshold={} resume_threshold={} resume_seconds_limit={:?} has_video={}",
+                queue_depth,
+                queued_seconds,
                 queue_depth_limit,
+                resume_queue_depth_limit,
+                resume_queue_seconds_limit,
                 has_video_stream,
             ),
         );
         audio.stats.audio_only_backpressure_logged = false;
     }
-    !has_video_stream && should_wait
+    should_wait && (!has_video_stream || runtime.is_realtime_source)
+}
+
+fn audio_queue_resume_depth_limit(
+    queue_depth_limit: usize,
+    has_video_stream: bool,
+    is_realtime_source: bool,
+    is_network_source: bool,
+    in_seek_settle: bool,
+) -> usize {
+    if queue_depth_limit <= 1 {
+        return 0;
+    }
+    let hysteresis = if in_seek_settle {
+        1
+    } else if has_video_stream || is_realtime_source {
+        2
+    } else if is_network_source {
+        3
+    } else {
+        4
+    };
+    queue_depth_limit.saturating_sub(hysteresis).max(1)
 }
 
 pub(super) fn current_audio_allowed_lead_seconds(runtime: &DecodeRuntime) -> f64 {
-    if runtime.loop_state.in_rate_switch_settle() {
+    if runtime.is_realtime_source {
+        if runtime.loop_state.in_rate_switch_settle() {
+            0.005
+        } else {
+            0.0
+        }
+    } else if runtime.loop_state.in_rate_switch_settle() {
         AUDIO_ALLOWED_LEAD_SECONDS_DURING_SETTLE
     } else {
         AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT
@@ -179,21 +335,20 @@ pub(super) fn refresh_tail_audio_rate(
     let Some(audio_state) = runtime.audio_pipeline.as_mut() else {
         return;
     };
-    let next_rate = timing_controls.playback_rate_value();
+    let next_rate = effective_playback_rate(
+        timing_controls.playback_rate_value(),
+        runtime.is_realtime_source,
+    );
     if next_rate.delta(runtime.loop_state.last_applied_audio_rate) <= 1e-3 {
         return;
     }
     if let Some(clock) = runtime.loop_state.audio_clock.as_mut() {
         clock.rebase_rate(next_rate.as_f64());
     }
-    audio_state.restart_after_discontinuity(runtime.loop_state.last_applied_audio_rate, next_rate);
+    audio_state.restart_after_discontinuity(
+        runtime.loop_state.last_applied_audio_rate,
+        next_rate,
+        false,
+    );
     runtime.loop_state.commit_audio_playback_rate(next_rate);
-}
-
-fn should_delay_audio_rate_switch(
-    queue_depth: usize,
-    current_rate: PlaybackRate,
-    target_rate: PlaybackRate,
-) -> bool {
-    queue_depth > rate_switch_queue_drain_threshold(current_rate, target_rate)
 }

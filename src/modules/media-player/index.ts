@@ -30,6 +30,8 @@ export {
 } from "./cacheRecordingCommands";
 export {
   setMainWindowAlwaysOnTop,
+  startMainWindowDragging,
+  toggleMainWindowFullscreen,
   setMainWindowVideoScaleMode,
 } from "./windowCommands";
 export {

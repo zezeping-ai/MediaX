@@ -65,7 +65,3 @@ pub(super) fn sanitize_surface_size(size: &mut tauri::PhysicalSize<u32>, max_ext
     size.width = size.width.max(1).min(max_extent.max(1));
     size.height = size.height.max(1).min(max_extent.max(1));
 }
-
-pub(super) fn push_f32(bytes: &mut Vec<u8>, value: f32) {
-    bytes.extend_from_slice(&value.to_ne_bytes());
-}

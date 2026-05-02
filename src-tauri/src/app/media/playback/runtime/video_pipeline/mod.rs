@@ -9,6 +9,7 @@ mod telemetry;
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::clock::{AudioClock, FpsWindow, PlaybackClock};
 use ffmpeg_next as ffmpeg;
+use ffmpeg_next::format;
 use ffmpeg_next::software::scaling::context::Context as ScalingContext;
 use std::time::Instant;
 use tauri::AppHandle;
@@ -23,6 +24,7 @@ pub(crate) use stats::percentile_from_sorted;
 pub(super) struct DrainFramesContext<'a> {
     pub app: &'a AppHandle,
     pub renderer: &'a RendererState,
+    pub input_ctx: &'a format::context::Input,
     pub decoder: &'a mut ffmpeg::decoder::Video,
     pub video_time_base: ffmpeg::Rational,
     pub scaler: &'a mut Option<ScalingContext>,
@@ -43,10 +45,13 @@ pub(super) struct DrainFramesContext<'a> {
     pub audio_allowed_lead_seconds: f64,
     pub network_read_bps: Option<f64>,
     pub media_required_bps: Option<f64>,
+    pub is_network_source: bool,
+    pub is_realtime_source: bool,
     pub video_timestamp_metrics: VideoTimestampMetricsRef<'a>,
     pub video_frame_type_metrics: VideoFrameTypeMetricsRef<'a>,
     pub video_packet_soft_error_count: &'a mut u64,
     pub stream_generation: u32,
+    pub max_frames_per_pass: Option<usize>,
 }
 
 impl<'a> DrainFramesContext<'a> {
@@ -54,6 +59,7 @@ impl<'a> DrainFramesContext<'a> {
     pub(super) fn new(
         app: &'a AppHandle,
         renderer: &'a RendererState,
+        input_ctx: &'a format::context::Input,
         decoder: &'a mut ffmpeg::decoder::Video,
         video_time_base: ffmpeg::Rational,
         scaler: &'a mut Option<ScalingContext>,
@@ -74,14 +80,18 @@ impl<'a> DrainFramesContext<'a> {
         audio_allowed_lead_seconds: f64,
         network_read_bps: Option<f64>,
         media_required_bps: Option<f64>,
+        is_network_source: bool,
+        is_realtime_source: bool,
         video_timestamp_metrics: VideoTimestampMetricsRef<'a>,
         video_frame_type_metrics: VideoFrameTypeMetricsRef<'a>,
         video_packet_soft_error_count: &'a mut u64,
         stream_generation: u32,
+        max_frames_per_pass: Option<usize>,
     ) -> Self {
         Self {
             app,
             renderer,
+            input_ctx,
             decoder,
             video_time_base,
             scaler,
@@ -102,10 +112,13 @@ impl<'a> DrainFramesContext<'a> {
             audio_allowed_lead_seconds,
             network_read_bps,
             media_required_bps,
+            is_network_source,
+            is_realtime_source,
             video_timestamp_metrics,
             video_frame_type_metrics,
             video_packet_soft_error_count,
             stream_generation,
+            max_frames_per_pass,
         }
     }
 }

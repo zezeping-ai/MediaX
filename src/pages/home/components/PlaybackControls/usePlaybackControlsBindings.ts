@@ -17,6 +17,7 @@ export function usePlaybackControlsBindings(options: PlaybackControlsBindingsOpt
 
   const timelineProps = computed(() => ({
     currentTime: viewModel.currentTime.value,
+    bufferedTime: viewModel.bufferedPosition.value,
     duration: viewModel.duration.value,
     decodeBadgeClass: unref(viewModel.decodeBadgeClass),
     decodeBadgeLabel: unref(viewModel.decodeBadgeLabel),

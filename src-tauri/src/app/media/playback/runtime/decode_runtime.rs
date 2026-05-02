@@ -9,6 +9,8 @@ pub(super) struct DecodeRuntime {
     pub audio_pipeline: Option<AudioPipeline>,
     pub loop_state: DecodeLoopState,
     pub should_tail_eof: bool,
+    pub is_network_source: bool,
+    pub is_realtime_source: bool,
 }
 
 impl DecodeRuntime {

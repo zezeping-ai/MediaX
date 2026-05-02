@@ -27,6 +27,10 @@ const {
     <section
       class="relative h-full w-full"
       @mousemove="shellEvents.onPointerMove"
+      @pointermove="shellEvents.onPointerMove"
+      @pointerdown="shellEvents.onPointerActivate"
+      @touchstart.passive="shellEvents.onPointerActivate"
+      @focusin="shellEvents.onFocusIn"
       @mouseleave="shellEvents.onPointerLeave"
     >
       <MediaViewport

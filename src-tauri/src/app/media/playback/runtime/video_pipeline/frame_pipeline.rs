@@ -1,7 +1,7 @@
 use super::percentile_from_sorted;
-use crate::app::media::playback::render::renderer::VideoFrame;
+use crate::app::media::playback::render::renderer::{DecodedVideoFrame, VideoFrame};
 use crate::app::media::playback::render::video_frame::{
-    detect_color_profile, video_frame_to_nv12_planes_from_yuv420p, ColorProfile,
+    detect_color_profile, ColorProfile,
 };
 use crate::app::media::playback::runtime::{emit_debug, METRICS_EMIT_INTERVAL_MS};
 use ffmpeg_next::frame;
@@ -46,8 +46,12 @@ struct VideoPerfWindow {
 struct VideoStagePerfWindow {
     samples: u64,
     receive: StageCostWindow,
+    queue_wait: StageCostWindow,
     hw_transfer: StageCostWindow,
     scale: StageCostWindow,
+    color_profile: StageCostWindow,
+    frame_extract: StageCostWindow,
+    upload_prep: StageCostWindow,
     submit: StageCostWindow,
     total: StageCostWindow,
 }
@@ -71,10 +75,18 @@ pub(crate) struct VideoStagePerfSnapshot {
     pub sample_count: u64,
     pub receive_avg_ms: f64,
     pub receive_max_ms: f64,
+    pub queue_wait_avg_ms: f64,
+    pub queue_wait_max_ms: f64,
     pub hw_transfer_avg_ms: f64,
     pub hw_transfer_max_ms: f64,
     pub scale_avg_ms: f64,
     pub scale_max_ms: f64,
+    pub color_profile_avg_ms: f64,
+    pub color_profile_max_ms: f64,
+    pub frame_extract_avg_ms: f64,
+    pub frame_extract_max_ms: f64,
+    pub upload_prep_avg_ms: f64,
+    pub upload_prep_max_ms: f64,
     pub submit_avg_ms: f64,
     pub submit_max_ms: f64,
     pub total_avg_ms: f64,
@@ -121,15 +133,23 @@ impl VideoFramePipeline {
     pub(super) fn record_stage_costs(
         &mut self,
         receive: Duration,
+        queue_wait: Duration,
         hw_transfer: Duration,
         scale: Duration,
+        color_profile: Duration,
+        frame_extract: Duration,
+        upload_prep: Duration,
         submit: Duration,
         total: Duration,
     ) {
         self.stage_perf_window.samples = self.stage_perf_window.samples.saturating_add(1);
         record_stage_cost(&mut self.stage_perf_window.receive, receive);
+        record_stage_cost(&mut self.stage_perf_window.queue_wait, queue_wait);
         record_stage_cost(&mut self.stage_perf_window.hw_transfer, hw_transfer);
         record_stage_cost(&mut self.stage_perf_window.scale, scale);
+        record_stage_cost(&mut self.stage_perf_window.color_profile, color_profile);
+        record_stage_cost(&mut self.stage_perf_window.frame_extract, frame_extract);
+        record_stage_cost(&mut self.stage_perf_window.upload_prep, upload_prep);
         record_stage_cost(&mut self.stage_perf_window.submit, submit);
         record_stage_cost(&mut self.stage_perf_window.total, total);
     }
@@ -143,10 +163,18 @@ impl VideoFramePipeline {
             sample_count: samples,
             receive_avg_ms: stage_avg_ms(&self.stage_perf_window.receive, samples),
             receive_max_ms: stage_max_ms(&self.stage_perf_window.receive),
+            queue_wait_avg_ms: stage_avg_ms(&self.stage_perf_window.queue_wait, samples),
+            queue_wait_max_ms: stage_max_ms(&self.stage_perf_window.queue_wait),
             hw_transfer_avg_ms: stage_avg_ms(&self.stage_perf_window.hw_transfer, samples),
             hw_transfer_max_ms: stage_max_ms(&self.stage_perf_window.hw_transfer),
             scale_avg_ms: stage_avg_ms(&self.stage_perf_window.scale, samples),
             scale_max_ms: stage_max_ms(&self.stage_perf_window.scale),
+            color_profile_avg_ms: stage_avg_ms(&self.stage_perf_window.color_profile, samples),
+            color_profile_max_ms: stage_max_ms(&self.stage_perf_window.color_profile),
+            frame_extract_avg_ms: stage_avg_ms(&self.stage_perf_window.frame_extract, samples),
+            frame_extract_max_ms: stage_max_ms(&self.stage_perf_window.frame_extract),
+            upload_prep_avg_ms: stage_avg_ms(&self.stage_perf_window.upload_prep, samples),
+            upload_prep_max_ms: stage_max_ms(&self.stage_perf_window.upload_prep),
             submit_avg_ms: stage_avg_ms(&self.stage_perf_window.submit, samples),
             submit_max_ms: stage_max_ms(&self.stage_perf_window.submit),
             total_avg_ms: stage_avg_ms(&self.stage_perf_window.total, samples),
@@ -165,12 +193,6 @@ impl VideoFramePipeline {
     pub(super) fn on_scale_failed(&mut self, app: &AppHandle, err: &str) {
         self.integrity.dropped_scale = self.integrity.dropped_scale.saturating_add(1);
         emit_debug(app, "video_scale", format!("drop frame: {err}"));
-        self.emit_integrity_if_needed(app);
-    }
-
-    fn on_nv12_extract_failed(&mut self, app: &AppHandle, err: &str) {
-        self.integrity.dropped_nv12_extract = self.integrity.dropped_nv12_extract.saturating_add(1);
-        emit_debug(app, "nv12_extract", format!("drop frame: {err}"));
         self.emit_integrity_if_needed(app);
     }
 
@@ -209,21 +231,31 @@ impl VideoFramePipeline {
     pub(super) fn frame_to_renderer(
         &mut self,
         app: &AppHandle,
-        frame: &frame::Video,
+        frame: frame::Video,
         pts: f64,
-    ) -> Option<VideoFrame> {
-        self.emit_first_frame_if_needed(app, frame, pts);
-        let profile = self.resolve_color_profile(app, frame);
-        let render_frame =
-            match video_frame_to_nv12_planes_from_yuv420p(frame, Some(pts), Some(profile)) {
-                Ok(frame) => frame,
-                Err(err) => {
-                    self.on_nv12_extract_failed(app, &err);
-                    return None;
-                }
-            };
+        reusable_frame: Option<VideoFrame>,
+    ) -> Option<(DecodedVideoFrame, Duration, Duration)> {
+        self.emit_first_frame_if_needed(app, &frame, pts);
+        let color_profile_start = Instant::now();
+        let profile = self.resolve_color_profile(app, &frame);
+        let color_profile_cost = color_profile_start.elapsed();
+        let frame_extract_start = Instant::now();
+        let _ = reusable_frame;
+        let frame_extract_cost = frame_extract_start.elapsed();
         self.emit_integrity_if_needed(app);
-        Some(render_frame)
+        Some((
+            DecodedVideoFrame {
+                pts_seconds: pts,
+                frame,
+                color_matrix: profile.color_matrix,
+                y_offset: profile.y_offset,
+                y_scale: profile.y_scale,
+                uv_offset: profile.uv_offset,
+                uv_scale: profile.uv_scale,
+            },
+            color_profile_cost,
+            frame_extract_cost,
+        ))
     }
 
     fn emit_first_frame_if_needed(&mut self, app: &AppHandle, frame: &frame::Video, pts: f64) {

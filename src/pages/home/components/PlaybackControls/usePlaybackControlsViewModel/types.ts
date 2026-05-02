@@ -19,6 +19,7 @@ export interface PlaybackControlsProps {
   cacheRecording: boolean;
   cacheOutputPath: string;
   durationSecondsOverride: number;
+  bufferedPositionSecondsOverride?: number;
   qualityOptions: PlaybackQualityOption[];
   selectedQuality: string;
   requestPreviewFrame?: RequestPreviewFrame;

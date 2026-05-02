@@ -3,8 +3,7 @@ use super::encoder::create_preview_frame;
 use crate::app::media::model::PreviewFrame;
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::render::video_frame::{
-    detect_color_profile, ensure_scaler, transfer_hw_frame_if_needed,
-    video_frame_to_nv12_planes_from_yuv420p, ScalerSpec,
+    detect_color_profile, ensure_scaler, transfer_hw_frame_if_needed, ScalerSpec,
 };
 use ffmpeg_next::format;
 use ffmpeg_next::frame;
@@ -45,34 +44,41 @@ where
                 .run(&frame_for_scale, &mut nv12_frame)
                 .map_err(|err| format!("scale frame failed: {err}"))?;
         }
-        let frame = match video_frame_to_nv12_planes_from_yuv420p(
-            &nv12_frame,
-            None,
-            Some(detect_color_profile(&nv12_frame)),
-        ) {
-            Ok(frame) => frame,
-            Err(_) => continue,
+        let color_profile = detect_color_profile(&nv12_frame);
+        let hinted_seconds =
+            timestamp_to_seconds(decoded.timestamp(), decoded.pts(), ctx.video_time_base);
+        let submit_preview_frame = |renderer: &crate::app::media::playback::render::renderer::RendererState,
+                                    frame: frame::Video,
+                                    pts_seconds: Option<f64>,
+                                    color_profile: crate::app::media::playback::render::video_frame::ColorProfile| {
+            renderer.submit_decoded_frame(
+                frame,
+                pts_seconds.unwrap_or(0.0),
+                color_profile.color_matrix,
+                color_profile.y_offset,
+                color_profile.y_scale,
+                color_profile.uv_offset,
+                color_profile.uv_scale,
+            );
         };
 
         if ctx.seek_applied {
-            ctx.renderer.submit_frame(frame);
+            submit_preview_frame(ctx.renderer, nv12_frame, hinted_seconds, color_profile);
             return Ok(true);
         }
 
-        let hinted_seconds =
-            timestamp_to_seconds(decoded.timestamp(), decoded.pts(), ctx.video_time_base);
         if let Some(seconds) = hinted_seconds {
             if seconds + 0.04 >= ctx.target_seconds {
-                ctx.renderer.submit_frame(frame);
+                submit_preview_frame(ctx.renderer, nv12_frame, hinted_seconds, color_profile);
                 return Ok(true);
             }
         } else {
-            ctx.renderer.submit_frame(frame);
+            submit_preview_frame(ctx.renderer, nv12_frame, hinted_seconds, color_profile);
             return Ok(true);
         }
 
         if Instant::now() >= ctx.deadline {
-            ctx.renderer.submit_frame(frame);
+            submit_preview_frame(ctx.renderer, nv12_frame, hinted_seconds, color_profile);
             return Ok(true);
         }
     }

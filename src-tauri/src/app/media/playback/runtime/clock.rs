@@ -1,4 +1,7 @@
 use crate::app::media::state::TimingControls;
+use crate::app::media::playback::runtime::audio::{
+    effective_playback_rate, playback_rate_limited_reason,
+};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -31,6 +34,12 @@ impl AudioClock {
         self.anchor_media_seconds = now_media_seconds.max(0.0);
         self.anchor_rate = next_rate.max(0.25);
     }
+
+    pub fn rebase_position(&mut self, media_seconds: f64, next_rate: f64) {
+        self.anchor_instant = Instant::now();
+        self.anchor_media_seconds = media_seconds.max(0.0);
+        self.anchor_rate = next_rate.max(0.25);
+    }
 }
 
 pub struct PlaybackClock {
@@ -38,6 +47,7 @@ pub struct PlaybackClock {
     last_emit_instant: Option<Instant>,
     media_seconds: f64,
     timing_controls: Arc<TimingControls>,
+    is_realtime_source: bool,
 }
 
 #[derive(Default)]
@@ -68,6 +78,7 @@ impl PlaybackClock {
         max_emit_fps: u32,
         start_seconds: f64,
         timing_controls: Arc<TimingControls>,
+        is_realtime_source: bool,
     ) -> Self {
         let safe_fps = if fps.is_finite() && fps >= 1.0 {
             fps
@@ -84,6 +95,7 @@ impl PlaybackClock {
             last_emit_instant: None,
             media_seconds: start_seconds.max(0.0),
             timing_controls,
+            is_realtime_source,
         }
     }
 
@@ -100,8 +112,23 @@ impl PlaybackClock {
         1.0 / self.frame_duration.as_secs_f64().max(1e-6)
     }
 
+    pub fn requested_playback_rate(&self) -> f64 {
+        self.timing_controls.playback_rate_value().as_f64()
+    }
+
     pub fn playback_rate(&self) -> f64 {
-        self.timing_controls.playback_rate() as f64
+        effective_playback_rate(
+            self.timing_controls.playback_rate_value(),
+            self.is_realtime_source,
+        )
+        .as_f64()
+    }
+
+    pub fn playback_rate_limited_reason(&self) -> Option<&'static str> {
+        playback_rate_limited_reason(
+            self.timing_controls.playback_rate_value(),
+            self.is_realtime_source,
+        )
     }
 
     pub fn tick(

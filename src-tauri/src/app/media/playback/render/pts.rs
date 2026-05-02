@@ -9,5 +9,5 @@ pub fn timestamp_to_seconds(
     pts: Option<i64>,
     time_base: ffmpeg::Rational,
 ) -> Option<f64> {
-    timestamp.or(pts).map(|ts| to_seconds(ts, time_base))
+    pts.or(timestamp).map(|ts| to_seconds(ts, time_base))
 }

@@ -1,3 +1,5 @@
+use ffmpeg_next::frame;
+
 #[derive(Clone, Copy, Debug)]
 pub enum VideoScaleMode {
     Contain,
@@ -37,8 +39,8 @@ pub struct VideoFrame {
     pub pts_seconds: f64,
     pub width: u32,
     pub height: u32,
-    pub y_plane: Vec<u8>,
-    pub uv_plane: Vec<u8>,
+    pub plane_strides: [u32; 2],
+    pub planes: VideoFramePlanes,
     pub color_matrix: [[f32; 3]; 3],
     pub y_offset: f32,
     pub y_scale: f32,
@@ -46,10 +48,45 @@ pub struct VideoFrame {
     pub uv_scale: f32,
 }
 
+pub(crate) struct DecodedVideoFrame {
+    pub pts_seconds: f64,
+    pub frame: frame::Video,
+    pub color_matrix: [[f32; 3]; 3],
+    pub y_offset: f32,
+    pub y_scale: f32,
+    pub uv_offset: f32,
+    pub uv_scale: f32,
+}
+
+pub(super) enum QueuedFrame {
+    Prepared(VideoFrame),
+    Decoded(DecodedVideoFrame),
+}
+
+#[derive(Clone)]
+pub enum VideoFramePlanes {
+    Nv12 {
+        y_plane: Vec<u8>,
+        uv_plane: Vec<u8>,
+    },
+}
+
+impl QueuedFrame {
+    pub(super) fn pts_seconds(&self) -> f64 {
+        match self {
+            Self::Prepared(frame) => frame.pts_seconds,
+            Self::Decoded(frame) => frame.pts_seconds,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Default)]
 pub struct RendererMetricsSnapshot {
     pub queue_depth: usize,
     pub queue_capacity: usize,
+    pub current_clock_seconds: f64,
+    pub queued_head_pts_seconds: Option<f64>,
+    pub queued_tail_pts_seconds: Option<f64>,
     pub last_render_cost_ms: f64,
     pub last_present_lag_ms: f64,
     pub last_presented_pts_seconds: Option<f64>,

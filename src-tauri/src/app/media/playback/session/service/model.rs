@@ -23,6 +23,7 @@ pub(super) struct PlaybackTransportState {
     pub status: PlaybackStatus,
     pub position_seconds: f64,
     pub duration_seconds: f64,
+    pub buffered_position_seconds: f64,
     pub playback_rate: PlaybackRate,
     pub error: Option<String>,
 }
@@ -73,6 +74,7 @@ impl Default for PlaybackTransportState {
             status: PlaybackStatus::Idle,
             position_seconds: 0.0,
             duration_seconds: 0.0,
+            buffered_position_seconds: 0.0,
             playback_rate: PlaybackRate::default(),
             error: None,
         }

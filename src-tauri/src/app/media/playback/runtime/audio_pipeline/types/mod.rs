@@ -1,9 +1,7 @@
 mod output_format;
 mod stats;
 
-use crate::app::media::playback::rate::{
-    discontinuity_smoothing_profile, output_staging_frames, PlaybackRate,
-};
+use crate::app::media::playback::rate::{discontinuity_smoothing_profile, PlaybackRate};
 use ffmpeg_next::software::resampling::context::Context as ResamplingContext;
 
 pub(crate) use output_format::AudioOutputSampleFormat;
@@ -18,10 +16,12 @@ pub(crate) struct AudioPipeline {
     pub time_stretch: super::time_stretch::AudioTimeStretch,
     pub output: super::output::AudioOutput,
     pub stats: AudioStats,
+    pub(crate) scratch_pcm: Vec<f32>,
     pub(crate) discontinuity_fade_in_frames_remaining: usize,
     pub(crate) discontinuity_fade_in_total_frames: usize,
     pub(crate) output_staging_channels: u16,
     pub(crate) output_staging_samples: Vec<f32>,
+    pub(crate) output_staging_start: usize,
     pub(crate) recent_output_tail_channels: u16,
     pub(crate) recent_output_tail_samples: Vec<f32>,
     pub(crate) discontinuity_crossfade_tail_channels: u16,
@@ -42,22 +42,39 @@ impl AudioPipeline {
         &mut self,
         previous_rate: PlaybackRate,
         next_rate: PlaybackRate,
+        preserve_output_queue: bool,
     ) {
         self.reset_processing_state();
-        self.clear_output_queue();
-        self.stats.intentional_refill_pending = true;
-        let smoothing = discontinuity_smoothing_profile(previous_rate, next_rate);
-        self.discontinuity_fade_in_total_frames = smoothing.fade_in_frames;
-        self.discontinuity_fade_in_frames_remaining = smoothing.fade_in_frames;
-        self.discontinuity_crossfade_frames = smoothing.crossfade_frames;
+        if preserve_output_queue {
+            self.stats.intentional_refill_pending = false;
+            self.stats.intentional_refill_logged = false;
+            self.discontinuity_fade_in_total_frames = 0;
+            self.discontinuity_fade_in_frames_remaining = 0;
+            self.discontinuity_crossfade_frames = 0;
+            self.discontinuity_crossfade_tail_channels = 0;
+            self.discontinuity_crossfade_tail_samples.clear();
+            self.recent_output_tail_channels = 0;
+            self.recent_output_tail_samples.clear();
+        } else {
+            self.clear_output_queue();
+            self.stats.intentional_refill_pending = true;
+            self.stats.intentional_refill_logged = false;
+            let smoothing = discontinuity_smoothing_profile(previous_rate, next_rate);
+            self.discontinuity_fade_in_total_frames = smoothing.fade_in_frames;
+            self.discontinuity_fade_in_frames_remaining = smoothing.fade_in_frames;
+            self.discontinuity_crossfade_frames = smoothing.crossfade_frames;
+            self.discontinuity_crossfade_tail_channels = self.recent_output_tail_channels;
+            self.discontinuity_crossfade_tail_samples =
+                std::mem::take(&mut self.recent_output_tail_samples);
+        }
         self.output_staging_channels = 0;
         self.output_staging_samples.clear();
-        self.discontinuity_crossfade_tail_channels = self.recent_output_tail_channels;
-        self.discontinuity_crossfade_tail_samples = self.recent_output_tail_samples.clone();
+        self.output_staging_start = 0;
     }
 
     pub fn mark_refill_completed(&mut self) {
         self.stats.intentional_refill_pending = false;
+        self.stats.intentional_refill_logged = false;
     }
 
     pub fn apply_discontinuity_smoothing(&mut self, pcm: &mut [f32], channels: u16) {
@@ -92,7 +109,7 @@ impl AudioPipeline {
         &mut self,
         pcm: &[f32],
         channels: u16,
-        playback_rate: PlaybackRate,
+        staging_frames: usize,
         force_flush_partial: bool,
     ) -> Vec<Vec<f32>> {
         if pcm.is_empty() || channels == 0 {
@@ -101,18 +118,19 @@ impl AudioPipeline {
         if self.output_staging_channels != channels {
             self.output_staging_channels = channels;
             self.output_staging_samples.clear();
+            self.output_staging_start = 0;
         }
         self.output_staging_samples.extend_from_slice(pcm);
         let mut blocks = Vec::new();
-        let samples_per_block =
-            output_staging_frames(playback_rate).saturating_mul(usize::from(channels));
-        while self.output_staging_samples.len() >= samples_per_block {
-            let block: Vec<f32> = self.output_staging_samples.drain(..samples_per_block).collect();
+        let samples_per_block = staging_frames.max(1).saturating_mul(usize::from(channels));
+        while self.available_staging_samples() >= samples_per_block {
+            let block = self.take_staged_block(samples_per_block);
             self.remember_output_tail(&block, channels);
             blocks.push(block);
         }
-        if force_flush_partial && !self.output_staging_samples.is_empty() {
-            let block = std::mem::take(&mut self.output_staging_samples);
+        self.compact_staging_buffer_if_needed();
+        if force_flush_partial && self.available_staging_samples() > 0 {
+            let block = self.take_remaining_staging_samples();
             self.remember_output_tail(&block, channels);
             blocks.push(block);
         }
@@ -120,11 +138,11 @@ impl AudioPipeline {
     }
 
     pub fn flush_staged_output_pcm(&mut self) -> Option<(u16, Vec<f32>)> {
-        if self.output_staging_samples.is_empty() || self.output_staging_channels == 0 {
+        if self.available_staging_samples() == 0 || self.output_staging_channels == 0 {
             return None;
         }
         let channels = self.output_staging_channels;
-        let block = std::mem::take(&mut self.output_staging_samples);
+        let block = self.take_remaining_staging_samples();
         self.remember_output_tail(&block, channels);
         Some((channels, block))
     }
@@ -185,5 +203,60 @@ impl AudioPipeline {
         self.recent_output_tail_channels = channels;
         self.recent_output_tail_samples.clear();
         self.recent_output_tail_samples.extend_from_slice(&pcm[start..]);
+    }
+
+    fn available_staging_samples(&self) -> usize {
+        self.output_staging_samples
+            .len()
+            .saturating_sub(self.output_staging_start)
+    }
+
+    fn compact_staging_buffer_if_needed(&mut self) {
+        if self.output_staging_start == 0 {
+            return;
+        }
+        if self.output_staging_start < self.output_staging_samples.len() / 2 {
+            return;
+        }
+        self.output_staging_samples
+            .drain(..self.output_staging_start);
+        self.output_staging_start = 0;
+    }
+
+    fn take_remaining_staging_samples(&mut self) -> Vec<f32> {
+        let remaining = self.available_staging_samples();
+        if remaining == 0 {
+            self.output_staging_samples.clear();
+            self.output_staging_start = 0;
+            return Vec::new();
+        }
+        let mut block = Vec::with_capacity(remaining);
+        block.extend_from_slice(&self.output_staging_samples[self.output_staging_start..]);
+        self.output_staging_samples.clear();
+        self.output_staging_start = 0;
+        block
+    }
+
+    fn take_staged_block(&mut self, samples_per_block: usize) -> Vec<f32> {
+        if self.output_staging_start > 0 {
+            self.compact_staging_buffer_force();
+        }
+        if self.output_staging_samples.len() == samples_per_block {
+            self.output_staging_start = 0;
+            return std::mem::take(&mut self.output_staging_samples);
+        }
+        let remainder = self.output_staging_samples.split_off(samples_per_block);
+        let block = std::mem::replace(&mut self.output_staging_samples, remainder);
+        self.output_staging_start = 0;
+        block
+    }
+
+    fn compact_staging_buffer_force(&mut self) {
+        if self.output_staging_start == 0 {
+            return;
+        }
+        self.output_staging_samples
+            .drain(..self.output_staging_start);
+        self.output_staging_start = 0;
     }
 }

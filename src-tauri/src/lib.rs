@@ -29,6 +29,10 @@ pub fn run() {
                 let boxed: Box<dyn std::error::Error> = Box::new(std::io::Error::other(err));
                 tauri::Error::Setup(boxed.into())
             })?;
+            app::autoprobe::bootstrap_from_env(app.handle()).map_err(|err| {
+                let boxed: Box<dyn std::error::Error> = Box::new(std::io::Error::other(err));
+                tauri::Error::Setup(boxed.into())
+            })?;
             Ok(())
         })
         .on_menu_event(app::menu::handle_menu_event)

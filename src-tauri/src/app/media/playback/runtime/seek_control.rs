@@ -34,9 +34,12 @@ pub fn apply_seek_to_stream(
         return Ok(());
     }
     let ts = (clamped * f64::from(ffmpeg::ffi::AV_TIME_BASE)).round() as i64;
-    input_ctx
-        .seek(ts, ..)
-        .map_err(|err| format!("seek stream failed: {err}"))?;
+    if let Err(err) = input_ctx.seek(ts, ..) {
+        if is_non_seekable_error(err) {
+            return Ok(());
+        }
+        return Err(format!("seek stream failed: {err}"));
+    }
     if let Some(decoder) = decoder {
         decoder.flush();
     }
@@ -44,9 +47,23 @@ pub fn apply_seek_to_stream(
         audio_state.decoder.flush();
         // Clearing queued sources pauses rodio playback. Resume immediately after seek.
         let current_rate = PlaybackRate::from_f64(playback_clock.playback_rate());
-        audio_state.restart_after_discontinuity(current_rate, current_rate);
+        audio_state.restart_after_discontinuity(current_rate, current_rate, false);
     }
     playback_clock.reset_to(clamped);
     *current_position_seconds = clamped;
     Ok(())
+}
+
+fn is_non_seekable_error(err: ffmpeg::Error) -> bool {
+    matches!(
+        err,
+        ffmpeg::Error::Other { errno }
+            if errno == ffmpeg::util::error::EPERM
+                || errno == ffmpeg::util::error::ESPIPE
+                || errno == ffmpeg::util::error::ENOSYS
+                || errno == ffmpeg::util::error::EOPNOTSUPP
+    ) || err
+        .to_string()
+        .to_ascii_lowercase()
+        .contains("operation not permitted")
 }

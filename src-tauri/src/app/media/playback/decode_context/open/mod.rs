@@ -12,6 +12,8 @@ use ffmpeg_next::format;
 use ffmpeg_next::format::stream::Disposition;
 use ffmpeg_next::media::Type;
 use self::metadata::{build_source_metadata, SourceMetadata};
+pub(crate) use self::metadata::load_deferred_audio_cover_frame;
+pub(crate) use self::cover_art::cover_frame_from_image_bytes;
 
 pub(crate) fn open_video_decode_context(
     source: &str,
@@ -247,6 +249,7 @@ fn finalize_video_decode_context(
         media_kind: source_metadata.media_kind,
         has_cover_art: source_metadata.has_cover_art,
         cover_frame: source_metadata.cover_frame,
+        deferred_cover_bytes: source_metadata.deferred_cover_bytes,
         title: source_metadata.title,
         artist: source_metadata.artist,
         album: source_metadata.album,

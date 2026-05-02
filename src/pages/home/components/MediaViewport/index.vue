@@ -7,6 +7,10 @@ import {
   type PlaybackChannelRouting,
   type PlaybackState,
 } from "@/modules/media-types";
+import {
+  startMainWindowDragging,
+  toggleMainWindowFullscreen,
+} from "@/modules/media-player/windowCommands";
 import { usePreferences } from "@/modules/preferences";
 import AudioLyricsOverlay from "./AudioLyricsOverlay";
 import TransferStatusOverlay from "./TransferStatusOverlay.vue";
@@ -127,10 +131,54 @@ watch(
     debugOverlayOpen.value = true;
   },
 );
+
+const WINDOW_DRAG_BLOCK_SELECTORS = [
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "label",
+  "a",
+  "[role='button']",
+  "[role='slider']",
+  "[role='dialog']",
+  "[data-no-window-drag='true']",
+  ".ant-btn",
+  ".ant-slider",
+  ".ant-select",
+  ".ant-dropdown",
+  ".ant-modal",
+  ".ant-empty",
+].join(", ");
+
+function isInteractiveTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest(WINDOW_DRAG_BLOCK_SELECTORS));
+}
+
+async function handleViewportDoubleClick(event: MouseEvent) {
+  if (isInteractiveTarget(event.target)) {
+    return;
+  }
+  await toggleMainWindowFullscreen();
+}
+
+async function handleViewportPointerDown(event: PointerEvent) {
+  if (event.button !== 0 || !event.isPrimary || event.detail > 1) {
+    return;
+  }
+  if (isInteractiveTarget(event.target)) {
+    return;
+  }
+  await startMainWindowDragging();
+}
 </script>
 
 <template>
-  <section class="relative flex h-full items-center justify-center overflow-hidden bg-transparent">
+  <section
+    class="relative flex h-full items-center justify-center overflow-hidden bg-transparent"
+    @dblclick="handleViewportDoubleClick"
+    @pointerdown="handleViewportPointerDown"
+  >
     <div v-if="source" class="h-full w-full" />
     <div v-else class="p-5">
       <a-empty description="请从 File 菜单打开本地文件或 URL">

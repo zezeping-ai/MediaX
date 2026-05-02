@@ -20,7 +20,7 @@ impl Renderer {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("mediax-renderer-device"),
-                required_features: wgpu::Features::empty(),
+                required_features: wgpu::Features::TEXTURE_FORMAT_16BIT_NORM,
                 required_limits: adapter.limits(),
                 experimental_features: wgpu::ExperimentalFeatures::default(),
                 memory_hints: wgpu::MemoryHints::default(),
@@ -81,11 +81,51 @@ impl Renderer {
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
@@ -149,12 +189,40 @@ impl Renderer {
             1,
             wgpu::TextureFormat::R8Unorm,
         );
+        let (texture_u, texture_u_view) = create_plane_texture(
+            &device,
+            "mediax-video-u",
+            1,
+            1,
+            wgpu::TextureFormat::R8Unorm,
+        );
+        let (texture_y_16, texture_y_16_view) = create_plane_texture(
+            &device,
+            "mediax-video-y16",
+            1,
+            1,
+            wgpu::TextureFormat::R16Unorm,
+        );
+        let (texture_v, texture_v_view) = create_plane_texture(
+            &device,
+            "mediax-video-v",
+            1,
+            1,
+            wgpu::TextureFormat::R8Unorm,
+        );
         let (texture_uv, texture_uv_view) = create_plane_texture(
             &device,
             "mediax-video-uv",
             1,
             1,
             wgpu::TextureFormat::Rg8Unorm,
+        );
+        let (texture_uv_16, texture_uv_16_view) = create_plane_texture(
+            &device,
+            "mediax-video-uv16",
+            1,
+            1,
+            wgpu::TextureFormat::Rg16Unorm,
         );
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("mediax-video-bg"),
@@ -166,14 +234,30 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&texture_uv_view),
+                    resource: wgpu::BindingResource::TextureView(&texture_u_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
+                    resource: wgpu::BindingResource::TextureView(&texture_v_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&texture_uv_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&texture_y_16_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&texture_uv_16_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
                     resource: color_params_buffer.as_entire_binding(),
                 },
             ],
@@ -191,8 +275,16 @@ impl Renderer {
             color_params_buffer,
             texture_y,
             texture_y_view,
+            texture_y_16,
+            texture_y_16_view,
+            texture_u,
+            texture_u_view,
+            texture_v,
+            texture_v_view,
             texture_uv,
             texture_uv_view,
+            texture_uv_16,
+            texture_uv_16_view,
             bind_group,
             texture_size: (1, 1),
             has_uploaded_frame: false,

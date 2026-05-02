@@ -45,6 +45,20 @@ impl StreamRuntimeState {
         Ok(())
     }
 
+    pub fn has_active_stream(&self) -> Result<bool, MediaError> {
+        let has_stop_flag = self
+            .stop_flag
+            .lock()
+            .map_err(|_| MediaError::state_poisoned_lock("stream state"))?
+            .is_some();
+        let has_thread = self
+            .thread
+            .lock()
+            .map_err(|_| MediaError::state_poisoned_lock("stream thread"))?
+            .is_some();
+        Ok(has_stop_flag || has_thread)
+    }
+
     pub fn request_stop(handles: &DecodeStreamHandles) {
         if let Some(flag) = handles.0.as_ref() {
             flag.store(true, Ordering::Relaxed);

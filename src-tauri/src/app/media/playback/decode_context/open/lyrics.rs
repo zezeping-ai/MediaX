@@ -2,6 +2,8 @@ use crate::app::media::model::MediaLyricLine;
 use ffmpeg_next as ffmpeg;
 use std::path::{Path, PathBuf};
 
+use super::metadata::dictionary_value_lossy;
+
 const LYRIC_METADATA_KEYS: &[&str] = &[
     "lyrics",
     "syncedlyrics",
@@ -49,8 +51,8 @@ fn load_sidecar_lrc(source: &str) -> Result<Vec<MediaLyricLine>, String> {
 
 fn extract_lyrics_from_metadata(dictionary: &ffmpeg::DictionaryRef<'_>) -> Vec<MediaLyricLine> {
     for key in LYRIC_METADATA_KEYS {
-        if let Some(value) = dictionary.get(key) {
-            let parsed = parse_lrc_contents(value);
+        if let Some(value) = dictionary_value_lossy(dictionary, key) {
+            let parsed = parse_lrc_contents(&value);
             if !parsed.is_empty() {
                 return parsed;
             }

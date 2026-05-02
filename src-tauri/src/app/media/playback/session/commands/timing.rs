@@ -1,4 +1,5 @@
 use super::command_result;
+use crate::app::media::error::MediaError;
 use crate::app::media::error::MediaCommandError;
 use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::dto::{
@@ -27,12 +28,17 @@ pub fn playback_seek_to(
 }
 
 #[tauri::command]
+#[allow(non_snake_case)]
 pub fn playback_set_rate(
     app: AppHandle,
     state: State<'_, MediaState>,
-    playback_rate: f64,
+    playback_rate: Option<f64>,
+    playbackRate: Option<f64>,
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, MediaCommandError> {
+    let playback_rate = playback_rate
+        .or(playbackRate)
+        .ok_or_else(|| MediaError::invalid_input("missing playback_rate"))?;
     emit_debug(&app, "rate_request", format!("requested playback_rate={playback_rate:.3}"));
     command_result(coordinator::set_rate(app, state, playback_rate, request_id))
 }

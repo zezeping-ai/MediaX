@@ -1,172 +1,168 @@
 use super::types::AudioOutputSampleFormat;
-use ffmpeg_next as ffmpeg;
-use ffmpeg_next::channel_layout::ChannelLayout;
-use ffmpeg_next::filter;
-use ffmpeg_next::format;
 use ffmpeg_next::frame;
+use soundtouch::{Setting, SoundTouch};
+
+const TIME_STRETCH_OUTPUT_CHUNK_FRAMES: usize = 4096;
+const TIME_STRETCH_MAX_DRAIN_FRAMES_PER_CALL: usize = 4096;
+const TIME_STRETCH_WARMUP_FALLBACK_FRAMES: u8 = 3;
 
 pub(crate) struct AudioTimeStretch {
-    graph: Option<AudioTimeStretchGraph>,
+    processor: Option<AudioTimeStretchProcessor>,
     output_sample_format: AudioOutputSampleFormat,
+    scratch_input_pcm: Vec<f32>,
 }
 
-struct AudioTimeStretchGraph {
-    graph: filter::Graph,
+struct AudioTimeStretchProcessor {
+    soundtouch: SoundTouch,
     rate: f32,
     sample_rate: u32,
-    sample_format: format::Sample,
-    channel_layout: ChannelLayout,
+    channels: usize,
+    warmup_fallback_frames_remaining: u8,
+    output_chunk: Vec<f32>,
 }
 
 impl AudioTimeStretch {
     pub fn new(output_sample_format: AudioOutputSampleFormat) -> Self {
         Self {
-            graph: None,
+            processor: None,
             output_sample_format,
+            scratch_input_pcm: Vec::new(),
         }
     }
 
-    pub fn process_frame(
+    pub fn process_frame_into(
         &mut self,
-        frame: &frame::Audio,
+        frame: &mut frame::Audio,
         rate: f32,
-    ) -> Result<Vec<f32>, String> {
+        pcm: &mut Vec<f32>,
+    ) -> Result<(), String> {
+        pcm.clear();
+        let mut input_pcm = std::mem::take(&mut self.scratch_input_pcm);
+        input_pcm.clear();
+        extract_output_samples_into(frame, self.output_sample_format, &mut input_pcm)?;
+        if input_pcm.is_empty() || frame.channels() == 0 {
+            self.scratch_input_pcm = input_pcm;
+            return Ok(());
+        }
         if should_bypass_time_stretch(rate) {
-            return extract_output_samples(frame, self.output_sample_format);
+            pcm.extend_from_slice(&input_pcm);
+            self.scratch_input_pcm = input_pcm;
+            return Ok(());
         }
-        let graph = self.ensure_graph(frame, rate)?;
-        let mut filter_input = frame.clone();
-        if filter_input.pts().is_none() {
-            let best_effort_pts = filter_input.timestamp();
-            filter_input.set_pts(best_effort_pts);
+
+        let channels = frame.channels().max(1) as usize;
+        let processor = self.ensure_processor(frame.rate(), channels, rate);
+        processor.put_samples(&input_pcm);
+        processor.receive_available_into(pcm);
+        if pcm.is_empty() {
+            processor.fill_warmup_fallback_pcm(&input_pcm, pcm);
         }
-        graph
-            .graph
-            .get("in")
-            .ok_or_else(|| "audio time-stretch source missing".to_string())?
-            .source()
-            .add(&filter_input)
-            .map_err(|err| format!("audio time-stretch source add failed: {err}"))?;
-        self.drain_available_samples()
+        self.scratch_input_pcm = input_pcm;
+        Ok(())
     }
 
     pub fn reset(&mut self) {
-        self.graph = None;
+        if let Some(processor) = self.processor.as_mut() {
+            processor.clear();
+        }
+        self.processor = None;
+        self.scratch_input_pcm.clear();
     }
 
-    fn ensure_graph(
+    fn ensure_processor(
         &mut self,
-        frame: &frame::Audio,
+        sample_rate: u32,
+        channels: usize,
         rate: f32,
-    ) -> Result<&mut AudioTimeStretchGraph, String> {
-        let sample_rate = frame.rate();
-        let sample_format = frame.format();
-        let channel_layout = frame.channel_layout();
+    ) -> &mut AudioTimeStretchProcessor {
         let needs_rebuild = self
-            .graph
+            .processor
             .as_ref()
-            .map(|graph| {
-                (graph.rate - rate).abs() > 1e-3
-                    || graph.sample_rate != sample_rate
-                    || graph.sample_format != sample_format
-                    || graph.channel_layout != channel_layout
+            .map(|processor| {
+                processor.sample_rate != sample_rate
+                    || processor.channels != channels
+                    || processor.rate_delta(rate) > 1e-3
             })
             .unwrap_or(true);
         if needs_rebuild {
-            self.graph = Some(AudioTimeStretchGraph::new(
-                sample_rate,
-                sample_format,
-                channel_layout,
-                rate,
-                self.output_sample_format,
-            )?);
+            self.processor = Some(AudioTimeStretchProcessor::new(sample_rate, channels, rate));
         }
-        self.graph
+        self.processor
             .as_mut()
-            .ok_or_else(|| "audio time-stretch graph unavailable".to_string())
-    }
-
-    fn drain_available_samples(&mut self) -> Result<Vec<f32>, String> {
-        let Some(graph) = self.graph.as_mut() else {
-            return Ok(Vec::new());
-        };
-        let mut pcm = Vec::new();
-        let mut filtered = frame::Audio::empty();
-        loop {
-            let result = graph
-                .graph
-                .get("out")
-                .ok_or_else(|| "audio time-stretch sink missing".to_string())?
-                .sink()
-                .frame(&mut filtered);
-            match result {
-                Ok(()) => pcm.extend(extract_output_samples(&filtered, self.output_sample_format)?),
-                Err(ffmpeg::Error::Other { errno }) if errno == ffmpeg::util::error::EAGAIN => break,
-                Err(ffmpeg::Error::Eof) => break,
-                Err(err) => return Err(format!("audio time-stretch drain failed: {err}")),
-            }
-        }
-        Ok(pcm)
+            .expect("audio time stretch processor should exist")
     }
 }
 
-impl AudioTimeStretchGraph {
-    fn new(
-        sample_rate: u32,
-        sample_format: format::Sample,
-        channel_layout: ChannelLayout,
-        rate: f32,
-        output_sample_format: AudioOutputSampleFormat,
-    ) -> Result<Self, String> {
-        let mut graph = filter::Graph::new();
-        let args = format!(
-            "time_base=1/{sample_rate}:sample_rate={sample_rate}:sample_fmt={}:channel_layout=0x{:x}",
-            sample_format.name(),
-            channel_layout.bits(),
-        );
-
-        graph
-            .add(
-                &filter::find("abuffer")
-                    .ok_or_else(|| "ffmpeg abuffer filter unavailable".to_string())?,
-                "in",
-                &args,
-            )
-            .map_err(|err| format!("audio time-stretch create abuffer failed: {err}"))?;
-        graph
-            .add(
-                &filter::find("abuffersink")
-                    .ok_or_else(|| "ffmpeg abuffersink filter unavailable".to_string())?,
-                "out",
-                "",
-            )
-            .map_err(|err| format!("audio time-stretch create abuffersink failed: {err}"))?;
-
-        {
-            let mut out = graph
-                .get("out")
-                .ok_or_else(|| "audio time-stretch sink context missing".to_string())?;
-            out.set_sample_format(output_sample_format.ffmpeg_sample_format());
-            out.set_channel_layout(channel_layout);
-            out.set_sample_rate(sample_rate);
-        }
-
-        graph
-            .output("in", 0)
-            .and_then(|parser| parser.input("out", 0))
-            .and_then(|parser| parser.parse(&build_atempo_filter_spec(rate)))
-            .map_err(|err| format!("audio time-stretch parse graph failed: {err}"))?;
-        graph
-            .validate()
-            .map_err(|err| format!("audio time-stretch validate graph failed: {err}"))?;
-
-        Ok(Self {
-            graph,
+impl AudioTimeStretchProcessor {
+    fn new(sample_rate: u32, channels: usize, rate: f32) -> Self {
+        let mut soundtouch = SoundTouch::new();
+        soundtouch
+            .set_sample_rate(sample_rate)
+            .set_channels(channels as u32)
+            .set_rate(1.0)
+            .set_pitch(1.0)
+            .set_tempo(rate as f64)
+            .set_setting(Setting::UseQuickseek, 1);
+        let output_chunk_len = channels.saturating_mul(TIME_STRETCH_OUTPUT_CHUNK_FRAMES);
+        Self {
+            soundtouch,
             rate,
             sample_rate,
-            sample_format,
-            channel_layout,
-        })
+            channels,
+            warmup_fallback_frames_remaining: TIME_STRETCH_WARMUP_FALLBACK_FRAMES,
+            output_chunk: vec![0.0; output_chunk_len.max(channels)],
+        }
+    }
+
+    fn rate_delta(&self, rate: f32) -> f32 {
+        (self.rate - rate).abs()
+    }
+
+    fn put_samples(&mut self, pcm: &[f32]) {
+        let frame_count = pcm.len() / self.channels.max(1);
+        if frame_count == 0 {
+            return;
+        }
+        self.soundtouch.put_samples(pcm, frame_count);
+    }
+
+    fn receive_available_into(&mut self, pcm: &mut Vec<f32>) {
+        let mut drained_frames = 0usize;
+        loop {
+            if drained_frames >= TIME_STRETCH_MAX_DRAIN_FRAMES_PER_CALL {
+                break;
+            }
+            let ready_frames = self.soundtouch.num_samples().max(0) as usize;
+            if ready_frames == 0 {
+                break;
+            }
+            let request_frames = ready_frames
+                .min(TIME_STRETCH_OUTPUT_CHUNK_FRAMES)
+                .min(TIME_STRETCH_MAX_DRAIN_FRAMES_PER_CALL.saturating_sub(drained_frames));
+            let written_frames = self
+                .soundtouch
+                .receive_samples(self.output_chunk.as_mut_slice(), request_frames);
+            if written_frames == 0 {
+                break;
+            }
+            drained_frames = drained_frames.saturating_add(written_frames);
+            let written_samples = written_frames.saturating_mul(self.channels);
+            pcm.extend_from_slice(&self.output_chunk[..written_samples]);
+        }
+    }
+
+    fn fill_warmup_fallback_pcm(&mut self, input_pcm: &[f32], pcm: &mut Vec<f32>) {
+        if self.warmup_fallback_frames_remaining == 0 || should_bypass_time_stretch(self.rate) {
+            return;
+        }
+        self.warmup_fallback_frames_remaining =
+            self.warmup_fallback_frames_remaining.saturating_sub(1);
+        synthesize_warmup_fallback_pcm(input_pcm, self.channels, self.rate, pcm);
+    }
+
+    fn clear(&mut self) {
+        self.soundtouch.clear();
+        self.warmup_fallback_frames_remaining = TIME_STRETCH_WARMUP_FALLBACK_FRAMES;
     }
 }
 
@@ -174,78 +170,109 @@ fn should_bypass_time_stretch(rate: f32) -> bool {
     (rate - 1.0).abs() <= 1e-3
 }
 
-fn build_atempo_filter_spec(rate: f32) -> String {
-    let mut remaining = rate.max(0.25) as f64;
-    let mut stages = Vec::new();
-    while remaining > 2.0 + 1e-6 {
-        stages.push(2.0);
-        remaining /= 2.0;
+fn synthesize_warmup_fallback_pcm(
+    input: &[f32],
+    channels: usize,
+    rate: f32,
+    output: &mut Vec<f32>,
+) {
+    if input.is_empty() || channels == 0 || rate <= 0.0 {
+        return;
     }
-    while remaining < 0.5 - 1e-6 {
-        stages.push(0.5);
-        remaining /= 0.5;
+    let input_frames = input.len() / channels;
+    if input_frames == 0 {
+        return;
     }
-    stages.push(remaining);
-    stages
-        .into_iter()
-        .map(|stage| format!("atempo={stage:.6}"))
-        .collect::<Vec<_>>()
-        .join(",")
+    let output_frames = ((input_frames as f32) / rate).round().max(1.0) as usize;
+    output.reserve(output_frames.saturating_mul(channels));
+    for output_frame in 0..output_frames {
+        let source_frame = ((output_frame as f32) * rate).floor() as usize;
+        let source_frame = source_frame.min(input_frames.saturating_sub(1));
+        let source_offset = source_frame * channels;
+        output.extend_from_slice(&input[source_offset..source_offset + channels]);
+    }
 }
 
-fn extract_output_samples(
+fn extract_output_samples_into(
     frame: &frame::Audio,
     output_sample_format: AudioOutputSampleFormat,
-) -> Result<Vec<f32>, String> {
+    pcm: &mut Vec<f32>,
+) -> Result<(), String> {
     let channels = frame.channels().max(1) as usize;
     let total_samples = frame.samples().saturating_mul(channels);
     if total_samples == 0 {
-        return Ok(Vec::new());
+        return Ok(());
     }
     let data = frame.data(0);
     if data.is_empty() {
-        return Ok(Vec::new());
+        return Ok(());
     }
 
+    pcm.reserve(total_samples);
     match output_sample_format {
         AudioOutputSampleFormat::F32Packed => {
             let bytes_per_sample = std::mem::size_of::<f32>();
             let expected_bytes = total_samples.saturating_mul(bytes_per_sample);
             let clamped_bytes = expected_bytes.min(data.len());
             if clamped_bytes < bytes_per_sample {
-                return Ok(Vec::new());
+                return Ok(());
             }
-            Ok(data[..clamped_bytes]
-                .chunks_exact(bytes_per_sample)
-                .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                .collect())
+            pcm.extend(
+                data[..clamped_bytes]
+                    .chunks_exact(bytes_per_sample)
+                    .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])),
+            );
         }
         AudioOutputSampleFormat::I16Packed => {
             let bytes_per_sample = std::mem::size_of::<i16>();
             let expected_bytes = total_samples.saturating_mul(bytes_per_sample);
             let clamped_bytes = expected_bytes.min(data.len());
             if clamped_bytes < bytes_per_sample {
-                return Ok(Vec::new());
+                return Ok(());
             }
-            Ok(data[..clamped_bytes]
-                .chunks_exact(bytes_per_sample)
-                .map(|chunk| i16::from_ne_bytes([chunk[0], chunk[1]]) as f32 / (i16::MAX as f32))
-                .collect())
+            pcm.extend(
+                data[..clamped_bytes]
+                    .chunks_exact(bytes_per_sample)
+                    .map(|chunk| i16::from_ne_bytes([chunk[0], chunk[1]]) as f32 / (i16::MAX as f32)),
+            );
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::build_atempo_filter_spec;
+    use super::{should_bypass_time_stretch, synthesize_warmup_fallback_pcm, AudioTimeStretchProcessor};
 
     #[test]
-    fn chains_large_tempo_values() {
-        assert_eq!(build_atempo_filter_spec(3.0), "atempo=2.000000,atempo=1.500000");
+    fn bypasses_neutral_rate() {
+        assert!(should_bypass_time_stretch(1.0));
+        assert!(should_bypass_time_stretch(1.0009));
+        assert!(!should_bypass_time_stretch(1.01));
     }
 
     #[test]
-    fn chains_small_tempo_values() {
-        assert_eq!(build_atempo_filter_spec(0.25), "atempo=0.500000,atempo=0.500000");
+    fn warmup_fallback_pcm_retimes_interleaved_audio() {
+        let input = vec![0.0, 10.0, 1.0, 11.0, 2.0, 12.0, 3.0, 13.0];
+        let mut output = Vec::new();
+        synthesize_warmup_fallback_pcm(&input, 2, 2.0, &mut output);
+        assert_eq!(output, vec![0.0, 10.0, 2.0, 12.0]);
+    }
+
+    #[test]
+    fn soundtouch_processor_produces_pitch_preserving_output() {
+        let mut processor = AudioTimeStretchProcessor::new(48_000, 2, 2.0);
+        let input = vec![0.0f32; 48_000 * 2 / 10];
+        processor.put_samples(&input);
+        let mut output = Vec::new();
+        for _ in 0..8 {
+            processor.receive_available_into(&mut output);
+            if !output.is_empty() {
+                break;
+            }
+            processor.put_samples(&input);
+        }
+        assert!(!output.is_empty());
+        assert_eq!(output.len() % 2, 0);
     }
 }

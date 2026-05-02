@@ -27,7 +27,12 @@ pub(crate) struct DecodeLoopState {
     pub current_position_seconds: f64,
     pub audio_clock: Option<AudioClock>,
     pub audio_queue_depth_sources: Option<usize>,
+    pub audio_queued_seconds: Option<f64>,
+    pub pause_prefetch_mode: bool,
+    pub pause_prefetch_logged_buffered_seconds: Option<f64>,
     pub active_seek_target_seconds: Option<f64>,
+    pub seek_refill_until: Option<Instant>,
+    pub seek_settle_until: Option<Instant>,
     pub last_video_pts_seconds: Option<f64>,
     pub rate_switch_settle_until: Option<Instant>,
     pub rate_switch_hold_logged: bool,
@@ -42,17 +47,35 @@ pub(crate) struct DecodeLoopState {
 }
 
 impl DecodeLoopState {
-    pub fn new(fps_value: f64, timing_controls: Arc<TimingControls>) -> Self {
+    pub fn new(
+        fps_value: f64,
+        timing_controls: Arc<TimingControls>,
+        is_realtime_source: bool,
+    ) -> Self {
         let now = Instant::now();
         Self {
-            last_applied_audio_rate: timing_controls.playback_rate_value(),
+            last_applied_audio_rate: crate::app::media::playback::runtime::audio::effective_playback_rate(
+                timing_controls.playback_rate_value(),
+                is_realtime_source,
+            ),
             pending_audio_rate: None,
-            playback_clock: PlaybackClock::new(fps_value, MAX_EMIT_FPS, 0.0, timing_controls),
+            playback_clock: PlaybackClock::new(
+                fps_value,
+                MAX_EMIT_FPS,
+                0.0,
+                timing_controls,
+                is_realtime_source,
+            ),
             last_progress_emit: Instant::now() - Duration::from_millis(250),
             current_position_seconds: 0.0,
             audio_clock: None,
             audio_queue_depth_sources: None,
+            audio_queued_seconds: None,
+            pause_prefetch_mode: false,
+            pause_prefetch_logged_buffered_seconds: None,
             active_seek_target_seconds: None,
+            seek_refill_until: None,
+            seek_settle_until: None,
             last_video_pts_seconds: None,
             rate_switch_settle_until: None,
             rate_switch_hold_logged: false,
@@ -112,6 +135,31 @@ impl DecodeLoopState {
     pub fn reset_audio_sync_state(&mut self) {
         self.audio_clock = None;
         self.audio_queue_depth_sources = None;
+        self.audio_queued_seconds = None;
+    }
+
+    pub fn in_seek_refill(&self) -> bool {
+        self.seek_refill_until
+            .map(|deadline| Instant::now() < deadline)
+            .unwrap_or(false)
+    }
+
+    pub fn begin_seek_refill(&mut self, duration: Duration) {
+        self.seek_refill_until = Some(Instant::now() + duration);
+    }
+
+    pub fn clear_seek_refill(&mut self) {
+        self.seek_refill_until = None;
+    }
+
+    pub fn in_seek_settle(&self) -> bool {
+        self.seek_settle_until
+            .map(|deadline| Instant::now() < deadline)
+            .unwrap_or(false)
+    }
+
+    pub fn begin_seek_settle(&mut self, duration: Duration) {
+        self.seek_settle_until = Some(Instant::now() + duration);
     }
 
     pub fn commit_audio_playback_rate(&mut self, playback_rate: PlaybackRate) {

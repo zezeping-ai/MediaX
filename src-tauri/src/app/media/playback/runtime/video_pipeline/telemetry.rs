@@ -21,6 +21,9 @@ pub(super) fn emit_video_telemetry(
     let stage_perf_snapshot = ctx.frame_pipeline.take_stage_perf_snapshot();
     let process_snapshot = ctx.process_metrics.sample();
     let renderer_metrics = ctx.renderer.metrics_snapshot();
+    let requested_playback_rate = ctx.playback_clock.requested_playback_rate();
+    let effective_playback_rate = ctx.playback_clock.playback_rate();
+    let rate_limited_reason = ctx.playback_clock.playback_rate_limited_reason();
     let presented_video_pts = renderer_metrics.last_presented_pts_seconds;
     let submitted_video_pts = renderer_metrics.last_submitted_pts_seconds;
     emit_debug(ctx.app, "video_fps", format!("render_fps={render_fps:.2}"));
@@ -31,13 +34,22 @@ pub(super) fn emit_video_telemetry(
         ctx.app,
         "av_sync",
         format!(
-            "a_minus_v={:.3}ms audio_clock={} video_presented={:.3}s video_submitted={} queue_depth={}/{} submit_lead={:.3}ms lead_target={:.3}ms",
+            "a_minus_v={:.3}ms audio_clock={} renderer_clock={:.3}s video_presented={:.3}s video_submitted={} queue_head={} queue_tail={} queue_depth={}/{} submit_lead={:.3}ms lead_target={:.3}ms",
             audio_drift.unwrap_or(0.0) * 1000.0,
             audio_now
                 .map(|value| format!("{value:.3}s"))
                 .unwrap_or_else(|| "n/a".to_string()),
+            renderer_metrics.current_clock_seconds,
             sync_video_pts,
             submitted_video_pts
+                .map(|value| format!("{value:.3}s"))
+                .unwrap_or_else(|| "n/a".to_string()),
+            renderer_metrics
+                .queued_head_pts_seconds
+                .map(|value| format!("{value:.3}s"))
+                .unwrap_or_else(|| "n/a".to_string()),
+            renderer_metrics
+                .queued_tail_pts_seconds
                 .map(|value| format!("{value:.3}s"))
                 .unwrap_or_else(|| "n/a".to_string()),
             renderer_metrics.queue_depth,
@@ -50,11 +62,13 @@ pub(super) fn emit_video_telemetry(
         ctx.app,
         "video_pipeline",
         format!(
-            "pts={:.3}s queue_depth={} clock={:.3}s rate={:.2} output={}x{} decode_avg={:.2}ms decode_max={:.2}ms decode_p50={:.2}ms decode_p95={:.2}ms decode_p99={:.2}ms samples={}",
+            "pts={:.3}s queue_depth={} clock={:.3}s requested_rate={:.2} effective_rate={:.2} rate_limit={} output={}x{} decode_avg={:.2}ms decode_max={:.2}ms decode_p50={:.2}ms decode_p95={:.2}ms decode_p99={:.2}ms samples={}",
             estimated_pts.max(0.0),
             renderer_metrics.queue_depth,
             *ctx.current_position_seconds,
-            ctx.playback_clock.playback_rate(),
+            requested_playback_rate,
+            effective_playback_rate,
+            rate_limited_reason.unwrap_or("none"),
             ctx.output_width,
             ctx.output_height,
             perf_snapshot.as_ref().map(|value| value.avg_ms).unwrap_or(0.0),
@@ -101,13 +115,21 @@ pub(super) fn emit_video_telemetry(
             ctx.app,
             "video_stage_costs",
             format!(
-                "receive={:.2}/{:.2}ms hw_transfer={:.2}/{:.2}ms scale={:.2}/{:.2}ms submit={:.2}/{:.2}ms total={:.2}/{:.2}ms samples={}",
+                "receive={:.2}/{:.2}ms queue_wait={:.2}/{:.2}ms hw_transfer={:.2}/{:.2}ms scale={:.2}/{:.2}ms color_profile={:.2}/{:.2}ms frame_extract={:.2}/{:.2}ms upload_prep={:.2}/{:.2}ms submit={:.2}/{:.2}ms total={:.2}/{:.2}ms samples={}",
                 stage_costs.receive_avg_ms,
                 stage_costs.receive_max_ms,
+                stage_costs.queue_wait_avg_ms,
+                stage_costs.queue_wait_max_ms,
                 stage_costs.hw_transfer_avg_ms,
                 stage_costs.hw_transfer_max_ms,
                 stage_costs.scale_avg_ms,
                 stage_costs.scale_max_ms,
+                stage_costs.color_profile_avg_ms,
+                stage_costs.color_profile_max_ms,
+                stage_costs.frame_extract_avg_ms,
+                stage_costs.frame_extract_max_ms,
+                stage_costs.upload_prep_avg_ms,
+                stage_costs.upload_prep_max_ms,
                 stage_costs.submit_avg_ms,
                 stage_costs.submit_max_ms,
                 stage_costs.total_avg_ms,
@@ -132,10 +154,18 @@ pub(super) fn emit_video_telemetry(
         sample_count: value.sample_count,
         receive_avg_ms: value.receive_avg_ms,
         receive_max_ms: value.receive_max_ms,
+        queue_wait_avg_ms: value.queue_wait_avg_ms,
+        queue_wait_max_ms: value.queue_wait_max_ms,
         hw_transfer_avg_ms: value.hw_transfer_avg_ms,
         hw_transfer_max_ms: value.hw_transfer_max_ms,
         scale_avg_ms: value.scale_avg_ms,
         scale_max_ms: value.scale_max_ms,
+        color_profile_avg_ms: value.color_profile_avg_ms,
+        color_profile_max_ms: value.color_profile_max_ms,
+        frame_extract_avg_ms: value.frame_extract_avg_ms,
+        frame_extract_max_ms: value.frame_extract_max_ms,
+        upload_prep_avg_ms: value.upload_prep_avg_ms,
+        upload_prep_max_ms: value.upload_prep_max_ms,
         submit_avg_ms: value.submit_avg_ms,
         submit_max_ms: value.submit_max_ms,
         total_avg_ms: value.total_avg_ms,
@@ -162,7 +192,10 @@ pub(super) fn emit_video_telemetry(
             current_frame_type: Some(picture_type_label(pict_type).to_string()),
             current_frame_width: Some(nv12_frame.width()),
             current_frame_height: Some(nv12_frame.height()),
-            playback_rate: Some(ctx.playback_clock.playback_rate()),
+            playback_rate: Some(effective_playback_rate),
+            requested_playback_rate: Some(requested_playback_rate),
+            effective_playback_rate: Some(effective_playback_rate),
+            playback_rate_limited_reason: rate_limited_reason,
             network_read_bytes_per_second: ctx.network_read_bps,
             media_required_bytes_per_second: ctx.media_required_bps,
             network_sustain_ratio: match (ctx.network_read_bps, ctx.media_required_bps) {

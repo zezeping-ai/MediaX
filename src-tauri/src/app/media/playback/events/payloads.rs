@@ -34,13 +34,6 @@ pub struct MediaAudioMeterPayload {
 }
 
 #[derive(Clone, Serialize)]
-pub struct MediaDebugPayload {
-    pub stage: &'static str,
-    pub message: String,
-    pub at_ms: u64,
-}
-
-#[derive(Clone, Serialize)]
 pub struct MediaVideoTimestampStats {
     pub samples: u64,
     pub pts_missing_ratio_percent: f64,
@@ -73,10 +66,18 @@ pub struct MediaVideoStageCostStats {
     pub sample_count: u64,
     pub receive_avg_ms: f64,
     pub receive_max_ms: f64,
+    pub queue_wait_avg_ms: f64,
+    pub queue_wait_max_ms: f64,
     pub hw_transfer_avg_ms: f64,
     pub hw_transfer_max_ms: f64,
     pub scale_avg_ms: f64,
     pub scale_max_ms: f64,
+    pub color_profile_avg_ms: f64,
+    pub color_profile_max_ms: f64,
+    pub frame_extract_avg_ms: f64,
+    pub frame_extract_max_ms: f64,
+    pub upload_prep_avg_ms: f64,
+    pub upload_prep_max_ms: f64,
     pub submit_avg_ms: f64,
     pub submit_max_ms: f64,
     pub total_avg_ms: f64,
@@ -98,6 +99,9 @@ pub struct MediaTelemetryPayload {
     pub current_frame_width: Option<u32>,
     pub current_frame_height: Option<u32>,
     pub playback_rate: Option<f64>,
+    pub requested_playback_rate: Option<f64>,
+    pub effective_playback_rate: Option<f64>,
+    pub playback_rate_limited_reason: Option<&'static str>,
     pub network_read_bytes_per_second: Option<f64>,
     pub media_required_bytes_per_second: Option<f64>,
     pub network_sustain_ratio: Option<f64>,

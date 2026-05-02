@@ -1,6 +1,7 @@
 use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::dto::PlaybackChannelRouting;
+use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::session::constraints;
 use crate::app::media::state;
 use crate::app::media::state::MediaState;
@@ -22,6 +23,11 @@ pub fn set_rate(
         .controls
         .timing
         .set_playback_rate(playback_rate.as_f32());
+    emit_debug(
+        &app,
+        "rate_apply",
+        format!("session playback_rate set to {:.3}", playback_rate.as_f64()),
+    );
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
@@ -146,7 +152,7 @@ pub fn sync_position(
         constraints::normalize_non_negative(duration_seconds, "duration_seconds")?;
     let path = {
         let mut playback = state::playback(&state)?;
-        playback.sync_position(position_seconds, duration_seconds);
+        playback.sync_position(position_seconds, duration_seconds, duration_seconds);
         playback.state().current_path
     };
     if let Some(path) = path {

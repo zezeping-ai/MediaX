@@ -1,15 +1,14 @@
+use crate::app::media::playback::rate::PlaybackRate;
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::runtime::clock::AudioClock;
 use crate::app::media::playback::runtime::emit_debug;
-use crate::app::media::state::TimingControls;
 use ffmpeg_next::frame;
-use std::sync::Arc;
 use tauri::AppHandle;
 
 pub(super) fn sync_audio_clock(
     decoded: &frame::Audio,
     time_base: ffmpeg_next::Rational,
-    timing_controls: &Arc<TimingControls>,
+    playback_rate: PlaybackRate,
     audio_clock: &mut Option<AudioClock>,
     active_seek_target_seconds: &mut Option<f64>,
 ) {
@@ -25,9 +24,41 @@ pub(super) fn sync_audio_clock(
         if audio_clock.is_none() {
             *audio_clock = Some(AudioClock::new(
                 seconds,
-                timing_controls.playback_rate().max(0.25) as f64,
+                playback_rate.as_f64(),
             ));
         }
+    }
+}
+
+pub(super) fn sync_audio_clock_to_output_head(
+    frame_start_seconds: Option<f64>,
+    output_samples: usize,
+    channels: usize,
+    sample_rate: u32,
+    playback_rate: PlaybackRate,
+    queued_wall_seconds: f64,
+    audio_clock: &mut Option<AudioClock>,
+) {
+    let Some(frame_start_seconds) =
+        frame_start_seconds.filter(|value| value.is_finite() && *value >= 0.0)
+    else {
+        return;
+    };
+    if channels == 0 || sample_rate == 0 || output_samples == 0 {
+        return;
+    }
+    let output_frames = output_samples / channels;
+    if output_frames == 0 {
+        return;
+    }
+    let playback_rate_f64 = playback_rate.as_f64().max(0.25);
+    let output_wall_seconds = output_frames as f64 / sample_rate as f64;
+    let enqueued_media_end_seconds = frame_start_seconds + output_wall_seconds * playback_rate_f64;
+    let playback_head_seconds =
+        (enqueued_media_end_seconds - queued_wall_seconds.max(0.0) * playback_rate_f64).max(0.0);
+    match audio_clock.as_mut() {
+        Some(clock) => clock.rebase_position(playback_head_seconds, playback_rate_f64),
+        None => *audio_clock = Some(AudioClock::new(playback_head_seconds, playback_rate_f64)),
     }
 }
 

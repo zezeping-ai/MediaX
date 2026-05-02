@@ -18,6 +18,7 @@ export interface PlaybackState {
   current_path: string | null;
   position_seconds: number;
   duration_seconds: number;
+  buffered_position_seconds: number;
   playback_rate: number;
   error: string | null;
   hw_decode_mode: HardwareDecodeMode;
@@ -161,10 +162,18 @@ export interface MediaVideoStageCostStats {
   sample_count: number;
   receive_avg_ms: number;
   receive_max_ms: number;
+  queue_wait_avg_ms: number;
+  queue_wait_max_ms: number;
   hw_transfer_avg_ms: number;
   hw_transfer_max_ms: number;
   scale_avg_ms: number;
   scale_max_ms: number;
+  color_profile_avg_ms: number;
+  color_profile_max_ms: number;
+  frame_extract_avg_ms: number;
+  frame_extract_max_ms: number;
+  upload_prep_avg_ms: number;
+  upload_prep_max_ms: number;
   submit_avg_ms: number;
   submit_max_ms: number;
   total_avg_ms: number;
@@ -185,6 +194,9 @@ export interface MediaTelemetryPayload {
   current_frame_width?: number | null;
   current_frame_height?: number | null;
   playback_rate?: number | null;
+  requested_playback_rate?: number | null;
+  effective_playback_rate?: number | null;
+  playback_rate_limited_reason?: string | null;
   network_read_bytes_per_second?: number | null;
   media_required_bytes_per_second?: number | null;
   network_sustain_ratio?: number | null;

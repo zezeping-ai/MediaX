@@ -1,4 +1,4 @@
-use crate::app::media::playback::render::renderer::VideoFrame;
+use crate::app::media::playback::render::renderer::{VideoFrame, VideoFramePlanes};
 use ffmpeg_next::format;
 use image::imageops::FilterType;
 
@@ -13,7 +13,7 @@ pub(super) fn extract_cover_frame(
         .and_then(|bytes| cover_frame_from_image_bytes(&bytes).ok())
 }
 
-fn extract_cover_packet_bytes(
+pub(super) fn extract_cover_packet_bytes(
     input_ctx: &format::context::Input,
     stream_index: usize,
 ) -> Option<Vec<u8>> {
@@ -28,11 +28,19 @@ fn extract_cover_packet_bytes(
     Some(bytes.to_vec())
 }
 
-fn cover_frame_from_image_bytes(bytes: &[u8]) -> Result<VideoFrame, String> {
+pub(crate) fn cover_frame_from_image_bytes(bytes: &[u8]) -> Result<VideoFrame, String> {
     let image = image::load_from_memory(bytes)
         .map_err(|err| format!("decode cover art failed: {err}"))?;
-    let resized = image.resize(COVER_MAX_EDGE, COVER_MAX_EDGE, FilterType::Lanczos3);
-    let rgb = resized.to_rgb8();
+    let rgb = image.to_rgb8();
+    let (scaled_width, scaled_height) =
+        fit_dimensions_within(rgb.width(), rgb.height(), COVER_MAX_EDGE);
+    let rgb = if scaled_width != rgb.width() || scaled_height != rgb.height() {
+        // Cover art is non-critical UI; prefer a simpler resizer to reduce CPU and avoid
+        // hitting the heavier generic DynamicImage resize path on malformed attachments.
+        image::imageops::resize(&rgb, scaled_width, scaled_height, FilterType::Triangle)
+    } else {
+        rgb
+    };
     let mut width = rgb.width().max(2);
     let mut height = rgb.height().max(2);
     if width % 2 != 0 {
@@ -91,8 +99,8 @@ fn cover_frame_from_image_bytes(bytes: &[u8]) -> Result<VideoFrame, String> {
         pts_seconds: 0.0,
         width,
         height,
-        y_plane,
-        uv_plane,
+        plane_strides: [width, width],
+        planes: VideoFramePlanes::Nv12 { y_plane, uv_plane },
         color_matrix: [
             [1.0, 0.0, 1.402],
             [1.0, -0.344136, -0.714136],
@@ -103,4 +111,21 @@ fn cover_frame_from_image_bytes(bytes: &[u8]) -> Result<VideoFrame, String> {
         uv_offset: 0.5,
         uv_scale: 1.0,
     })
+}
+
+fn fit_dimensions_within(width: u32, height: u32, max_edge: u32) -> (u32, u32) {
+    if width == 0 || height == 0 || width <= max_edge && height <= max_edge {
+        return (width.max(1), height.max(1));
+    }
+    if width >= height {
+        let scaled_height = ((u64::from(height) * u64::from(max_edge)) / u64::from(width))
+            .max(1)
+            .min(u64::from(u32::MAX)) as u32;
+        (max_edge, scaled_height)
+    } else {
+        let scaled_width = ((u64::from(width) * u64::from(max_edge)) / u64::from(height))
+            .max(1)
+            .min(u64::from(u32::MAX)) as u32;
+        (scaled_width, max_edge)
+    }
 }
