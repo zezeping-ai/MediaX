@@ -36,6 +36,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["mediax"]
+      }
+    },
     "updater": {
       "active": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJERjlERTQ2NkVERDM4NTQKUldSVU9OMXVSdDc1dlZ6SUExSk5BaGRWZ3JRNGFMbjVqNUkvcTJlbThUeDc3aVpoNEdJbHFROUQK",
@@ -48,6 +53,400 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
+    "fileAssociations": [
+      {
+        "ext": ["mp4", "m4v", "mpg4"],
+        "name": "MediaX MP4 Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/mp4"
+      },
+      {
+        "ext": ["mov", "qt"],
+        "name": "MediaX QuickTime Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/quicktime"
+      },
+      {
+        "ext": ["mkv", "mk3d"],
+        "name": "MediaX Matroska Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/x-matroska"
+      },
+      {
+        "ext": ["avi", "divx"],
+        "name": "MediaX AVI Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/x-msvideo"
+      },
+      {
+        "ext": ["webm"],
+        "name": "MediaX WebM Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/webm"
+      },
+      {
+        "ext": ["flv", "f4v"],
+        "name": "MediaX FLV Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/x-flv"
+      },
+      {
+        "ext": ["wmv"],
+        "name": "MediaX WMV Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/x-ms-wmv"
+      },
+      {
+        "ext": ["ts", "m2ts", "mts", "m2t"],
+        "name": "MediaX MPEG Transport Stream",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/mp2t"
+      },
+      {
+        "ext": ["3gp"],
+        "name": "MediaX 3GP Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/3gpp"
+      },
+      {
+        "ext": ["3g2"],
+        "name": "MediaX 3G2 Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/3gpp2"
+      },
+      {
+        "ext": ["mpeg", "mpg", "mpe", "mpv"],
+        "name": "MediaX MPEG Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/mpeg"
+      },
+      {
+        "ext": ["ogv", "ogm"],
+        "name": "MediaX Ogg Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/ogg"
+      },
+      {
+        "ext": ["asf"],
+        "name": "MediaX ASF Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/x-ms-asf"
+      },
+      {
+        "ext": ["vob"],
+        "name": "MediaX DVD VOB Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/dvd"
+      },
+      {
+        "ext": ["mxf"],
+        "name": "MediaX MXF Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "application/mxf"
+      },
+      {
+        "ext": ["rm", "rmvb"],
+        "name": "MediaX RealMedia Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "application/vnd.rn-realmedia"
+      },
+      {
+        "ext": ["dv"],
+        "name": "MediaX DV Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/x-dv"
+      },
+      {
+        "ext": ["h264", "264", "avc"],
+        "name": "MediaX H.264 Elementary Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/h264"
+      },
+      {
+        "ext": ["h265", "265", "hevc"],
+        "name": "MediaX HEVC Elementary Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/h265"
+      },
+      {
+        "ext": ["mjpg", "mjpeg"],
+        "name": "MediaX Motion JPEG Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/jpeg"
+      },
+      {
+        "ext": ["ivf"],
+        "name": "MediaX IVF Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/x-ivf"
+      },
+      {
+        "ext": ["y4m"],
+        "name": "MediaX YUV4MPEG Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "application/x-yuv4mpeg"
+      },
+      {
+        "ext": ["nut"],
+        "name": "MediaX NUT Video",
+        "description": "MediaX Video",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "video/x-nut"
+      },
+      {
+        "ext": ["mp3", "mp2", "mp1", "mpa"],
+        "name": "MediaX MP3 Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/mpeg"
+      },
+      {
+        "ext": ["m4a", "m4b", "f4a", "f4b"],
+        "name": "MediaX M4A Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/mp4"
+      },
+      {
+        "ext": ["aac", "adts"],
+        "name": "MediaX AAC Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/aac"
+      },
+      {
+        "ext": ["flac"],
+        "name": "MediaX FLAC Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/flac"
+      },
+      {
+        "ext": ["wav"],
+        "name": "MediaX WAV Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/wav"
+      },
+      {
+        "ext": ["ogg", "oga"],
+        "name": "MediaX OGG Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/ogg"
+      },
+      {
+        "ext": ["opus"],
+        "name": "MediaX Opus Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/opus"
+      },
+      {
+        "ext": ["aiff", "aif"],
+        "name": "MediaX AIFF Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/aiff"
+      },
+      {
+        "ext": ["ape"],
+        "name": "MediaX APE Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/x-ape"
+      },
+      {
+        "ext": ["wma"],
+        "name": "MediaX WMA Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/x-ms-wma"
+      },
+      {
+        "ext": ["mka"],
+        "name": "MediaX Matroska Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/x-matroska"
+      },
+      {
+        "ext": ["ac3"],
+        "name": "MediaX AC3 Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/ac3"
+      },
+      {
+        "ext": ["dts"],
+        "name": "MediaX DTS Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/vnd.dts"
+      },
+      {
+        "ext": ["amr"],
+        "name": "MediaX AMR Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/amr"
+      },
+      {
+        "ext": ["midi", "mid"],
+        "name": "MediaX MIDI Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/midi"
+      },
+      {
+        "ext": ["tta"],
+        "name": "MediaX TTA Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/x-tta"
+      },
+      {
+        "ext": ["wv"],
+        "name": "MediaX WavPack Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/wavpack"
+      },
+      {
+        "ext": ["mpc"],
+        "name": "MediaX Musepack Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/x-musepack"
+      },
+      {
+        "ext": ["ra"],
+        "name": "MediaX RealAudio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/vnd.rn-realaudio"
+      },
+      {
+        "ext": ["caf"],
+        "name": "MediaX Core Audio Format",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/x-caf"
+      },
+      {
+        "ext": ["au", "snd"],
+        "name": "MediaX AU Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/basic"
+      },
+      {
+        "ext": ["spx"],
+        "name": "MediaX Speex Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/ogg"
+      },
+      {
+        "ext": ["weba"],
+        "name": "MediaX WebM Audio",
+        "description": "MediaX Audio",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/webm"
+      },
+      {
+        "ext": ["mpd"],
+        "name": "MediaX DASH Manifest",
+        "description": "MediaX Adaptive Stream",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "application/dash+xml"
+      },
+      {
+        "ext": ["m3u8", "m3u"],
+        "name": "MediaX Playlist",
+        "description": "MediaX Playlist",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "application/vnd.apple.mpegurl"
+      },
+      {
+        "ext": ["ram"],
+        "name": "MediaX RealAudio Metafile",
+        "description": "MediaX Playlist",
+        "role": "Viewer",
+        "rank": "Default",
+        "mimeType": "audio/x-pn-realaudio"
+      }
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

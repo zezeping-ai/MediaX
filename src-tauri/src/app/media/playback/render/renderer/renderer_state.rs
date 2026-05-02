@@ -48,8 +48,6 @@ pub(super) struct RendererInner {
     pub(super) last_presented_pts_bits: AtomicU64,
     pub(super) queue_tuning: Mutex<QueueTuningState>,
     pub(super) queue_growth_hold_until: Mutex<Option<Instant>>,
-    pub(super) last_frame_queue_trace_at: Mutex<Option<Instant>>,
-    pub(super) last_render_schedule_trace_at: Mutex<Option<Instant>>,
 }
 
 #[derive(Clone, Copy)]
@@ -92,8 +90,6 @@ impl RendererState {
                 last_presented_pts_bits: AtomicU64::new(f64::NAN.to_bits()),
                 queue_tuning: Mutex::new(QueueTuningState::default()),
                 queue_growth_hold_until: Mutex::new(None),
-                last_frame_queue_trace_at: Mutex::new(None),
-                last_render_schedule_trace_at: Mutex::new(None),
             }),
         }
     }
@@ -154,11 +150,9 @@ impl RendererState {
                 if inner.render_task_in_flight.swap(true, Ordering::AcqRel) {
                     continue;
                 }
-                let scheduled_at = Instant::now();
                 let _ = app_handle.run_on_main_thread({
                     let inner = inner.clone();
                     move || {
-                        maybe_emit_render_schedule_delay(&inner, scheduled_at);
                         let now_media_seconds = {
                             let clock = match inner.clock.lock() {
                                 Ok(guard) => *guard,
@@ -400,38 +394,6 @@ impl RendererState {
             }),
         );
     }
-}
-
-fn maybe_emit_render_schedule_delay(inner: &RendererInner, scheduled_at: Instant) {
-    let delay = Instant::now().saturating_duration_since(scheduled_at);
-    if delay < Duration::from_millis(20) {
-        return;
-    }
-    let Ok(mut last_trace_at) = inner.last_render_schedule_trace_at.lock() else {
-        return;
-    };
-    let now = Instant::now();
-    if last_trace_at
-        .as_ref()
-        .is_some_and(|last| now.saturating_duration_since(*last) < Duration::from_millis(700))
-    {
-        return;
-    }
-    *last_trace_at = Some(now);
-    drop(last_trace_at);
-    let Some(app_handle) = inner
-        .app_handle
-        .lock()
-        .ok()
-        .and_then(|value| value.clone())
-    else {
-        return;
-    };
-    emit_debug(
-        &app_handle,
-        "render_schedule_delay",
-        format!("main_thread_delay_ms={:.3}", delay.as_secs_f64() * 1000.0),
-    );
 }
 
 pub(super) fn recycle_frame(_inner: &RendererInner, _frame: QueuedFrame) {

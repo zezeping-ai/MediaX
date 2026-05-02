@@ -3,6 +3,7 @@ use tauri::menu::{Menu, MenuEvent, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 
 const MENU_TRAY_SHOW_MAIN_ID: &str = "mediax.tray.show_main";
+const MENU_TRAY_QUIT_ID: &str = "mediax.tray.quit";
 
 const TRAY_ID: &str = "mediax.tray";
 
@@ -14,7 +15,8 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
-    let menu = Menu::with_items(app, &[&show_main])?;
+    let quit = MenuItem::with_id(app, MENU_TRAY_QUIT_ID, "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_main, &quit])?;
 
     let icon = app.default_window_icon().cloned();
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
@@ -22,8 +24,14 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         // 交互约定：右键弹菜单；左键用于「打开主窗口」
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event: MenuEvent| {
-            if event.id().as_ref() == MENU_TRAY_SHOW_MAIN_ID {
-                let _ = show_main_window(app);
+            match event.id().as_ref() {
+                MENU_TRAY_SHOW_MAIN_ID => {
+                    let _ = show_main_window(app);
+                }
+                MENU_TRAY_QUIT_ID => {
+                    app.exit(0);
+                }
+                _ => {}
             }
         })
         .on_tray_icon_event(|tray, event: TrayIconEvent| {

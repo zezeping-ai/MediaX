@@ -9,10 +9,23 @@ use app::media::{
     MediaState, RendererState,
 };
 use tauri::Manager;
+#[cfg(target_os = "macos")]
+use tauri::RunEvent;
+#[cfg(desktop)]
+use tauri_plugin_single_instance;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            app::launch::handle_secondary_launch(app, &args);
+        }));
+    }
+
+    let app = builder
         .manage(MediaState::default())
         .manage(RendererState::new())
         .setup(|app| {
@@ -32,10 +45,17 @@ pub fn run() {
                 let boxed: Box<dyn std::error::Error> = Box::new(std::io::Error::other(err));
                 tauri::Error::Setup(boxed.into())
             })?;
+            app::launch::bootstrap_from_launch_sources(app.handle());
+            #[cfg(desktop)]
+            app::launch::bootstrap_from_deep_links(app.handle()).map_err(|err| {
+                let boxed: Box<dyn std::error::Error> = Box::new(std::io::Error::other(err));
+                tauri::Error::Setup(boxed.into())
+            })?;
             Ok(())
         })
         .on_menu_event(app::menu::handle_menu_event)
         .on_window_event(app::windows::handle_close_requested)
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
@@ -66,7 +86,22 @@ pub fn run() {
             playback_cache_commands::playback_stop_cache_recording,
             app::windows::window_set_main_always_on_top,
             app::windows::window_set_main_video_scale_mode,
+            app::windows::window_toggle_main_fullscreen,
+            app::windows::window_start_main_dragging,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Opened { urls } = event {
+            app::launch::handle_opened_urls(app_handle, &urls);
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = app_handle;
+            let _ = event;
+        }
+    });
 }

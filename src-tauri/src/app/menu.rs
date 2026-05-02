@@ -1,3 +1,4 @@
+use crate::app::default_player::open_default_player_settings;
 use crate::app::updates::check_and_install_update;
 use crate::app::windows::show_preferences_window;
 use tauri::menu::{
@@ -11,6 +12,7 @@ const MENU_APP_SETTINGS_ID: &str = "mediax.app.settings";
 const MENU_APP_QUIT_ID: &str = "mediax.app.quit";
 const MENU_FILE_OPEN_LOCAL_ID: &str = "mediax.file.open_local";
 const MENU_FILE_OPEN_URL_ID: &str = "mediax.file.open_url";
+const MENU_HELP_SET_DEFAULT_PLAYER_ID: &str = "mediax.help.set_default_player";
 const MENU_HELP_CHECK_UPDATE_ID: &str = "mediax.help.check_update";
 
 fn app_menu_title(app: &tauri::App) -> String {
@@ -105,6 +107,13 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         &[&undo, &redo, &cut, &copy, &paste, &select_all],
     )?;
 
+    let set_default_player = MenuItem::with_id(
+        app,
+        MENU_HELP_SET_DEFAULT_PLAYER_ID,
+        "设为默认播放器",
+        true,
+        None::<&str>,
+    )?;
     let check_update = MenuItem::with_id(
         app,
         MENU_HELP_CHECK_UPDATE_ID,
@@ -113,7 +122,13 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         None::<&str>,
     )?;
     let help_submenu =
-        Submenu::with_id_and_items(app, HELP_SUBMENU_ID, "Help", true, &[&check_update])?;
+        Submenu::with_id_and_items(
+            app,
+            HELP_SUBMENU_ID,
+            "Help",
+            true,
+            &[&set_default_player, &check_update],
+        )?;
 
     let menu = Menu::with_items(
         app,
@@ -130,6 +145,9 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: MenuEvent) {
         }
         MENU_APP_SETTINGS_ID => {
             let _ = show_preferences_window(app);
+        }
+        MENU_HELP_SET_DEFAULT_PLAYER_ID => {
+            open_default_player_settings(app);
         }
         MENU_HELP_CHECK_UPDATE_ID => {
             let app = app.clone();

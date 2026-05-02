@@ -92,8 +92,8 @@ async function handleViewportDoubleClick(event: MouseEvent) {
   await toggleMainWindowFullscreen();
 }
 
-async function handleViewportPointerDown(event: PointerEvent) {
-  if (event.button !== 0 || !event.isPrimary || event.detail > 1) {
+async function handleViewportMouseDown(event: MouseEvent) {
+  if (event.button !== 0 || event.detail > 1) {
     return;
   }
   if (isInteractiveTarget(event.target)) {
@@ -105,9 +105,10 @@ async function handleViewportPointerDown(event: PointerEvent) {
 
 <template>
   <section
+    data-tauri-drag-region
     class="relative flex h-full items-center justify-center overflow-hidden bg-transparent"
-    @dblclick="handleViewportDoubleClick"
-    @pointerdown="handleViewportPointerDown"
+    @dblclick.capture="handleViewportDoubleClick"
+    @mousedown.capture="handleViewportMouseDown"
   >
     <div v-if="source" class="h-full w-full" />
     <div v-else class="p-5">

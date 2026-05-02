@@ -62,7 +62,7 @@ const {
 <template>
   <div
     v-if="showAudioOverlay"
-    class="absolute inset-0 z-20 overflow-hidden"
+    class="pointer-events-none absolute inset-0 z-20 overflow-hidden"
   >
     <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),rgba(0,0,0,0.60))]" />
     <div class="absolute inset-x-5 bottom-5 top-4 md:bottom-6 md:left-7 md:right-7 md:top-5">

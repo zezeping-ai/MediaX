@@ -1,10 +1,16 @@
 <script setup lang="ts">
+import { useWindowFileDrop } from "./composables/useWindowFileDrop";
 import OpenUrlModal from "./components/OpenUrlModal";
 import PlaybackControls from "./components/PlaybackControls";
 import MediaViewport from "./components/MediaViewport";
 import StatusAlerts from "./components/StatusAlerts.vue";
 import { useHomePageBindings } from "./useHomePageBindings";
 import { useHomePageViewModel } from "./useHomePageViewModel";
+
+const viewModel = useHomePageViewModel();
+const { dropActive } = useWindowFileDrop({
+  openPath: viewModel.openPath,
+});
 
 const {
   controlsVisible,
@@ -19,7 +25,7 @@ const {
   urlDialogEvents,
   urlDialogProps,
   urlDialogVisible,
-} = useHomePageBindings(useHomePageViewModel());
+} = useHomePageBindings(viewModel);
 </script>
 
 <template>
@@ -39,6 +45,14 @@ const {
         @quick-open-local="mediaViewportEvents.onQuickOpenLocal"
         @quick-open-url="mediaViewportEvents.onQuickOpenUrl"
       />
+      <div
+        v-if="dropActive"
+        class="pointer-events-none absolute inset-5 z-40 flex items-center justify-center rounded-[28px] border border-dashed border-white/35 bg-black/28 backdrop-blur-md"
+      >
+        <div class="rounded-2xl border border-white/12 bg-black/45 px-5 py-3 text-center text-sm font-medium tracking-[0.02em] text-white/92 shadow-[0_18px_48px_rgba(0,0,0,0.38)]">
+          拖拽媒体文件到这里即可播放
+        </div>
+      </div>
       <PlaybackControls
         v-if="hasSource"
         class="absolute bottom-0 left-1/2 z-30 w-[min(760px,calc(100vw-32px))] -translate-x-1/2 opacity-100 transition-[opacity,transform] duration-300 ease-out will-change-transform"

@@ -33,6 +33,9 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
   } = options;
 
   return {
+    openPath: (path: string) => withBusyState(async () => {
+      await playbackRunner.openPath(path);
+    }),
     openLocalFileByDialog: () => withBusyState(async () => {
       const selectedPath = await playbackRunner.openLocalFileByDialog();
       if (selectedPath) {
