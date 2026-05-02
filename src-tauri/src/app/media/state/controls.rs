@@ -12,11 +12,6 @@ pub struct AudioControls {
     channel_routing: AtomicU8,
 }
 
-pub struct DebugControls {
-    playback_log_enabled: AtomicBool,
-    frontend_diagnostics_enabled: AtomicBool,
-}
-
 impl AudioControls {
     pub fn volume(&self) -> f32 {
         let bits = self.volume_bits.load(Ordering::Relaxed);
@@ -102,29 +97,5 @@ impl AudioControls {
             PlaybackChannelRouting::RightToBoth => 2,
         };
         self.channel_routing.store(encoded, Ordering::Relaxed);
-    }
-}
-
-impl DebugControls {
-    pub fn playback_log_enabled(&self) -> bool {
-        self.playback_log_enabled.load(Ordering::Relaxed)
-    }
-
-    pub fn set_playback_log_enabled(&self, value: bool) {
-        self.playback_log_enabled.store(value, Ordering::Relaxed);
-    }
-
-    pub fn frontend_diagnostics_enabled(&self) -> bool {
-        self.frontend_diagnostics_enabled.load(Ordering::Relaxed)
-    }
-
-}
-
-impl Default for DebugControls {
-    fn default() -> Self {
-        Self {
-            playback_log_enabled: AtomicBool::new(true),
-            frontend_diagnostics_enabled: AtomicBool::new(false),
-        }
     }
 }

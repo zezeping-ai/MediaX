@@ -6,22 +6,14 @@ import type {
   MediaMetadataPayload,
   PlaybackMediaKind,
   MediaSnapshot,
-  MediaTelemetryPayload,
 } from "@/modules/media-types";
 import { toUserMediaErrorMessage } from "../../useMediaErrorMap";
-import { createDebugPayloadHandler } from "./createDebugPayloadHandler";
 import { createTelemetryPayloadHandler } from "./createTelemetryPayloadHandler";
 
 export function useMediaSessionState() {
   const snapshot = ref<MediaSnapshot | null>(null);
   const currentSource = ref("");
-  const debugSnapshot = ref<Record<string, string>>({});
-  const debugTimeline = ref<Array<{ stage: string; message: string; at_ms: number }>>([]);
-  const debugStageSnapshot = ref<Record<string, { message: string; at_ms: number }>>({});
-  const latestTelemetry = shallowRef<MediaTelemetryPayload | null>(null);
   const latestAudioMeter = shallowRef<MediaAudioMeterPayload | null>(null);
-  const telemetryHistory = ref<Array<{ at_ms: number; telemetry: MediaTelemetryPayload }>>([]);
-  const firstFrameAtMs = ref<number | null>(null);
   const metadataDurationSeconds = ref<number | null>(null);
   const metadataMediaKind = ref<PlaybackMediaKind>("video");
   const metadataVideoWidth = ref<number | null>(null);
@@ -38,13 +30,7 @@ export function useMediaSessionState() {
   const lastTelemetryAtMs = ref(0);
 
   function resetTransientMediaState() {
-    debugSnapshot.value = {};
-    debugTimeline.value = [];
-    debugStageSnapshot.value = {};
-    firstFrameAtMs.value = null;
-    latestTelemetry.value = null;
     latestAudioMeter.value = null;
-    telemetryHistory.value = [];
     metadataDurationSeconds.value = null;
     metadataMediaKind.value = "video";
     metadataVideoWidth.value = null;
@@ -88,29 +74,8 @@ export function useMediaSessionState() {
     playbackErrorMessage.value = toUserMediaErrorMessage(`${payload.code}: ${payload.message}`);
   }
 
-  const applyDebugPayload = createDebugPayloadHandler({
-    currentSource,
-    debugSnapshot,
-    debugTimeline,
-    debugStageSnapshot,
-    latestTelemetry,
-    latestAudioMeter,
-    telemetryHistory,
-    firstFrameAtMs,
-    networkReadBytesPerSecond,
-    networkSustainRatio,
-    lastTelemetryAtMs,
-  });
-
   const applyTelemetryPayload = createTelemetryPayloadHandler({
     currentSource,
-    debugSnapshot,
-    debugTimeline,
-    debugStageSnapshot,
-    latestTelemetry,
-    latestAudioMeter,
-    telemetryHistory,
-    firstFrameAtMs,
     networkReadBytesPerSecond,
     networkSustainRatio,
     lastTelemetryAtMs,
@@ -134,17 +99,11 @@ export function useMediaSessionState() {
   }
 
   return {
-    applyDebugPayload,
     applyAudioMeterPayload,
     applyErrorPayload,
     applyMetadataPayload,
     applyTelemetryPayload,
     currentSource,
-    debugSnapshot,
-    debugStageSnapshot,
-    debugTimeline,
-    firstFrameAtMs,
-    latestTelemetry,
     latestAudioMeter,
     markTelemetryStaleIfNeeded,
     metadataDurationSeconds,
@@ -161,7 +120,6 @@ export function useMediaSessionState() {
     networkSustainRatio,
     playbackErrorMessage,
     snapshot,
-    telemetryHistory,
     updateSnapshot,
   };
 }

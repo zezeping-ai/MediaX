@@ -1,4 +1,4 @@
-use super::controls::{AudioControls, DebugControls};
+use super::controls::AudioControls;
 use super::stream_runtime::StreamRuntimeState;
 use super::CacheRecorderSession;
 use crate::app::media::library::MediaLibraryService;
@@ -24,7 +24,6 @@ pub struct MediaRuntimeState {
 pub struct MediaControlState {
     pub audio: Arc<AudioControls>,
     pub timing: Arc<TimingControls>,
-    pub debug: Arc<DebugControls>,
 }
 
 impl Default for MediaControlState {
@@ -32,7 +31,6 @@ impl Default for MediaControlState {
         Self {
             audio: Arc::new(AudioControls::default()),
             timing: Arc::new(TimingControls::default()),
-            debug: Arc::new(DebugControls::default()),
         }
     }
 }

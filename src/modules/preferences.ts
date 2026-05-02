@@ -9,8 +9,6 @@ export type Preferences = {
   theme: ThemePreference;
   player: {
     hwDecodeMode: HardwareDecodeMode;
-    parseDebugEnabled: boolean;
-    debugLogEnabled: boolean;
     alwaysOnTop: boolean;
     videoScaleMode: PlayerVideoScaleMode;
     showDownlinkSpeed: boolean;
@@ -22,9 +20,6 @@ const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
   player: {
     hwDecodeMode: "auto",
-    // 默认打开：方便定位“打开/解析/解码”阶段的问题
-    parseDebugEnabled: true,
-    debugLogEnabled: true,
     alwaysOnTop: true,
     // 默认“自适应”：完整显示视频，必要时留黑边。
     videoScaleMode: "contain",
@@ -55,7 +50,6 @@ export function usePreferences() {
     if (
       !player
       || !player.videoScaleMode
-      || typeof player.debugLogEnabled !== "boolean"
       || typeof player.showDownlinkSpeed !== "boolean"
       || typeof player.showUplinkSpeed !== "boolean"
     ) {
@@ -63,10 +57,6 @@ export function usePreferences() {
         ...preferences.value,
         player: {
           hwDecodeMode: resolveStoredHwDecodeMode(player),
-          parseDebugEnabled:
-            player?.parseDebugEnabled ?? DEFAULT_PREFERENCES.player.parseDebugEnabled,
-          debugLogEnabled:
-            player?.debugLogEnabled ?? DEFAULT_PREFERENCES.player.debugLogEnabled,
           alwaysOnTop: player?.alwaysOnTop ?? DEFAULT_PREFERENCES.player.alwaysOnTop,
           videoScaleMode: player?.videoScaleMode ?? DEFAULT_PREFERENCES.player.videoScaleMode,
           showDownlinkSpeed:
@@ -108,24 +98,6 @@ export function usePreferences() {
         preferences.value = {
           ...preferences.value,
           player: { ...preferences.value.player, hwDecodeMode: v },
-        };
-      },
-    }),
-    playerParseDebugEnabled: computed({
-      get: () => preferences.value.player.parseDebugEnabled,
-      set: (v: boolean) => {
-        preferences.value = {
-          ...preferences.value,
-          player: { ...preferences.value.player, parseDebugEnabled: v },
-        };
-      },
-    }),
-    playerDebugLogEnabled: computed({
-      get: () => preferences.value.player.debugLogEnabled,
-      set: (v: boolean) => {
-        preferences.value = {
-          ...preferences.value,
-          player: { ...preferences.value.player, debugLogEnabled: v },
         };
       },
     }),

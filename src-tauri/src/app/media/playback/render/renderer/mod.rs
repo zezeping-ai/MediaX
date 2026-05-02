@@ -22,8 +22,6 @@ impl RendererState {
     pub fn metrics_snapshot(&self) -> RendererMetricsSnapshot {
         let last_presented_pts_seconds = self.last_presented_pts_seconds();
         let last_submitted_pts_seconds = self.last_submitted_pts_seconds();
-        let (queued_head_pts_seconds, queued_tail_pts_seconds) = self.queued_pts_range();
-        let current_clock_seconds = self.current_clock_seconds();
         let submit_lead_ms = match (last_submitted_pts_seconds, last_presented_pts_seconds) {
             (Some(submitted), Some(presented))
                 if submitted.is_finite() && presented.is_finite() && submitted >= presented =>
@@ -35,9 +33,6 @@ impl RendererState {
         RendererMetricsSnapshot {
             queue_depth: self.queue_depth(),
             queue_capacity: self.queue_capacity(),
-            current_clock_seconds,
-            queued_head_pts_seconds,
-            queued_tail_pts_seconds,
             last_render_cost_ms: (self.inner.last_render_cost_micros.load(Ordering::Relaxed)
                 as f64)
                 / 1000.0,

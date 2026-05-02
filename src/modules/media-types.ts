@@ -6,7 +6,6 @@ export type PlaybackChannelRouting = "stereo" | "left_to_both" | "right_to_both"
 export const MEDIA_PLAYBACK_STATE_EVENT = "media://playback/state";
 export const MEDIA_PLAYBACK_METADATA_EVENT = "media://playback/metadata";
 export const MEDIA_PLAYBACK_ERROR_EVENT = "media://playback/error";
-export const MEDIA_PLAYBACK_DEBUG_EVENT = "media://playback/debug";
 export const MEDIA_PLAYBACK_TELEMETRY_EVENT = "media://playback/telemetry";
 export const MEDIA_PLAYBACK_AUDIO_METER_EVENT = "media://playback/audio-meter";
 export const MEDIA_MENU_EVENT = "media://menu-action";
@@ -241,10 +240,4 @@ export interface MediaMetadataPayload {
 export interface MediaErrorPayload {
   code: string;
   message: string;
-}
-
-export interface MediaDebugPayload {
-  stage: string;
-  message: string;
-  at_ms: number;
 }

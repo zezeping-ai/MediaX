@@ -27,10 +27,6 @@ impl PlaybackRate {
         f64::from(self.0)
     }
 
-    pub fn is_neutral(self) -> bool {
-        (self.0 - DEFAULT_PLAYBACK_RATE).abs() <= 1e-3
-    }
-
     pub fn delta(self, other: Self) -> f32 {
         (self.0 - other.0).abs()
     }

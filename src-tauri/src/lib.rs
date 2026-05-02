@@ -3,8 +3,7 @@ use app::media::{
     library,
     playback::debug_log::initialize_playback_debug_log,
     playback::session::commands::{
-        cache as playback_cache_commands, debug as playback_debug_commands,
-        preview as playback_preview_commands,
+        cache as playback_cache_commands, preview as playback_preview_commands,
         session as playback_session_commands, timing as playback_timing_commands,
     },
     MediaState, RendererState,
@@ -43,9 +42,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             playback_session_commands::playback_get_snapshot,
-            playback_debug_commands::playback_get_debug_log_path,
-            playback_debug_commands::playback_clear_debug_log,
-            playback_debug_commands::playback_set_debug_log_enabled,
             library::media_set_library_roots,
             library::media_rescan_library,
             playback_session_commands::playback_open_source,

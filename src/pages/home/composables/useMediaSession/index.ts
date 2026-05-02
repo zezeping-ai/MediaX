@@ -19,7 +19,6 @@ export function useMediaSession() {
       onSnapshot: state.updateSnapshot,
       onMetadata: state.applyMetadataPayload,
       onError: state.applyErrorPayload,
-      onDebug: state.applyDebugPayload,
       onTelemetry: state.applyTelemetryPayload,
       onAudioMeter: state.applyAudioMeterPayload,
     });
@@ -38,13 +37,7 @@ export function useMediaSession() {
   return {
     snapshot: state.snapshot,
     currentSource: state.currentSource,
-    debugSnapshot: state.debugSnapshot,
-    debugTimeline: state.debugTimeline,
-    debugStageSnapshot: state.debugStageSnapshot,
-    firstFrameAtMs: state.firstFrameAtMs,
-    latestTelemetry: state.latestTelemetry,
     latestAudioMeter: state.latestAudioMeter,
-    telemetryHistory: state.telemetryHistory,
     networkReadBytesPerSecond: state.networkReadBytesPerSecond,
     networkSustainRatio: state.networkSustainRatio,
     metadataDurationSeconds: state.metadataDurationSeconds,

@@ -1,13 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { message } from "ant-design-vue";
-import { Icon } from "@iconify/vue";
 import { usePreferences } from "@/modules/preferences";
-import {
-  playbackClearDebugLog,
-  playbackConfigureDecoderMode,
-  playbackGetDebugLogPath,
-} from "@/modules/media-player";
+import { playbackConfigureDecoderMode } from "@/modules/media-player";
 import {
   applyAlwaysOnTopPreference,
   applyVideoScaleModePreference,
@@ -16,17 +9,11 @@ import type { HardwareDecodeMode } from "@/modules/media-types";
 
 const {
   playerHwDecodeMode,
-  playerParseDebugEnabled,
-  playerDebugLogEnabled,
   playerAlwaysOnTop,
   playerVideoScaleMode,
   playerShowDownlinkSpeed,
   playerShowUplinkSpeed,
 } = usePreferences();
-
-const debugLogPath = ref("");
-const loadingDebugLogPath = ref(false);
-const clearingDebugLog = ref(false);
 
 async function applyHwDecode(mode: HardwareDecodeMode) {
   try {
@@ -43,43 +30,6 @@ async function applyAlwaysOnTop(enabled: boolean) {
 async function applyVideoScaleMode(mode: "contain" | "cover") {
   await applyVideoScaleModePreference(mode);
 }
-
-async function loadDebugLogPath() {
-  loadingDebugLogPath.value = true;
-  try {
-    debugLogPath.value = await playbackGetDebugLogPath();
-  } catch {
-    debugLogPath.value = "";
-  } finally {
-    loadingDebugLogPath.value = false;
-  }
-}
-
-async function copyDebugLogPath() {
-  if (!debugLogPath.value) return;
-  try {
-    await navigator.clipboard.writeText(debugLogPath.value);
-    message.success("日志位置已复制");
-  } catch {
-    message.error("复制日志位置失败");
-  }
-}
-
-async function clearDebugLog() {
-  clearingDebugLog.value = true;
-  try {
-    debugLogPath.value = await playbackClearDebugLog();
-    message.success("日志已清空");
-  } catch {
-    message.error("清空日志失败");
-  } finally {
-    clearingDebugLog.value = false;
-  }
-}
-
-onMounted(() => {
-  void loadDebugLogPath();
-});
 </script>
 
 <template>
@@ -107,67 +57,6 @@ onMounted(() => {
             ]"
             @change="(value: string | number) => void applyHwDecode(value as HardwareDecodeMode)"
           />
-        </div>
-      </a-space>
-    </a-card>
-
-    <a-card title="调试" :bordered="false" size="small" :body-style="{ padding: '12px' }">
-      <a-space direction="vertical" class="w-full">
-        <div class="flex items-center justify-between gap-4">
-          <div class="flex min-w-0 flex-col gap-1">
-            <div class="font-semibold">解析 Debug</div>
-            <div class="text-xs text-black/55 dark:text-white/55">
-              在播放器上展示加载/解析过程以及调试信息（默认开启）。
-            </div>
-          </div>
-          <a-switch v-model:checked="playerParseDebugEnabled" />
-        </div>
-      </a-space>
-    </a-card>
-
-    <a-card title="日志管理" :bordered="false" size="small" :body-style="{ padding: '12px' }">
-      <a-space direction="vertical" class="w-full" size="middle">
-        <div class="flex items-center justify-between gap-4">
-          <div class="flex min-w-0 flex-col gap-1">
-            <div class="font-semibold">播放日志</div>
-            <div class="text-xs text-black/55 dark:text-white/55">
-              启动时自动清空当前日志，运行中超过 1MB 自动轮转，默认开启。
-            </div>
-          </div>
-          <a-switch v-model:checked="playerDebugLogEnabled" />
-        </div>
-
-        <div class="flex min-w-0 flex-col gap-2">
-          <div class="text-xs font-semibold uppercase tracking-[0.12em] text-black/45 dark:text-white/45">
-            位置
-          </div>
-          <a-input
-            :value="debugLogPath"
-            readonly
-            :loading="loadingDebugLogPath"
-            placeholder="正在读取日志位置..."
-          />
-        </div>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <a-button size="small" @click="void loadDebugLogPath()">
-            <template #icon>
-              <Icon icon="mdi:refresh" />
-            </template>
-            刷新位置
-          </a-button>
-          <a-button size="small" :disabled="!debugLogPath" @click="void copyDebugLogPath()">
-            <template #icon>
-              <Icon icon="mdi:content-copy" />
-            </template>
-            复制位置
-          </a-button>
-          <a-button size="small" danger :loading="clearingDebugLog" @click="void clearDebugLog()">
-            <template #icon>
-              <Icon icon="mdi:delete-outline" />
-            </template>
-            一键清空
-          </a-button>
         </div>
       </a-space>
     </a-card>

@@ -34,8 +34,3 @@ export {
   toggleMainWindowFullscreen,
   setMainWindowVideoScaleMode,
 } from "./windowCommands";
-export {
-  playbackClearDebugLog,
-  playbackGetDebugLogPath,
-  playbackSetDebugLogEnabled,
-} from "./debugLogCommands";

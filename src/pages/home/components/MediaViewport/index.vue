@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from "vue";
+import { computed } from "vue";
 import {
   type MediaAudioMeterPayload,
   type MediaLyricLine,
-  type MediaTelemetryPayload,
   type PlaybackChannelRouting,
   type PlaybackState,
 } from "@/modules/media-types";
@@ -11,15 +10,8 @@ import {
   startMainWindowDragging,
   toggleMainWindowFullscreen,
 } from "@/modules/media-player/windowCommands";
-import { usePreferences } from "@/modules/preferences";
 import AudioLyricsOverlay from "./AudioLyricsOverlay";
 import TransferStatusOverlay from "./TransferStatusOverlay.vue";
-import LoadingProcessOverlay from "./PlayerDebugOverlay/LoadingProcessOverlay.vue";
-
-const PlayerDebugOverlay = defineAsyncComponent({
-  loader: () => import("./PlayerDebugOverlay"),
-  delay: 120,
-});
 
 const props = defineProps<{
   source: string;
@@ -27,14 +19,7 @@ const props = defineProps<{
   controlsVisible: boolean;
   loading: boolean;
   playback: PlaybackState | null;
-  debugSnapshot: Record<string, string>;
-  debugTimeline: Array<{ stage: string; message: string; at_ms: number }>;
-  debugStageSnapshot: Record<string, { message: string; at_ms: number }>;
-  firstFrameAtMs: number | null;
-  latestTelemetry: MediaTelemetryPayload | null;
   latestAudioMeter: MediaAudioMeterPayload | null;
-  telemetryHistory: Array<{ at_ms: number; telemetry: MediaTelemetryPayload }>;
-  mediaInfoSnapshot: Record<string, string>;
   metadataMediaKind: "video" | "audio";
   metadataTitle: string;
   metadataArtist: string;
@@ -60,29 +45,14 @@ const emit = defineEmits<{
   "quick-open-url": [];
 }>();
 
-const { playerParseDebugEnabled } = usePreferences();
-const debugOverlayOpen = ref(true);
-
 const hasVideoPresentationSignals = computed(() =>
-  Boolean(
-    props.playback?.media_kind === "video"
-    || props.debugSnapshot.video_frame_format
-    || props.debugSnapshot.video_fps
-    || props.debugSnapshot.video_pipeline,
-  ),
+  props.playback?.media_kind === "video" || props.metadataMediaKind === "video",
 );
 const hasAudioPresentationSignals = computed(() =>
   Boolean(
     props.playback?.media_kind === "audio"
     || props.metadataMediaKind === "audio"
-    || (
-      !hasVideoPresentationSignals.value
-      && (
-        props.metadataHasCoverArt
-        || Boolean(props.latestAudioMeter?.channels)
-        || Boolean(props.debugSnapshot.audio_pipeline_ready)
-      )
-    ),
+    || (!hasVideoPresentationSignals.value && props.metadataHasCoverArt)
   ),
 );
 const effectiveMediaKind = computed(() => {
@@ -91,46 +61,6 @@ const effectiveMediaKind = computed(() => {
   }
   return "video";
 });
-const overlaySource = computed(() => props.pendingSource || props.source);
-const hasPresentedFirstFrame = computed(() =>
-  Boolean(
-    effectiveMediaKind.value === "audio"
-    || props.debugSnapshot.audio_pipeline_ready
-    || hasVideoPresentationSignals.value,
-  ),
-);
-const isWaitingForFirstFrame = computed(() => (
-  Boolean(overlaySource.value)
-  && !hasPresentedFirstFrame.value
-  && props.playback?.status !== "stopped"
-));
-const shouldShowParseOverlay = computed(() => (
-  props.controlsVisible
-  && playerParseDebugEnabled.value
-  && debugOverlayOpen.value
-  && Boolean(overlaySource.value)
-));
-const shouldShowLoadingProcessOverlay = computed(() => (
-  shouldShowParseOverlay.value
-  && isWaitingForFirstFrame.value
-));
-const shouldShowDebugOverlay = computed(() => (
-  shouldShowParseOverlay.value
-  && Boolean(props.source)
-  && Boolean(props.firstFrameAtMs)
-));
-watch(
-  () => props.source,
-  (nextSource) => {
-    if (!nextSource) {
-      emit("ended");
-      debugOverlayOpen.value = true;
-      return;
-    }
-    // New source: reopen overlay so user can see parse stages.
-    debugOverlayOpen.value = true;
-  },
-);
 
 const WINDOW_DRAG_BLOCK_SELECTORS = [
   "button",
@@ -190,11 +120,6 @@ async function handleViewportPointerDown(event: PointerEvent) {
         </template>
       </a-empty>
     </div>
-    <LoadingProcessOverlay
-      v-if="shouldShowLoadingProcessOverlay"
-      :source="overlaySource"
-      :timeline="debugTimeline"
-    />
     <AudioLyricsOverlay
       :media-kind="effectiveMediaKind"
       :playback="playback"
@@ -208,18 +133,6 @@ async function handleViewportPointerDown(event: PointerEvent) {
       :set-right-channel-volume="setRightChannelVolume"
       :set-left-channel-muted="setLeftChannelMuted"
       :set-right-channel-muted="setRightChannelMuted"
-    />
-    <PlayerDebugOverlay
-      v-if="shouldShowDebugOverlay"
-      :source="source"
-      :playback="playback"
-      :debug-snapshot="debugSnapshot"
-      :debug-timeline="debugTimeline"
-      :debug-stage-snapshot="debugStageSnapshot"
-      :latest-telemetry="latestTelemetry"
-      :telemetry-history="telemetryHistory"
-      :media-info-snapshot="mediaInfoSnapshot"
-      @close="debugOverlayOpen = false"
     />
     <TransferStatusOverlay
       :source="source"

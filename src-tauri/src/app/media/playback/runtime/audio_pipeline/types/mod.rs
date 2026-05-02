@@ -7,6 +7,11 @@ use ffmpeg_next::software::resampling::context::Context as ResamplingContext;
 pub(crate) use output_format::AudioOutputSampleFormat;
 pub(crate) use stats::AudioStats;
 
+pub(crate) struct StagedOutputPcm {
+    pub blocks: Vec<Vec<f32>>,
+    pub scratch: Vec<f32>,
+}
+
 pub(crate) struct AudioPipeline {
     pub stream_index: usize,
     pub decoder: ffmpeg_next::decoder::Audio,
@@ -47,7 +52,6 @@ impl AudioPipeline {
         self.reset_processing_state();
         if preserve_output_queue {
             self.stats.intentional_refill_pending = false;
-            self.stats.intentional_refill_logged = false;
             self.discontinuity_fade_in_total_frames = 0;
             self.discontinuity_fade_in_frames_remaining = 0;
             self.discontinuity_crossfade_frames = 0;
@@ -58,7 +62,6 @@ impl AudioPipeline {
         } else {
             self.clear_output_queue();
             self.stats.intentional_refill_pending = true;
-            self.stats.intentional_refill_logged = false;
             let smoothing = discontinuity_smoothing_profile(previous_rate, next_rate);
             self.discontinuity_fade_in_total_frames = smoothing.fade_in_frames;
             self.discontinuity_fade_in_frames_remaining = smoothing.fade_in_frames;
@@ -74,7 +77,6 @@ impl AudioPipeline {
 
     pub fn mark_refill_completed(&mut self) {
         self.stats.intentional_refill_pending = false;
-        self.stats.intentional_refill_logged = false;
     }
 
     pub fn apply_discontinuity_smoothing(&mut self, pcm: &mut [f32], channels: u16) {
@@ -105,24 +107,32 @@ impl AudioPipeline {
             self.discontinuity_fade_in_frames_remaining.saturating_sub(fade_frames);
     }
 
-    pub fn stage_output_pcm(
+    pub fn stage_output_pcm_owned(
         &mut self,
-        pcm: &[f32],
+        mut pcm: Vec<f32>,
         channels: u16,
         staging_frames: usize,
         force_flush_partial: bool,
-    ) -> Vec<Vec<f32>> {
+    ) -> StagedOutputPcm {
         if pcm.is_empty() || channels == 0 {
-            return Vec::new();
+            return StagedOutputPcm {
+                blocks: Vec::new(),
+                scratch: pcm,
+            };
         }
         if self.output_staging_channels != channels {
             self.output_staging_channels = channels;
             self.output_staging_samples.clear();
             self.output_staging_start = 0;
         }
-        self.output_staging_samples.extend_from_slice(pcm);
-        let mut blocks = Vec::new();
         let samples_per_block = staging_frames.max(1).saturating_mul(usize::from(channels));
+        if self.available_staging_samples() == 0 {
+            return self.stage_output_pcm_direct(pcm, channels, samples_per_block, force_flush_partial);
+        }
+
+        self.output_staging_samples.extend_from_slice(&pcm);
+        pcm.clear();
+        let mut blocks = Vec::new();
         while self.available_staging_samples() >= samples_per_block {
             let block = self.take_staged_block(samples_per_block);
             self.remember_output_tail(&block, channels);
@@ -134,7 +144,10 @@ impl AudioPipeline {
             self.remember_output_tail(&block, channels);
             blocks.push(block);
         }
-        blocks
+        StagedOutputPcm {
+            blocks,
+            scratch: pcm,
+        }
     }
 
     pub fn flush_staged_output_pcm(&mut self) -> Option<(u16, Vec<f32>)> {
@@ -209,6 +222,43 @@ impl AudioPipeline {
         self.output_staging_samples
             .len()
             .saturating_sub(self.output_staging_start)
+    }
+
+    fn stage_output_pcm_direct(
+        &mut self,
+        mut pcm: Vec<f32>,
+        channels: u16,
+        samples_per_block: usize,
+        force_flush_partial: bool,
+    ) -> StagedOutputPcm {
+        let mut blocks = Vec::new();
+        while pcm.len() >= samples_per_block && samples_per_block > 0 {
+            let remainder = pcm.split_off(samples_per_block);
+            let block = std::mem::replace(&mut pcm, remainder);
+            self.remember_output_tail(&block, channels);
+            blocks.push(block);
+        }
+        if force_flush_partial && !pcm.is_empty() {
+            self.remember_output_tail(&pcm, channels);
+            blocks.push(pcm);
+            return StagedOutputPcm {
+                blocks,
+                scratch: Vec::new(),
+            };
+        }
+        if !pcm.is_empty() {
+            self.output_staging_channels = channels;
+            self.output_staging_samples = pcm;
+            self.output_staging_start = 0;
+            return StagedOutputPcm {
+                blocks,
+                scratch: Vec::new(),
+            };
+        }
+        StagedOutputPcm {
+            blocks,
+            scratch: pcm,
+        }
     }
 
     fn compact_staging_buffer_if_needed(&mut self) {

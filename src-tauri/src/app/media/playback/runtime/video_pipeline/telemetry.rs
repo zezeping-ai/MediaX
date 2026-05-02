@@ -3,9 +3,7 @@ use crate::app::media::playback::events::{
     MediaDecodeQuantileStats, MediaFrameTypeStats, MediaTelemetryPayload,
     MediaVideoStageCostStats, MediaVideoTimestampStats,
 };
-use crate::app::media::playback::runtime::{
-    emit_debug, emit_telemetry_payloads, METRICS_EMIT_INTERVAL_MS,
-};
+use crate::app::media::playback::runtime::{emit_telemetry_payloads, METRICS_EMIT_INTERVAL_MS};
 use ffmpeg_next::ffi;
 use ffmpeg_next::frame;
 use std::time::{Duration, Instant};
@@ -26,118 +24,8 @@ pub(super) fn emit_video_telemetry(
     let rate_limited_reason = ctx.playback_clock.playback_rate_limited_reason();
     let presented_video_pts = renderer_metrics.last_presented_pts_seconds;
     let submitted_video_pts = renderer_metrics.last_submitted_pts_seconds;
-    emit_debug(ctx.app, "video_fps", format!("render_fps={render_fps:.2}"));
     let audio_now = ctx.audio_clock.map(|clock| clock.now_seconds());
     let sync_video_pts = presented_video_pts.unwrap_or_else(|| estimated_pts.max(0.0));
-    let audio_drift = audio_now.map(|audio_seconds| sync_video_pts - audio_seconds);
-    emit_debug(
-        ctx.app,
-        "av_sync",
-        format!(
-            "a_minus_v={:.3}ms audio_clock={} renderer_clock={:.3}s video_presented={:.3}s video_submitted={} queue_head={} queue_tail={} queue_depth={}/{} submit_lead={:.3}ms lead_target={:.3}ms",
-            audio_drift.unwrap_or(0.0) * 1000.0,
-            audio_now
-                .map(|value| format!("{value:.3}s"))
-                .unwrap_or_else(|| "n/a".to_string()),
-            renderer_metrics.current_clock_seconds,
-            sync_video_pts,
-            submitted_video_pts
-                .map(|value| format!("{value:.3}s"))
-                .unwrap_or_else(|| "n/a".to_string()),
-            renderer_metrics
-                .queued_head_pts_seconds
-                .map(|value| format!("{value:.3}s"))
-                .unwrap_or_else(|| "n/a".to_string()),
-            renderer_metrics
-                .queued_tail_pts_seconds
-                .map(|value| format!("{value:.3}s"))
-                .unwrap_or_else(|| "n/a".to_string()),
-            renderer_metrics.queue_depth,
-            renderer_metrics.queue_capacity,
-            renderer_metrics.submit_lead_ms,
-            ctx.audio_allowed_lead_seconds * 1000.0,
-        ),
-    );
-    emit_debug(
-        ctx.app,
-        "video_pipeline",
-        format!(
-            "pts={:.3}s queue_depth={} clock={:.3}s requested_rate={:.2} effective_rate={:.2} rate_limit={} output={}x{} decode_avg={:.2}ms decode_max={:.2}ms decode_p50={:.2}ms decode_p95={:.2}ms decode_p99={:.2}ms samples={}",
-            estimated_pts.max(0.0),
-            renderer_metrics.queue_depth,
-            *ctx.current_position_seconds,
-            requested_playback_rate,
-            effective_playback_rate,
-            rate_limited_reason.unwrap_or("none"),
-            ctx.output_width,
-            ctx.output_height,
-            perf_snapshot.as_ref().map(|value| value.avg_ms).unwrap_or(0.0),
-            perf_snapshot.as_ref().map(|value| value.max_ms).unwrap_or(0.0),
-            perf_snapshot.as_ref().map(|value| value.p50_ms).unwrap_or(0.0),
-            perf_snapshot.as_ref().map(|value| value.p95_ms).unwrap_or(0.0),
-            perf_snapshot.as_ref().map(|value| value.p99_ms).unwrap_or(0.0),
-            perf_snapshot.as_ref().map(|value| value.samples).unwrap_or(0),
-        ),
-    );
-    emit_debug(
-        ctx.app,
-        "decode_cost_quantiles",
-        format!(
-            "p50={:.3}ms p95={:.3}ms p99={:.3}ms avg={:.3}ms max={:.3}ms samples={}",
-            perf_snapshot
-                .as_ref()
-                .map(|value| value.p50_ms)
-                .unwrap_or(0.0),
-            perf_snapshot
-                .as_ref()
-                .map(|value| value.p95_ms)
-                .unwrap_or(0.0),
-            perf_snapshot
-                .as_ref()
-                .map(|value| value.p99_ms)
-                .unwrap_or(0.0),
-            perf_snapshot
-                .as_ref()
-                .map(|value| value.avg_ms)
-                .unwrap_or(0.0),
-            perf_snapshot
-                .as_ref()
-                .map(|value| value.max_ms)
-                .unwrap_or(0.0),
-            perf_snapshot
-                .as_ref()
-                .map(|value| value.samples)
-                .unwrap_or(0),
-        ),
-    );
-    if let Some(stage_costs) = stage_perf_snapshot.as_ref() {
-        emit_debug(
-            ctx.app,
-            "video_stage_costs",
-            format!(
-                "receive={:.2}/{:.2}ms queue_wait={:.2}/{:.2}ms hw_transfer={:.2}/{:.2}ms scale={:.2}/{:.2}ms color_profile={:.2}/{:.2}ms frame_extract={:.2}/{:.2}ms upload_prep={:.2}/{:.2}ms submit={:.2}/{:.2}ms total={:.2}/{:.2}ms samples={}",
-                stage_costs.receive_avg_ms,
-                stage_costs.receive_max_ms,
-                stage_costs.queue_wait_avg_ms,
-                stage_costs.queue_wait_max_ms,
-                stage_costs.hw_transfer_avg_ms,
-                stage_costs.hw_transfer_max_ms,
-                stage_costs.scale_avg_ms,
-                stage_costs.scale_max_ms,
-                stage_costs.color_profile_avg_ms,
-                stage_costs.color_profile_max_ms,
-                stage_costs.frame_extract_avg_ms,
-                stage_costs.frame_extract_max_ms,
-                stage_costs.upload_prep_avg_ms,
-                stage_costs.upload_prep_max_ms,
-                stage_costs.submit_avg_ms,
-                stage_costs.submit_max_ms,
-                stage_costs.total_avg_ms,
-                stage_costs.total_max_ms,
-                stage_costs.sample_count,
-            ),
-        );
-    }
     let ts_stats = take_video_timestamp_stats(ctx);
     let frame_type_stats = take_frame_type_stats(ctx);
     let decode_quantiles = perf_snapshot
@@ -250,18 +138,6 @@ fn take_video_timestamp_stats(
         jitter_avg_ms: *ctx.video_timestamp_metrics.pts_jitter_abs_sum_ms / (samples as f64),
         jitter_max_ms: *ctx.video_timestamp_metrics.pts_jitter_max_ms,
     };
-    emit_debug(
-        ctx.app,
-        "video_timestamps",
-        format!(
-            "samples={} pts_missing={:.2}% backtrack={} jitter_avg={:.3}ms jitter_max={:.3}ms",
-            stats.samples,
-            stats.pts_missing_ratio_percent,
-            stats.pts_backtrack_count,
-            stats.jitter_avg_ms,
-            stats.jitter_max_ms
-        ),
-    );
     *ctx.video_timestamp_metrics.window_start = Instant::now();
     *ctx.video_timestamp_metrics.samples = 0;
     *ctx.video_timestamp_metrics.pts_missing = 0;
@@ -293,18 +169,6 @@ fn take_frame_type_stats(ctx: &mut DrainFramesContext<'_>) -> Option<MediaFrameT
             other_ratio_percent: (*ctx.video_frame_type_metrics.other_count as f64) * 100.0
                 / (total as f64),
         };
-        emit_debug(
-            ctx.app,
-            "video_frame_types",
-            format!(
-                "I={:.1}% P={:.1}% B={:.1}% other={:.1}% samples={}",
-                stats.i_ratio_percent,
-                stats.p_ratio_percent,
-                stats.b_ratio_percent,
-                stats.other_ratio_percent,
-                stats.sample_count
-            ),
-        );
         Some(stats)
     } else {
         None

@@ -1,5 +1,3 @@
-use crate::app::media::playback::runtime::emit::emit_debug;
-use crate::app::media::playback::runtime::video_pipeline::percentile_from_sorted;
 use crate::app::media::playback::runtime::METRICS_EMIT_INTERVAL_MS;
 use ffmpeg_next::Packet;
 use std::time::{Duration, Instant};
@@ -36,7 +34,7 @@ impl VideoPacketMetrics {
 
     pub fn record_video_packet(
         &mut self,
-        app: &AppHandle,
+        _app: &AppHandle,
         packet: &Packet,
         video_time_base: ffmpeg_next::Rational,
     ) {
@@ -77,56 +75,10 @@ impl VideoPacketMetrics {
         if window_elapsed < Duration::from_millis(METRICS_EMIT_INTERVAL_MS) {
             return;
         }
-        let seconds = window_elapsed.as_secs_f64().max(1e-6);
-        let packet_rate = (self.demux_packets as f64) / seconds;
-        let bitrate_mbps = ((self.demux_bytes as f64) * 8.0) / seconds / 1_000_000.0;
-        let key_ratio = if self.demux_packets > 0 {
-            (self.demux_key_packets as f64) * 100.0 / (self.demux_packets as f64)
-        } else {
-            0.0
-        };
-        let keyint_est = if self.demux_key_packets > 0 {
-            (self.demux_packets as f64) / (self.demux_key_packets as f64)
-        } else {
-            0.0
-        };
-        emit_debug(
-            app,
-            "video_demux",
-            format!(
-                "packet_rate={:.2}pps bitrate≈{:.3}Mbps key_ratio={:.2}% keyint≈{:.1}pkts packets={} bytes={}",
-                packet_rate, bitrate_mbps, key_ratio, keyint_est, self.demux_packets, self.demux_bytes
-            ),
-        );
-        emit_debug(app, "video_gop", self.build_gop_debug_message());
         self.demux_window_start = Instant::now();
         self.demux_packets = 0;
         self.demux_key_packets = 0;
         self.demux_bytes = 0;
-    }
-
-    fn build_gop_debug_message(&self) -> String {
-        if self.key_intervals_seconds.is_empty() {
-            return format!(
-                "keyint_ema≈{:.2}pkts scene_cut_events={} key_packets={} keyint_s_p50=n/a keyint_s_p95=n/a",
-                self.keyint_ema_packets,
-                self.scene_cut_events,
-                self.demux_key_packets,
-            );
-        }
-        let mut sorted_intervals = self.key_intervals_seconds.clone();
-        sorted_intervals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let p50 = percentile_from_sorted(&sorted_intervals, 50.0);
-        let p95 = percentile_from_sorted(&sorted_intervals, 95.0);
-        format!(
-            "keyint_ema≈{:.2}pkts scene_cut_events={} key_packets={} keyint_s_p50={:.3}s keyint_s_p95={:.3}s samples={}",
-            self.keyint_ema_packets,
-            self.scene_cut_events,
-            self.demux_key_packets,
-            p50,
-            p95,
-            sorted_intervals.len()
-        )
     }
 
     pub fn increment_soft_error_count(&mut self) {

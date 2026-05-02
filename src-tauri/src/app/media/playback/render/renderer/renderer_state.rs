@@ -357,18 +357,6 @@ impl RendererState {
             .clamp(min_capacity, max_capacity)
     }
 
-    pub fn current_clock_seconds(&self) -> f64 {
-        self.inner
-            .clock
-            .lock()
-            .ok()
-            .map(|clock| {
-                let elapsed = Instant::now().saturating_duration_since(clock.anchor_instant);
-                clock.anchor_media_seconds + elapsed.as_secs_f64() * clock.rate.max(0.25)
-            })
-            .unwrap_or(0.0)
-    }
-
     pub fn last_presented_pts_seconds(&self) -> Option<f64> {
         let value = f64::from_bits(self.inner.last_presented_pts_bits.load(Ordering::Relaxed));
         value.is_finite().then_some(value)
