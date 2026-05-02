@@ -92,6 +92,15 @@ pub fn can_bypass_scaler_for_renderer(
         )
 }
 
+pub fn preferred_scaled_format_for_renderer(frame: &frame::Video) -> format::pixel::Pixel {
+    match frame.format() {
+        format::pixel::Pixel::P010LE | format::pixel::Pixel::P010BE => {
+            format::pixel::Pixel::P010LE
+        }
+        _ => format::pixel::Pixel::NV12,
+    }
+}
+
 fn is_hardware_frame(frame: &frame::Video) -> Result<bool, String> {
     let pix_fmt = frame.format().into();
     // SAFETY: Descriptor lookup is read-only for a valid pixel format enum.

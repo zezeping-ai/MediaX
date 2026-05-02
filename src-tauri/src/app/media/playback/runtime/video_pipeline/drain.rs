@@ -3,7 +3,8 @@ use super::telemetry::emit_video_telemetry;
 use super::DrainFramesContext;
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::render::video_frame::{
-    can_bypass_scaler_for_renderer, ensure_scaler, transfer_hw_frame_if_needed, ScalerSpec,
+    can_bypass_scaler_for_renderer, ensure_scaler, preferred_scaled_format_for_renderer,
+    transfer_hw_frame_if_needed, ScalerSpec,
 };
 use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::runtime::progress::{
@@ -12,7 +13,6 @@ use crate::app::media::playback::runtime::progress::{
 use crate::app::media::playback::runtime::write_latest_stream_position;
 use crate::app::media::state::MediaState;
 use ffmpeg_next::ffi;
-use ffmpeg_next::format;
 use ffmpeg_next::frame;
 use ffmpeg_next::software::scaling::flag::Flags;
 use std::time::{Duration, Instant};
@@ -217,7 +217,7 @@ fn scale_frame_for_render(
             src_format: frame_for_scale.format(),
             src_width: frame_for_scale.width(),
             src_height: frame_for_scale.height(),
-            dst_format: format::pixel::Pixel::YUV420P,
+            dst_format: preferred_scaled_format_for_renderer(&frame_for_scale),
             dst_width: ctx.output_width,
             dst_height: ctx.output_height,
             flags: Flags::BILINEAR,
@@ -226,15 +226,15 @@ fn scale_frame_for_render(
         ctx.frame_pipeline.on_scale_failed(ctx.app, &err);
         return None;
     }
-    let mut nv12_frame = frame::Video::empty();
+    let mut scaled_frame = frame::Video::empty();
     if let Some(scaler) = ctx.scaler.as_mut() {
-        if let Err(err) = scaler.run(&frame_for_scale, &mut nv12_frame) {
+        if let Err(err) = scaler.run(&frame_for_scale, &mut scaled_frame) {
             ctx.frame_pipeline
                 .on_scale_failed(ctx.app, &format!("scale frame failed: {err}"));
             return None;
         }
     }
-    Some((nv12_frame, hw_transfer_cost, scale_cost_start.elapsed()))
+    Some((scaled_frame, hw_transfer_cost, scale_cost_start.elapsed()))
 }
 
 fn update_playback_position(

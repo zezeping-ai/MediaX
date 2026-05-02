@@ -3,7 +3,8 @@ use super::encoder::create_preview_frame;
 use crate::app::media::model::PreviewFrame;
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::render::video_frame::{
-    detect_color_profile, ensure_scaler, transfer_hw_frame_if_needed, ScalerSpec,
+    detect_color_profile, ensure_scaler, preferred_scaled_format_for_renderer,
+    transfer_hw_frame_if_needed, ScalerSpec,
 };
 use ffmpeg_next::format;
 use ffmpeg_next::frame;
@@ -32,19 +33,19 @@ where
                 src_format: frame_for_scale.format(),
                 src_width: frame_for_scale.width(),
                 src_height: frame_for_scale.height(),
-                dst_format: format::pixel::Pixel::YUV420P,
+                dst_format: preferred_scaled_format_for_renderer(&frame_for_scale),
                 dst_width: ctx.output_width,
                 dst_height: ctx.output_height,
                 flags: Flags::BILINEAR,
             },
         )?;
-        let mut nv12_frame = frame::Video::empty();
+        let mut scaled_frame = frame::Video::empty();
         if let Some(scaler) = ctx.scaler.as_mut() {
             scaler
-                .run(&frame_for_scale, &mut nv12_frame)
+                .run(&frame_for_scale, &mut scaled_frame)
                 .map_err(|err| format!("scale frame failed: {err}"))?;
         }
-        let color_profile = detect_color_profile(&nv12_frame);
+        let color_profile = detect_color_profile(&scaled_frame);
         let hinted_seconds =
             timestamp_to_seconds(decoded.timestamp(), decoded.pts(), ctx.video_time_base);
         let submit_preview_frame = |renderer: &crate::app::media::playback::render::renderer::RendererState,
@@ -63,22 +64,22 @@ where
         };
 
         if ctx.seek_applied {
-            submit_preview_frame(ctx.renderer, nv12_frame, hinted_seconds, color_profile);
+            submit_preview_frame(ctx.renderer, scaled_frame, hinted_seconds, color_profile);
             return Ok(true);
         }
 
         if let Some(seconds) = hinted_seconds {
             if seconds + 0.04 >= ctx.target_seconds {
-                submit_preview_frame(ctx.renderer, nv12_frame, hinted_seconds, color_profile);
+                submit_preview_frame(ctx.renderer, scaled_frame, hinted_seconds, color_profile);
                 return Ok(true);
             }
         } else {
-            submit_preview_frame(ctx.renderer, nv12_frame, hinted_seconds, color_profile);
+            submit_preview_frame(ctx.renderer, scaled_frame, hinted_seconds, color_profile);
             return Ok(true);
         }
 
         if Instant::now() >= ctx.deadline {
-            submit_preview_frame(ctx.renderer, nv12_frame, hinted_seconds, color_profile);
+            submit_preview_frame(ctx.renderer, scaled_frame, hinted_seconds, color_profile);
             return Ok(true);
         }
     }
