@@ -9,7 +9,7 @@ import { useHomePageViewModel } from "./useHomePageViewModel";
 
 const viewModel = useHomePageViewModel();
 const { dropActive } = useWindowFileDrop({
-  openPath: viewModel.openPath,
+  openSource: viewModel.openSource,
 });
 
 const {
@@ -44,6 +44,8 @@ const {
         @ended="mediaViewportEvents.onEnded"
         @quick-open-local="mediaViewportEvents.onQuickOpenLocal"
         @quick-open-url="mediaViewportEvents.onQuickOpenUrl"
+        @request-start-window-drag="mediaViewportEvents.onRequestStartWindowDrag"
+        @request-toggle-fullscreen="mediaViewportEvents.onRequestToggleFullscreen"
       />
       <div
         v-if="dropActive"

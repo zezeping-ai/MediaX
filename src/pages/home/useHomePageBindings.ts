@@ -1,9 +1,12 @@
 import { computed } from "vue";
 import type { useHomePageViewModel } from "./useHomePageViewModel";
+import { useViewportWindowController } from "./composables/useViewportWindowController";
 
 type HomePageViewModel = ReturnType<typeof useHomePageViewModel>;
 
 export function useHomePageBindings(viewModel: HomePageViewModel) {
+  const viewportWindowController = useViewportWindowController();
+
   const shellEvents = {
     onPointerMove: viewModel.markMouseActive,
     onPointerActivate: viewModel.markMouseActive,
@@ -41,6 +44,8 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     onEnded: viewModel.handleVideoEnded,
     onQuickOpenLocal: viewModel.openLocalFileByDialog,
     onQuickOpenUrl: viewModel.requestOpenUrlInput,
+    onRequestStartWindowDrag: () => void viewportWindowController.requestStartWindowDrag(),
+    onRequestToggleFullscreen: () => void viewportWindowController.requestToggleFullscreen(),
   };
 
   const playbackControlsProps = computed(() => ({

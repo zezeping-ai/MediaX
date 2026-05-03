@@ -33,8 +33,8 @@ pub fn run() {
                 let boxed: Box<dyn std::error::Error> = Box::new(std::io::Error::other(err));
                 tauri::Error::Setup(boxed.into())
             })?;
-            app::menu::setup(app)?;
-            app::tray::setup(app)?;
+            app::shell::menu::setup(app)?;
+            app::shell::tray::setup(app)?;
             // Milestone 0: start wgpu underlay test rendering.
             let renderer = app.state::<RendererState>();
             renderer.start_render_loop(app.handle()).map_err(|err| {
@@ -53,7 +53,7 @@ pub fn run() {
             })?;
             Ok(())
         })
-        .on_menu_event(app::menu::handle_menu_event)
+        .on_menu_event(app::shell::menu::handle_menu_event)
         .on_window_event(app::windows::handle_close_requested)
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
@@ -84,10 +84,10 @@ pub fn run() {
             playback_cache_commands::playback_get_cache_recording_status,
             playback_cache_commands::playback_start_cache_recording,
             playback_cache_commands::playback_stop_cache_recording,
-            app::windows::window_set_main_always_on_top,
-            app::windows::window_set_main_video_scale_mode,
-            app::windows::window_toggle_main_fullscreen,
-            app::windows::window_start_main_dragging,
+            app::windows::commands::window_set_main_always_on_top,
+            app::windows::commands::window_set_main_video_scale_mode,
+            app::windows::commands::window_toggle_main_fullscreen,
+            app::windows::commands::window_start_main_dragging,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

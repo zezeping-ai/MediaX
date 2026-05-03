@@ -1,14 +1,23 @@
 use super::helpers::{create_cache_recorder_session, is_network_source};
 use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::model::CacheRecordingStatus;
+use crate::app::media::playback::events::{
+    build_media_event, MEDIA_CACHE_RECORDING_STATUS_EVENT,
+};
 use crate::app::media::state;
 use crate::app::media::state::MediaState;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 pub fn get_cache_recording_status(
     state: State<'_, MediaState>,
+) -> MediaResult<CacheRecordingStatus> {
+    cache_recording_status_from_state(&state)
+}
+
+pub fn cache_recording_status_from_state(
+    state: &State<'_, MediaState>,
 ) -> MediaResult<CacheRecordingStatus> {
     let guard = state
         .cache
@@ -41,7 +50,25 @@ pub fn get_cache_recording_status(
     }
 }
 
+pub fn emit_cache_recording_status(
+    app: &AppHandle,
+    state: &State<'_, MediaState>,
+    force_emit_inactive: bool,
+) -> MediaResult<()> {
+    let status = cache_recording_status_from_state(state)?;
+    if !force_emit_inactive && !status.recording {
+        return Ok(());
+    }
+    app.emit(
+        MEDIA_CACHE_RECORDING_STATUS_EVENT,
+        build_media_event("cache_recording_status", None, status),
+    )
+    .map_err(|err| MediaError::internal(format!("emit cache recording status failed: {err}")))?;
+    Ok(())
+}
+
 pub fn start_cache_recording(
+    app: AppHandle,
     state: State<'_, MediaState>,
     output_dir: Option<String>,
 ) -> MediaResult<CacheRecordingStatus> {
@@ -104,7 +131,7 @@ pub fn start_cache_recording(
     ));
     drop(recorder_guard);
 
-    Ok(CacheRecordingStatus {
+    let status = CacheRecordingStatus {
         recording: true,
         source: Some(source),
         output_path: Some(output_path),
@@ -113,17 +140,22 @@ pub fn start_cache_recording(
         started_at_ms: Some(started_at_ms),
         error_message: None,
         fallback_transcoding: Some(false),
-    })
+    };
+    let _ = emit_cache_recording_status(&app, &state, true);
+    Ok(status)
 }
 
-pub fn stop_cache_recording(state: State<'_, MediaState>) -> MediaResult<CacheRecordingStatus> {
+pub fn stop_cache_recording(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+) -> MediaResult<CacheRecordingStatus> {
     let mut recorder_guard = state
         .cache
         .recorder
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
     let Some(session) = recorder_guard.take() else {
-        return Ok(CacheRecordingStatus {
+        let status = CacheRecordingStatus {
             recording: false,
             source: None,
             output_path: None,
@@ -132,10 +164,15 @@ pub fn stop_cache_recording(state: State<'_, MediaState>) -> MediaResult<CacheRe
             started_at_ms: None,
             error_message: None,
             fallback_transcoding: None,
-        });
+        };
+        let _ = app.emit(
+            MEDIA_CACHE_RECORDING_STATUS_EVENT,
+            build_media_event("cache_recording_status", None, status.clone()),
+        );
+        return Ok(status);
     };
     let output_size_bytes = fs::metadata(&session.output_path).ok().map(|meta| meta.len());
-    Ok(CacheRecordingStatus {
+    let status = CacheRecordingStatus {
         recording: false,
         source: Some(session.source),
         output_path: Some(session.output_path.clone()),
@@ -144,5 +181,10 @@ pub fn stop_cache_recording(state: State<'_, MediaState>) -> MediaResult<CacheRe
         started_at_ms: Some(session.started_at_ms),
         error_message: session.error_message,
         fallback_transcoding: Some(session.fallback_transcoding),
-    })
+    };
+    let _ = app.emit(
+        MEDIA_CACHE_RECORDING_STATUS_EVENT,
+        build_media_event("cache_recording_status", None, status.clone()),
+    );
+    Ok(status)
 }

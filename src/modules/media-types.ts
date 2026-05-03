@@ -4,10 +4,12 @@ export type PlaybackQualityMode = "source" | "auto" | "1080p" | "720p" | "480p" 
 export type PlaybackMediaKind = "video" | "audio";
 export type PlaybackChannelRouting = "stereo" | "left_to_both" | "right_to_both";
 export const MEDIA_PLAYBACK_STATE_EVENT = "media://playback/state";
+export const MEDIA_PLAYBACK_PROGRESS_EVENT = "media://playback/progress";
 export const MEDIA_PLAYBACK_METADATA_EVENT = "media://playback/metadata";
 export const MEDIA_PLAYBACK_ERROR_EVENT = "media://playback/error";
 export const MEDIA_PLAYBACK_TELEMETRY_EVENT = "media://playback/telemetry";
 export const MEDIA_PLAYBACK_AUDIO_METER_EVENT = "media://playback/audio-meter";
+export const MEDIA_CACHE_RECORDING_STATUS_EVENT = "media://cache-recording/status";
 export const MEDIA_MENU_EVENT = "media://menu-action";
 
 export interface PlaybackState {
@@ -216,6 +218,10 @@ export interface MediaTelemetryPayload {
   gpu_queue_utilization: number | null;
   render_estimated_cost_ms: number | null;
   render_present_lag_ms: number | null;
+  render_loop_wakeups?: number | null;
+  render_attempts?: number | null;
+  render_presents?: number | null;
+  render_uploads?: number | null;
   video_submit_lead_ms?: number | null;
   video_packet_soft_error_count?: number | null;
   video_frame_drop_count?: number | null;

@@ -25,7 +25,7 @@ export function useMediaCenter() {
     requestPreviewFrame: commands.requestPreviewFrame,
   });
 
-  const { errorMessage, isBusy, withBusyState } = useMediaCenterBusyState(toUserErrorMessage);
+  const { captureError, errorMessage, isBusy, withBusyState } = useMediaCenterBusyState(toUserErrorMessage);
   const recordingNoticeMessage = ref("");
   const lastSyncedSecond = ref(-1);
   const pendingSource = ref("");
@@ -57,10 +57,9 @@ export function useMediaCenter() {
     commands,
     playback,
     pendingSource,
-    errorMessage,
     recordingNoticeMessage,
     lastSyncedSecond,
-    toUserErrorMessage,
+    captureError,
     updateSnapshot: mediaSession.updateSnapshot,
     refreshCacheRecordingStatus: cacheRecordingController.refreshCacheRecordingStatus,
   });
@@ -96,7 +95,7 @@ export function useMediaCenter() {
   }
 
   const urlInputController = useMediaUrlInputController({
-    openUrl: playbackRunner.openPath,
+    openUrl: playbackRunner.openSource,
   });
 
   const mediaCenterLifecycle = useMediaCenterLifecycle({

@@ -42,6 +42,10 @@ impl RendererState {
             last_presented_pts_seconds,
             last_submitted_pts_seconds,
             submit_lead_ms,
+            render_loop_wakeups: self.inner.render_loop_wakeups.load(Ordering::Relaxed),
+            render_attempts: self.inner.render_attempts.load(Ordering::Relaxed),
+            render_presents: self.inner.render_presents.load(Ordering::Relaxed),
+            render_uploads: self.inner.render_uploads.load(Ordering::Relaxed),
         }
     }
 }

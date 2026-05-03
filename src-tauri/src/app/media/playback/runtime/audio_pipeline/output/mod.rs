@@ -1,6 +1,6 @@
 use super::meter::{
-    create_shared_audio_meter, spawn_audio_meter_emitter, MeteredSource, QueuedDurationTracker,
-    SharedAudioMeter,
+    create_shared_audio_meter, notify_meter_shutdown, spawn_audio_meter_emitter, MeteredSource,
+    QueuedDurationTracker, SharedAudioMeter,
 };
 use crate::app::media::state::AudioControls;
 use rodio::{ChannelCount, DeviceSinkBuilder, MixerDeviceSink, Player, SampleRate, Source};
@@ -100,6 +100,7 @@ impl AudioOutput {
 impl Drop for AudioOutput {
     fn drop(&mut self) {
         self.meter_stop_flag.store(true, Ordering::Relaxed);
+        notify_meter_shutdown(&self.meter_shared);
         if let Some(thread) = self.meter_thread.take() {
             let _ = thread.join();
         }

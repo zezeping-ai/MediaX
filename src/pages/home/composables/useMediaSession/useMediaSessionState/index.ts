@@ -5,10 +5,12 @@ import type {
   MediaLyricLine,
   MediaMetadataPayload,
   PlaybackMediaKind,
+  PlaybackState,
   MediaSnapshot,
 } from "@/modules/media-types";
 import { toUserMediaErrorMessage } from "../../useMediaErrorMap";
 import { createTelemetryPayloadHandler } from "./createTelemetryPayloadHandler";
+import type { MediaSessionStateHandlers } from "./types";
 
 export function useMediaSessionState() {
   const snapshot = ref<MediaSnapshot | null>(null);
@@ -28,6 +30,7 @@ export function useMediaSessionState() {
   const networkReadBytesPerSecond = ref<number | null>(null);
   const networkSustainRatio = ref<number | null>(null);
   const lastTelemetryAtMs = ref(0);
+  const telemetryStaleTimeoutId = ref<number | null>(null);
 
   function resetTransientMediaState() {
     latestAudioMeter.value = null;
@@ -44,17 +47,42 @@ export function useMediaSessionState() {
     networkReadBytesPerSecond.value = null;
     networkSustainRatio.value = null;
     lastTelemetryAtMs.value = 0;
+    if (telemetryStaleTimeoutId.value !== null) {
+      window.clearTimeout(telemetryStaleTimeoutId.value);
+      telemetryStaleTimeoutId.value = null;
+    }
     playbackErrorMessage.value = "";
+  }
+
+  function handleSourceChanged(nextSource: string) {
+    if (currentSource.value === nextSource) {
+      return;
+    }
+    currentSource.value = nextSource;
+    resetTransientMediaState();
   }
 
   function updateSnapshot(next: MediaSnapshot) {
     const previousSource = currentSource.value;
     snapshot.value = next;
-    currentSource.value = next.playback.current_path ?? "";
-    if (previousSource !== currentSource.value) {
-      resetTransientMediaState();
+    const nextSource = next.playback.current_path ?? "";
+    if (previousSource !== nextSource) {
+      handleSourceChanged(nextSource);
     }
     metadataMediaKind.value = next.playback.media_kind;
+  }
+
+  function applyPlaybackProgressPayload(payload: PlaybackState) {
+    const previousSource = currentSource.value;
+    const nextSource = payload.current_path ?? "";
+    if (previousSource !== nextSource) {
+      handleSourceChanged(nextSource);
+    }
+    snapshot.value = {
+      playback: payload,
+      library: snapshot.value?.library ?? { roots: [], items: [] },
+    };
+    metadataMediaKind.value = payload.media_kind;
   }
 
   function applyMetadataPayload(payload: MediaMetadataPayload) {
@@ -79,33 +107,36 @@ export function useMediaSessionState() {
     networkReadBytesPerSecond,
     networkSustainRatio,
     lastTelemetryAtMs,
+    telemetryStaleTimeoutId,
   });
 
   function applyAudioMeterPayload(payload: MediaAudioMeterPayload) {
     latestAudioMeter.value = payload;
   }
 
-  function markTelemetryStaleIfNeeded() {
-    if (!currentSource.value) {
+  function disposeTelemetryStaleTimeout() {
+    if (telemetryStaleTimeoutId.value === null) {
       return;
     }
-    if (!lastTelemetryAtMs.value) {
-      return;
-    }
-    if (Date.now() - lastTelemetryAtMs.value >= 2000) {
-      networkReadBytesPerSecond.value = 0;
-      networkSustainRatio.value = null;
-    }
+    window.clearTimeout(telemetryStaleTimeoutId.value);
+    telemetryStaleTimeoutId.value = null;
   }
 
-  return {
+  const handlers: MediaSessionStateHandlers = {
     applyAudioMeterPayload,
     applyErrorPayload,
     applyMetadataPayload,
+    applyPlaybackProgressPayload,
     applyTelemetryPayload,
+    disposeTelemetryStaleTimeout,
+    resetTransientMediaState,
+    updateSnapshot,
+  };
+
+  return {
+    ...handlers,
     currentSource,
     latestAudioMeter,
-    markTelemetryStaleIfNeeded,
     metadataDurationSeconds,
     metadataMediaKind,
     metadataTitle,
@@ -120,6 +151,5 @@ export function useMediaSessionState() {
     networkSustainRatio,
     playbackErrorMessage,
     snapshot,
-    updateSnapshot,
   };
 }

@@ -2,7 +2,7 @@ import { onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 type UseWindowFileDropOptions = {
-  openPath: (path: string) => Promise<void>;
+  openSource: (source: string) => Promise<void>;
 };
 
 export function useWindowFileDrop(options: UseWindowFileDropOptions) {
@@ -35,7 +35,7 @@ export function useWindowFileDrop(options: UseWindowFileDropOptions) {
       if (!firstPath) {
         return;
       }
-      await options.openPath(firstPath);
+      await options.openSource(firstPath);
     });
   });
 

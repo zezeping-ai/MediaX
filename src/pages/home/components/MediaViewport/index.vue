@@ -6,10 +6,6 @@ import {
   type PlaybackChannelRouting,
   type PlaybackState,
 } from "@/modules/media-types";
-import {
-  startMainWindowDragging,
-  toggleMainWindowFullscreen,
-} from "@/modules/media-player/windowCommands";
 import AudioLyricsOverlay from "./AudioLyricsOverlay";
 import TransferStatusOverlay from "./TransferStatusOverlay.vue";
 
@@ -43,6 +39,8 @@ const emit = defineEmits<{
   ended: [];
   "quick-open-local": [];
   "quick-open-url": [];
+  "request-start-window-drag": [];
+  "request-toggle-fullscreen": [];
 }>();
 
 const hasVideoPresentationSignals = computed(() =>
@@ -89,7 +87,7 @@ async function handleViewportDoubleClick(event: MouseEvent) {
   if (isInteractiveTarget(event.target)) {
     return;
   }
-  await toggleMainWindowFullscreen();
+  emit("request-toggle-fullscreen");
 }
 
 async function handleViewportMouseDown(event: MouseEvent) {
@@ -99,7 +97,7 @@ async function handleViewportMouseDown(event: MouseEvent) {
   if (isInteractiveTarget(event.target)) {
     return;
   }
-  await startMainWindowDragging();
+  emit("request-start-window-drag");
 }
 </script>
 

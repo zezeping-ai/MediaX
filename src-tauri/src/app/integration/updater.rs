@@ -1,88 +1,10 @@
+use super::dialogs::{show_error_dialog, show_info_dialog};
 use crate::app::media::playback::debug_log::append_playback_debug_log;
 use serde_json::Value;
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri::AppHandle;
 use tauri_plugin_updater::UpdaterExt;
 
-fn show_info_dialog(app: &tauri::AppHandle, title: &str, message: &str) {
-    app.dialog()
-        .message(message)
-        .title(title)
-        .kind(MessageDialogKind::Info)
-        .show(|_| {});
-}
-
-fn show_error_dialog(app: &tauri::AppHandle, title: &str, message: &str) {
-    app.dialog()
-        .message(message)
-        .title(title)
-        .kind(MessageDialogKind::Error)
-        .show(|_| {});
-}
-
-fn updater_platform_key() -> &'static str {
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        "darwin-aarch64"
-    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-        "darwin-x86_64"
-    } else if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
-        "windows-aarch64"
-    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        "windows-x86_64"
-    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
-        "linux-aarch64"
-    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        "linux-x86_64"
-    } else {
-        "unknown"
-    }
-}
-
-fn configured_updater_endpoints(app: &tauri::AppHandle) -> Vec<String> {
-    let Ok(config_value) = serde_json::to_value(app.config()) else {
-        return Vec::new();
-    };
-
-    config_value
-        .get("plugins")
-        .and_then(Value::as_object)
-        .and_then(|plugins| plugins.get("updater"))
-        .and_then(Value::as_object)
-        .and_then(|updater| updater.get("endpoints"))
-        .and_then(Value::as_array)
-        .map(|endpoints| {
-            endpoints
-                .iter()
-                .filter_map(|endpoint| endpoint.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn update_log_context(app: &tauri::AppHandle) -> String {
-    let endpoints = configured_updater_endpoints(app);
-    let endpoint_summary = if endpoints.is_empty() {
-        "none".to_string()
-    } else {
-        endpoints.join(", ")
-    };
-
-    format!(
-        "platform={}, current_version={}, endpoints={}",
-        updater_platform_key(),
-        app.package_info().version,
-        endpoint_summary
-    )
-}
-
-fn append_update_log(app: &tauri::AppHandle, stage: &str, message: impl AsRef<str>) {
-    let at_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|value| value.as_millis() as u64)
-        .unwrap_or_default();
-    append_playback_debug_log(app, at_ms, stage, message.as_ref());
-}
-
-pub async fn check_and_install_update(app: tauri::AppHandle) {
+pub async fn check_and_install_update(app: AppHandle) {
     let context = update_log_context(&app);
     append_update_log(&app, "updater", format!("check started: {context}"));
 
@@ -185,4 +107,67 @@ pub async fn check_and_install_update(app: tauri::AppHandle) {
     );
     show_info_dialog(&app, "更新完成", "更新已安装，应用将立即重启。");
     app.restart();
+}
+
+fn updater_platform_key() -> &'static str {
+    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "darwin-aarch64"
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        "darwin-x86_64"
+    } else if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
+        "windows-aarch64"
+    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        "windows-x86_64"
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        "linux-aarch64"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        "linux-x86_64"
+    } else {
+        "unknown"
+    }
+}
+
+fn configured_updater_endpoints(app: &AppHandle) -> Vec<String> {
+    let Ok(config_value) = serde_json::to_value(app.config()) else {
+        return Vec::new();
+    };
+
+    config_value
+        .get("plugins")
+        .and_then(Value::as_object)
+        .and_then(|plugins| plugins.get("updater"))
+        .and_then(Value::as_object)
+        .and_then(|updater| updater.get("endpoints"))
+        .and_then(Value::as_array)
+        .map(|endpoints| {
+            endpoints
+                .iter()
+                .filter_map(|endpoint| endpoint.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn update_log_context(app: &AppHandle) -> String {
+    let endpoints = configured_updater_endpoints(app);
+    let endpoint_summary = if endpoints.is_empty() {
+        "none".to_string()
+    } else {
+        endpoints.join(", ")
+    };
+
+    format!(
+        "platform={}, current_version={}, endpoints={}",
+        updater_platform_key(),
+        app.package_info().version,
+        endpoint_summary
+    )
+}
+
+fn append_update_log(app: &AppHandle, stage: &str, message: impl AsRef<str>) {
+    let at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|value| value.as_millis() as u64)
+        .unwrap_or_default();
+    append_playback_debug_log(app, at_ms, stage, message.as_ref());
 }

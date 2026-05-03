@@ -37,52 +37,82 @@ const SPECTRUM_BAR_COUNT = 24;
 const MIN_BAR_LEVEL = 0.04;
 const HOLD_DECAY_STEP = 0.035;
 const HOLD_TICK_MS = 70;
+const OVERLAY_ACTIVITY_TICK_MS = 100;
 
 export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
   const interpolatedPosition = ref(0);
   const leftHoldBars = ref(Array.from({ length: SPECTRUM_BAR_COUNT }, () => MIN_BAR_LEVEL));
   const rightHoldBars = ref(Array.from({ length: SPECTRUM_BAR_COUNT }, () => MIN_BAR_LEVEL));
+  const leftSpectrumBars = ref(Array.from({ length: SPECTRUM_BAR_COUNT }, () => MIN_BAR_LEVEL));
+  const rightSpectrumBars = ref(Array.from({ length: SPECTRUM_BAR_COUNT }, () => MIN_BAR_LEVEL));
   const leftPeakHold = ref(MIN_BAR_LEVEL);
   const rightPeakHold = ref(MIN_BAR_LEVEL);
+  const showAudioOverlay = computed(() => options.mediaKind.value === "audio");
 
+  let activityTimer: number | null = null;
   let lastTickAt = Date.now();
-  // Keep lyric focus and the stage progress bar moving smoothly between backend snapshots.
-  const timer = window.setInterval(() => {
+
+  function stopActivityTicker() {
+    if (activityTimer === null) {
+      return;
+    }
+    window.clearTimeout(activityTimer);
+    activityTimer = null;
+  }
+
+  function scheduleActivityTick() {
+    if (activityTimer !== null) {
+      return;
+    }
+    activityTimer = window.setTimeout(() => {
+      activityTimer = null;
+      runActivityTick();
+    }, OVERLAY_ACTIVITY_TICK_MS);
+  }
+
+  function runActivityTick() {
     const playback = options.playback.value;
-    if (!playback) {
-      interpolatedPosition.value = 0;
-      lastTickAt = Date.now();
-      return;
-    }
-    if (playback.status !== "playing") {
-      interpolatedPosition.value = playback.position_seconds;
-      lastTickAt = Date.now();
-      return;
-    }
     const now = Date.now();
-    const deltaSeconds = Math.max(0, now - lastTickAt) / 1000;
+    const elapsedMs = Math.max(0, now - lastTickAt);
     lastTickAt = now;
+    if (!showAudioOverlay.value || !playback || playback.status !== "playing") {
+      interpolatedPosition.value = playback?.position_seconds ?? 0;
+      stopActivityTicker();
+      return;
+    }
+    const durationSeconds = playback.duration_seconds || Number.MAX_SAFE_INTEGER;
     interpolatedPosition.value = Math.min(
-      playback.duration_seconds || Number.MAX_SAFE_INTEGER,
-      interpolatedPosition.value + deltaSeconds * playback.playback_rate,
+      durationSeconds,
+      interpolatedPosition.value + (elapsedMs / 1000) * playback.playback_rate,
     );
-  }, 80);
-  const holdTimer = window.setInterval(() => {
-    leftHoldBars.value = leftHoldBars.value.map((value) => Math.max(MIN_BAR_LEVEL, value - HOLD_DECAY_STEP));
-    rightHoldBars.value = rightHoldBars.value.map((value) => Math.max(MIN_BAR_LEVEL, value - HOLD_DECAY_STEP));
-    leftPeakHold.value = Math.max(MIN_BAR_LEVEL, leftPeakHold.value - HOLD_DECAY_STEP);
-    rightPeakHold.value = Math.max(MIN_BAR_LEVEL, rightPeakHold.value - HOLD_DECAY_STEP);
-  }, HOLD_TICK_MS);
+    const decaySteps = Math.max(1, Math.floor(elapsedMs / HOLD_TICK_MS));
+    decayBarsInPlace(leftHoldBars.value, decaySteps);
+    decayBarsInPlace(rightHoldBars.value, decaySteps);
+    leftPeakHold.value = Math.max(MIN_BAR_LEVEL, leftPeakHold.value - HOLD_DECAY_STEP * decaySteps);
+    rightPeakHold.value = Math.max(MIN_BAR_LEVEL, rightPeakHold.value - HOLD_DECAY_STEP * decaySteps);
+    scheduleActivityTick();
+  }
+
+  function syncActivityTicker() {
+    lastTickAt = Date.now();
+    if (showAudioOverlay.value && options.playback.value?.status === "playing") {
+      scheduleActivityTick();
+      return;
+    }
+    stopActivityTicker();
+  }
 
   watch(
     () => [
+      showAudioOverlay.value,
       options.playback.value?.position_seconds ?? 0,
       options.playback.value?.status ?? "idle",
+      options.playback.value?.playback_rate ?? 1,
       options.playback.value?.current_path ?? "",
     ],
     () => {
       interpolatedPosition.value = options.playback.value?.position_seconds ?? 0;
-      lastTickAt = Date.now();
+      syncActivityTicker();
     },
     { immediate: true },
   );
@@ -90,10 +120,10 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
   watch(
     options.audioMeter,
     (meter) => {
-      const nextLeftBars = normalizeSpectrum(meter?.left_spectrum);
-      const nextRightBars = normalizeSpectrum(meter?.right_spectrum);
-      leftHoldBars.value = nextLeftBars.map((value, index) => Math.max(value, leftHoldBars.value[index] ?? MIN_BAR_LEVEL));
-      rightHoldBars.value = nextRightBars.map((value, index) => Math.max(value, rightHoldBars.value[index] ?? MIN_BAR_LEVEL));
+      normalizeSpectrumInto(leftSpectrumBars.value, meter?.left_spectrum);
+      normalizeSpectrumInto(rightSpectrumBars.value, meter?.right_spectrum);
+      mergeHoldBarsInPlace(leftHoldBars.value, leftSpectrumBars.value);
+      mergeHoldBarsInPlace(rightHoldBars.value, rightSpectrumBars.value);
       leftPeakHold.value = Math.max(Math.max(MIN_BAR_LEVEL, meter?.left_peak ?? 0), leftPeakHold.value);
       rightPeakHold.value = Math.max(Math.max(MIN_BAR_LEVEL, meter?.right_peak ?? 0), rightPeakHold.value);
     },
@@ -101,8 +131,7 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
   );
 
   onBeforeUnmount(() => {
-    window.clearInterval(timer);
-    window.clearInterval(holdTimer);
+    stopActivityTicker();
   });
 
   const orderedLyrics = computed(() =>
@@ -136,7 +165,6 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
       absoluteIndex: start + offset,
     }));
   });
-  const showAudioOverlay = computed(() => options.mediaKind.value === "audio");
   const { height: viewportHeight } = useWindowSize();
   const trackTitle = computed(() => options.title.value || "Unknown Track");
   const trackSubtitle = computed(() =>
@@ -171,8 +199,6 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
       options.audioMeter.value?.sample_rate ? `${options.audioMeter.value.sample_rate} Hz` : "",
     ].filter(Boolean),
   );
-  const leftSpectrumBars = computed(() => normalizeSpectrum(options.audioMeter.value?.left_spectrum));
-  const rightSpectrumBars = computed(() => normalizeSpectrum(options.audioMeter.value?.right_spectrum));
   const leftPeakLevel = computed(() => Math.max(0, Math.min(1, options.audioMeter.value?.left_peak ?? 0)));
   const rightPeakLevel = computed(() => Math.max(0, Math.min(1, options.audioMeter.value?.right_peak ?? 0)));
   const leftPeakDbfs = computed(() => formatDbfs(leftPeakLevel.value));
@@ -278,12 +304,25 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
   };
 }
 
-function normalizeSpectrum(values?: number[] | null) {
+function normalizeSpectrumInto(target: number[], values?: number[] | null) {
   const input = Array.isArray(values) ? values : [];
-  return Array.from({ length: SPECTRUM_BAR_COUNT }, (_, index) => {
+  for (let index = 0; index < SPECTRUM_BAR_COUNT; index += 1) {
     const raw = input[index] ?? 0;
-    return Math.max(MIN_BAR_LEVEL, Math.min(1, raw));
-  });
+    target[index] = Math.max(MIN_BAR_LEVEL, Math.min(1, raw));
+  }
+}
+
+function mergeHoldBarsInPlace(target: number[], source: number[]) {
+  for (let index = 0; index < SPECTRUM_BAR_COUNT; index += 1) {
+    target[index] = Math.max(source[index] ?? MIN_BAR_LEVEL, target[index] ?? MIN_BAR_LEVEL);
+  }
+}
+
+function decayBarsInPlace(target: number[], steps = 1) {
+  const decayAmount = HOLD_DECAY_STEP * Math.max(1, steps);
+  for (let index = 0; index < SPECTRUM_BAR_COUNT; index += 1) {
+    target[index] = Math.max(MIN_BAR_LEVEL, target[index] - decayAmount);
+  }
 }
 
 function formatClock(totalSeconds: number) {

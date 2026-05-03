@@ -1,6 +1,12 @@
-import { computed, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from "vue";
+import { computed, onBeforeUnmount, ref, type ComputedRef, type Ref } from "vue";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { PlaybackState } from "@/modules/media-types";
+import {
+  MEDIA_CACHE_RECORDING_STATUS_EVENT,
+  type CacheRecordingStatus,
+  type MediaEventEnvelope,
+  type PlaybackState,
+} from "@/modules/media-types";
 import type { useMediaCommands } from "../useMediaCommands";
 
 type MediaCommands = ReturnType<typeof useMediaCommands>;
@@ -25,9 +31,9 @@ export function useCacheRecordingController(options: UseCacheRecordingController
   const cacheRecordingStartPositionSeconds = ref<number | null>(null);
   const recordingNowMs = ref(Date.now());
   const recordingClockHandle = ref<number | null>(null);
-  const cacheStatusPollHandle = ref<number | null>(null);
   const cacheSizeSampleBytes = ref<number | null>(null);
   const cacheSizeSampleAtMs = ref<number | null>(null);
+  let unlistenCacheStatusEvent: UnlistenFn | null = null;
 
   const cacheRecordingElapsedSeconds = computed(() => {
     if (!cacheRecording.value) {
@@ -55,7 +61,10 @@ export function useCacheRecordingController(options: UseCacheRecordingController
   });
 
   async function refreshCacheRecordingStatus() {
-    const status = await options.commands.getCacheRecordingStatus();
+    applyCacheRecordingStatus(await options.commands.getCacheRecordingStatus());
+  }
+
+  function applyCacheRecordingStatus(status: CacheRecordingStatus) {
     cacheRecording.value = status.recording;
     cacheOutputPath.value = status.output_path ?? "";
     cacheFinalizedOutputPath.value = status.finalized_output_path ?? "";
@@ -132,20 +141,11 @@ export function useCacheRecordingController(options: UseCacheRecordingController
   }
 
   function startCacheStatusPoll() {
-    if (cacheStatusPollHandle.value !== null) {
-      return;
-    }
-    cacheStatusPollHandle.value = window.setInterval(() => {
-      void refreshCacheRecordingStatus();
-    }, 2000);
+    return;
   }
 
   function stopCacheStatusPoll() {
-    if (cacheStatusPollHandle.value === null) {
-      return;
-    }
-    window.clearInterval(cacheStatusPollHandle.value);
-    cacheStatusPollHandle.value = null;
+    return;
   }
 
   function startRecordingClock() {
@@ -166,12 +166,12 @@ export function useCacheRecordingController(options: UseCacheRecordingController
     recordingClockHandle.value = null;
   }
 
-  watch(cacheRecording, (recording) => {
-    if (recording) {
-      startCacheStatusPoll();
-      return;
-    }
-    stopCacheStatusPoll();
+  void listen<
+    MediaEventEnvelope<CacheRecordingStatus> | CacheRecordingStatus
+  >(MEDIA_CACHE_RECORDING_STATUS_EVENT, (event) => {
+    applyCacheRecordingStatus(resolveCacheStatusPayload(event.payload));
+  }).then((unlisten) => {
+    unlistenCacheStatusEvent = unlisten;
   });
 
   onBeforeUnmount(() => {
@@ -179,7 +179,8 @@ export function useCacheRecordingController(options: UseCacheRecordingController
       void options.commands.stopCacheRecording();
     }
     stopRecordingClock();
-    stopCacheStatusPoll();
+    unlistenCacheStatusEvent?.();
+    unlistenCacheStatusEvent = null;
   });
 
   return {
@@ -208,4 +209,13 @@ export function useCacheRecordingController(options: UseCacheRecordingController
     }
     options.onErrorMessage(message);
   }
+}
+
+function resolveCacheStatusPayload(
+  payload: CacheRecordingStatus | MediaEventEnvelope<CacheRecordingStatus>,
+) {
+  if (payload && typeof payload === "object" && "payload" in payload) {
+    return payload.payload;
+  }
+  return payload;
 }

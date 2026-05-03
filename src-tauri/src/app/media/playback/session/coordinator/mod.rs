@@ -15,7 +15,8 @@ use crate::app::media::state::snapshot_from_state;
 use tauri::State;
 
 pub use cache_ops::{
-    get_cache_recording_status, start_cache_recording, stop_cache_recording,
+    emit_cache_recording_status, get_cache_recording_status, start_cache_recording,
+    stop_cache_recording,
 };
 pub use preview_ops::preview_frame;
 pub use session_ops::{open, pause, play, seek, set_hw_decode_mode, set_quality_mode, stop};

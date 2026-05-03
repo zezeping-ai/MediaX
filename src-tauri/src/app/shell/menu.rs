@@ -1,12 +1,10 @@
-use crate::app::default_player::open_default_player_settings;
-use crate::app::updates::check_and_install_update;
-use crate::app::windows::show_preferences_window;
+use crate::app::integration::default_player::open_default_player_settings;
+use crate::app::integration::updater::check_and_install_update;
+use crate::app::shell::frontend_events::{emit_open_local_request, emit_open_url_request};
+use crate::app::shell::window_actions::reveal_preferences_window;
 use tauri::menu::{
     AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
 };
-use tauri::Emitter;
-
-pub const APP_MENU_EVENT: &str = "media://menu-action";
 
 const MENU_APP_SETTINGS_ID: &str = "mediax.app.settings";
 const MENU_APP_QUIT_ID: &str = "mediax.app.quit";
@@ -121,19 +119,15 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
-    let help_submenu =
-        Submenu::with_id_and_items(
-            app,
-            HELP_SUBMENU_ID,
-            "Help",
-            true,
-            &[&set_default_player, &check_update],
-        )?;
-
-    let menu = Menu::with_items(
+    let help_submenu = Submenu::with_id_and_items(
         app,
-        &[&app_submenu, &file_submenu, &edit_submenu, &help_submenu],
+        HELP_SUBMENU_ID,
+        "Help",
+        true,
+        &[&set_default_player, &check_update],
     )?;
+
+    let menu = Menu::with_items(app, &[&app_submenu, &file_submenu, &edit_submenu, &help_submenu])?;
     app.set_menu(menu)?;
     Ok(())
 }
@@ -144,7 +138,7 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: MenuEvent) {
             app.exit(0);
         }
         MENU_APP_SETTINGS_ID => {
-            let _ = show_preferences_window(app);
+            let _ = reveal_preferences_window(app);
         }
         MENU_HELP_SET_DEFAULT_PLAYER_ID => {
             open_default_player_settings(app);
@@ -156,10 +150,10 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: MenuEvent) {
             });
         }
         MENU_FILE_OPEN_LOCAL_ID => {
-            let _ = app.emit(APP_MENU_EVENT, "open_local");
+            emit_open_local_request(app);
         }
         MENU_FILE_OPEN_URL_ID => {
-            let _ = app.emit(APP_MENU_EVENT, "open_url");
+            emit_open_url_request(app);
         }
         _ => {}
     }

@@ -3,7 +3,15 @@ use crate::app::media::error::MediaCommandError;
 use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::session::coordinator;
 use crate::app::media::state::MediaState;
+use serde::Deserialize;
 use tauri::{AppHandle, State};
+
+#[derive(Deserialize)]
+pub struct PlaybackOpenSourceArgs {
+    #[serde(alias = "path")]
+    pub source: String,
+    pub request_id: Option<String>,
+}
 
 #[tauri::command]
 pub fn playback_get_snapshot(
@@ -16,10 +24,9 @@ pub fn playback_get_snapshot(
 pub fn playback_open_source(
     app: AppHandle,
     state: State<'_, MediaState>,
-    path: String,
-    request_id: Option<String>,
+    args: PlaybackOpenSourceArgs,
 ) -> Result<MediaSnapshot, MediaCommandError> {
-    command_result(coordinator::open(app, state, path, request_id))
+    command_result(coordinator::open(app, state, args.source, args.request_id))
 }
 
 #[tauri::command]

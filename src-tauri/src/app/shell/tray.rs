@@ -1,10 +1,9 @@
-use crate::app::windows::show_main_window;
+use crate::app::shell::window_actions::reveal_main_window;
 use tauri::menu::{Menu, MenuEvent, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 
 const MENU_TRAY_SHOW_MAIN_ID: &str = "mediax.tray.show_main";
 const MENU_TRAY_QUIT_ID: &str = "mediax.tray.quit";
-
 const TRAY_ID: &str = "mediax.tray";
 
 pub fn setup(app: &tauri::App) -> tauri::Result<()> {
@@ -21,18 +20,15 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     let icon = app.default_window_icon().cloned();
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        // 交互约定：右键弹菜单；左键用于「打开主窗口」
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event: MenuEvent| {
-            match event.id().as_ref() {
-                MENU_TRAY_SHOW_MAIN_ID => {
-                    let _ = show_main_window(app);
-                }
-                MENU_TRAY_QUIT_ID => {
-                    app.exit(0);
-                }
-                _ => {}
+        .on_menu_event(|app, event: MenuEvent| match event.id().as_ref() {
+            MENU_TRAY_SHOW_MAIN_ID => {
+                let _ = reveal_main_window(app);
             }
+            MENU_TRAY_QUIT_ID => {
+                app.exit(0);
+            }
+            _ => {}
         })
         .on_tray_icon_event(|tray, event: TrayIconEvent| {
             if let TrayIconEvent::Click {
@@ -44,7 +40,7 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
                 if button == tauri::tray::MouseButton::Left
                     && button_state == tauri::tray::MouseButtonState::Up
                 {
-                    let _ = show_main_window(tray.app_handle());
+                    let _ = reveal_main_window(tray.app_handle());
                 }
             }
         });

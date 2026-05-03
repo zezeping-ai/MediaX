@@ -5,7 +5,7 @@ const DEV_SEEK_LOG = import.meta.env.DEV;
 
 type CreatePlaybackCommandRunnerOptions = {
   commands: {
-    openPath: (path: string) => Promise<MediaSnapshot>;
+    openSource: (source: string) => Promise<MediaSnapshot>;
     play: () => Promise<MediaSnapshot>;
     pause: () => Promise<MediaSnapshot>;
     stop: () => Promise<MediaSnapshot>;
@@ -23,19 +23,53 @@ type CreatePlaybackCommandRunnerOptions = {
   };
   playback: { value: { status?: string } | null };
   pendingSource: { value: string };
-  errorMessage: { value: string };
   recordingNoticeMessage: { value: string };
   lastSyncedSecond: { value: number };
-  toUserErrorMessage: (error: unknown) => string;
+  captureError: (error: unknown) => void;
   updateSnapshot: (snapshot: MediaSnapshot) => void;
   refreshCacheRecordingStatus: () => Promise<void>;
 };
 
 export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunnerOptions) {
-  async function run(command: () => Promise<MediaSnapshot>) {
+  async function runSnapshotCommand(command: () => Promise<MediaSnapshot>) {
     const nextSnapshot = await command();
     options.updateSnapshot(nextSnapshot);
     return nextSnapshot;
+  }
+
+  async function runGuarded(action: () => Promise<void>) {
+    try {
+      await action();
+    } catch (error) {
+      options.captureError(error);
+    }
+  }
+
+  async function withPendingSource<T>(source: string, action: () => Promise<T>) {
+    options.pendingSource.value = source;
+    try {
+      return await action();
+    } finally {
+      options.pendingSource.value = "";
+    }
+  }
+
+  async function finalizeSourceOpen() {
+    await options.refreshCacheRecordingStatus();
+    options.recordingNoticeMessage.value = "";
+  }
+
+  function getPlaybackStatus() {
+    return options.playback.value?.status ?? "unknown";
+  }
+
+  function shouldSyncPosition(positionSeconds: number) {
+    const second = Math.floor(positionSeconds);
+    if (second === options.lastSyncedSecond.value) {
+      return false;
+    }
+    options.lastSyncedSecond.value = second;
+    return true;
   }
 
   async function openLocalFileByDialog() {
@@ -60,109 +94,92 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     return selected;
   }
 
-  async function openPath(path: string) {
-    options.pendingSource.value = path;
-    try {
-      await run(() => options.commands.openPath(path));
-      await run(options.commands.play);
-      await options.refreshCacheRecordingStatus();
-      options.recordingNoticeMessage.value = "";
-      options.errorMessage.value = "";
-    } finally {
-      options.pendingSource.value = "";
-    }
+  async function openSource(source: string) {
+    await withPendingSource(source, async () => {
+      await runSnapshotCommand(() => options.commands.openSource(source));
+      await runSnapshotCommand(options.commands.play);
+      await finalizeSourceOpen();
+    });
   }
 
   async function play() {
-    await run(options.commands.play);
+    await runSnapshotCommand(options.commands.play);
   }
 
   async function pause() {
-    await run(options.commands.pause);
+    await runSnapshotCommand(options.commands.pause);
   }
 
   async function stop() {
-    await run(options.commands.stop);
+    await runSnapshotCommand(options.commands.stop);
     await options.refreshCacheRecordingStatus();
   }
 
   async function seek(positionSeconds: number) {
-    const status = options.playback.value?.status ?? "unknown";
+    const status = getPlaybackStatus();
     const forceRender = status === "paused";
     logSeekDecision("seek", positionSeconds, forceRender, status);
-    await run(() => options.commands.seek(positionSeconds, forceRender));
+    await runSnapshotCommand(() => options.commands.seek(positionSeconds, forceRender));
   }
 
   async function seekPreview(positionSeconds: number) {
-    try {
-      const status = options.playback.value?.status ?? "unknown";
+    await runGuarded(async () => {
+      const status = getPlaybackStatus();
       logSeekDecision("seekPreview", positionSeconds, false, status);
-      await run(() => options.commands.seek(positionSeconds, false));
-    } catch (error) {
-      options.errorMessage.value = options.toUserErrorMessage(error);
-    }
+      await runSnapshotCommand(() => options.commands.seek(positionSeconds, false));
+    });
   }
 
   async function setRate(playbackRate: number) {
-    await run(() => options.commands.setRate(playbackRate));
+    await runSnapshotCommand(() => options.commands.setRate(playbackRate));
   }
 
   async function setVolume(volume: number) {
-    await run(() => options.commands.setVolume(volume));
+    await runSnapshotCommand(() => options.commands.setVolume(volume));
   }
 
   async function setMuted(muted: boolean) {
-    await run(() => options.commands.setMuted(muted));
+    await runSnapshotCommand(() => options.commands.setMuted(muted));
   }
 
   async function setLeftChannelVolume(volume: number) {
-    await run(() => options.commands.setLeftChannelVolume(volume));
+    await runSnapshotCommand(() => options.commands.setLeftChannelVolume(volume));
   }
 
   async function setRightChannelVolume(volume: number) {
-    await run(() => options.commands.setRightChannelVolume(volume));
+    await runSnapshotCommand(() => options.commands.setRightChannelVolume(volume));
   }
 
   async function setLeftChannelMuted(muted: boolean) {
-    await run(() => options.commands.setLeftChannelMuted(muted));
+    await runSnapshotCommand(() => options.commands.setLeftChannelMuted(muted));
   }
 
   async function setRightChannelMuted(muted: boolean) {
-    await run(() => options.commands.setRightChannelMuted(muted));
+    await runSnapshotCommand(() => options.commands.setRightChannelMuted(muted));
   }
 
   async function setChannelRouting(routing: PlaybackChannelRouting) {
-    await run(() => options.commands.setChannelRouting(routing));
+    await runSnapshotCommand(() => options.commands.setChannelRouting(routing));
   }
 
   async function setQuality(mode: PlaybackQualityMode) {
-    await run(() => options.commands.setQuality(mode));
+    await runSnapshotCommand(() => options.commands.setQuality(mode));
   }
 
   async function syncPosition(positionSeconds: number, durationSeconds: number) {
-    const second = Math.floor(positionSeconds);
-    if (second === options.lastSyncedSecond.value) {
+    if (!shouldSyncPosition(positionSeconds)) {
       return;
     }
-    options.lastSyncedSecond.value = second;
-    await run(() => options.commands.syncPosition(positionSeconds, durationSeconds));
-  }
-
-  async function runWithoutBusyLock(action: () => Promise<void>) {
-    try {
-      await action();
-    } catch (error) {
-      options.errorMessage.value = options.toUserErrorMessage(error);
-    }
+    await runSnapshotCommand(() => options.commands.syncPosition(positionSeconds, durationSeconds));
   }
 
   return {
     openLocalFileByDialog,
-    openPath,
+    openSource,
     pause,
     play,
-    run,
-    runWithoutBusyLock,
+    run: runSnapshotCommand,
+    runGuarded,
     seek,
     seekPreview,
     setMuted,

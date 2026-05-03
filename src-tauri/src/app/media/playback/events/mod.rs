@@ -9,10 +9,12 @@ pub use payloads::{
 };
 
 pub const MEDIA_PLAYBACK_STATE_EVENT: &str = "media://playback/state";
+pub const MEDIA_PLAYBACK_PROGRESS_EVENT: &str = "media://playback/progress";
 pub const MEDIA_PLAYBACK_METADATA_EVENT: &str = "media://playback/metadata";
 pub const MEDIA_PLAYBACK_ERROR_EVENT: &str = "media://playback/error";
 pub const MEDIA_PLAYBACK_TELEMETRY_EVENT: &str = "media://playback/telemetry";
 pub const MEDIA_PLAYBACK_AUDIO_METER_EVENT: &str = "media://playback/audio-meter";
+pub const MEDIA_CACHE_RECORDING_STATUS_EVENT: &str = "media://cache-recording/status";
 pub const MEDIA_PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Clone, Serialize)]

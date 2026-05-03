@@ -31,11 +31,11 @@ export function getPlaybackSnapshot() {
   return invokeMediaCommandValidated<MediaSnapshot>("playback_get_snapshot", isMediaSnapshot);
 }
 
-export function playbackOpenSource(path: string) {
+export function playbackOpenSource(source: string) {
   return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
     "playback_open_source",
     isMediaSnapshot,
-    { path },
+    { source },
   );
 }
 

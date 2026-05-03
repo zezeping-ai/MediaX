@@ -16,7 +16,9 @@ use super::helpers::wait_for_render_signal;
 pub(super) const FRAME_QUEUE_HARD_CAPACITY: usize = 6;
 const FRAME_QUEUE_TARGET_BASE_REALTIME: usize = 1;
 const FRAME_QUEUE_TARGET_BASE_NON_REALTIME: usize = 4;
-const RENDER_LOOP_IDLE_TICK: Duration = Duration::from_millis(8);
+const RENDER_LOOP_ACTIVE_MAX_WAIT: Duration = Duration::from_millis(12);
+const RENDER_LOOP_IDLE_TICK: Duration = Duration::from_millis(120);
+const PRESENT_LEAD_SECONDS: f64 = 0.004;
 const QUEUE_GROW_LAG_MS: f64 = 24.0;
 const QUEUE_SHRINK_LAG_MS: f64 = 8.0;
 const QUEUE_GROW_STREAK: u8 = 2;
@@ -46,6 +48,10 @@ pub(super) struct RendererInner {
     pub(super) last_render_cost_micros: AtomicU64,
     pub(super) last_present_lag_ms_bits: AtomicU32,
     pub(super) last_presented_pts_bits: AtomicU64,
+    pub(super) render_loop_wakeups: AtomicU64,
+    pub(super) render_attempts: AtomicU64,
+    pub(super) render_presents: AtomicU64,
+    pub(super) render_uploads: AtomicU64,
     pub(super) queue_tuning: Mutex<QueueTuningState>,
     pub(super) queue_growth_hold_until: Mutex<Option<Instant>>,
 }
@@ -88,6 +94,10 @@ impl RendererState {
                 last_render_cost_micros: AtomicU64::new(0),
                 last_present_lag_ms_bits: AtomicU32::new(0f32.to_bits()),
                 last_presented_pts_bits: AtomicU64::new(f64::NAN.to_bits()),
+                render_loop_wakeups: AtomicU64::new(0),
+                render_attempts: AtomicU64::new(0),
+                render_presents: AtomicU64::new(0),
+                render_uploads: AtomicU64::new(0),
                 queue_tuning: Mutex::new(QueueTuningState::default()),
                 queue_growth_hold_until: Mutex::new(None),
             }),
@@ -144,9 +154,15 @@ impl RendererState {
         let inner = self.inner.clone();
         thread::spawn(move || {
             // Present continuously to align cadence with display vsync. When no new video
-            // frame is due, we'll still present the previously uploaded texture.
+            // frame is due, sleep until the next frame deadline instead of waking at a fixed
+            // high frequency; when idle we fall back to a much lower tick for resize upkeep.
             while !inner.stop.load(Ordering::Relaxed) {
-                let _timed_out = wait_for_render_signal(&inner, RENDER_LOOP_IDLE_TICK);
+                let wait_timeout = compute_render_wait_timeout(&inner);
+                let timed_out = wait_for_render_signal(&inner, wait_timeout);
+                inner.render_loop_wakeups.fetch_add(1, Ordering::Relaxed);
+                if timed_out && !should_attempt_present_on_timeout(&inner) {
+                    continue;
+                }
                 if inner.render_task_in_flight.swap(true, Ordering::AcqRel) {
                     continue;
                 }
@@ -169,6 +185,14 @@ impl RendererState {
                         };
                         let selection = pick_frame_for_present(&inner, now_media_seconds);
                         let frame = selection.frame;
+                        if frame.is_none() && !timed_out {
+                            inner.render_task_in_flight.store(false, Ordering::Release);
+                            return;
+                        }
+                        inner.render_attempts.fetch_add(1, Ordering::Relaxed);
+                        if frame.is_some() {
+                            inner.render_uploads.fetch_add(1, Ordering::Relaxed);
+                        }
                         if let Ok(mut guard) = inner.renderer.lock() {
                             if let Some(renderer) = guard.as_mut() {
                                 let render_start = Instant::now();
@@ -176,6 +200,7 @@ impl RendererState {
                                     inner.video_scale_mode.load(Ordering::Relaxed),
                                 ));
                                 let _ = renderer.render(frame.as_ref(), true);
+                                inner.render_presents.fetch_add(1, Ordering::Relaxed);
                                 let elapsed = render_start.elapsed();
                                 inner.last_render_cost_micros.store(
                                     u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX),
@@ -397,6 +422,48 @@ impl RendererState {
 }
 
 pub(super) fn recycle_frame(_inner: &RendererInner, _frame: QueuedFrame) {
+}
+
+fn compute_render_wait_timeout(inner: &RendererInner) -> Duration {
+    let now_media_seconds = current_clock_seconds(inner);
+    let Some(next_pts_seconds) = inner
+        .queued_frames
+        .lock()
+        .ok()
+        .and_then(|queue| queue.front().map(QueuedFrame::pts_seconds))
+        .filter(|value| value.is_finite())
+    else {
+        return RENDER_LOOP_IDLE_TICK;
+    };
+    let seconds_until_due = (next_pts_seconds - (now_media_seconds + PRESENT_LEAD_SECONDS)).max(0.0);
+    if seconds_until_due <= 0.0 {
+        return Duration::ZERO;
+    }
+    Duration::from_secs_f64(seconds_until_due).min(RENDER_LOOP_ACTIVE_MAX_WAIT)
+}
+
+fn should_attempt_present_on_timeout(inner: &RendererInner) -> bool {
+    let now_media_seconds = current_clock_seconds(inner);
+    inner
+        .queued_frames
+        .lock()
+        .ok()
+        .and_then(|queue| queue.front().map(QueuedFrame::pts_seconds))
+        .filter(|value| value.is_finite())
+        .is_some_and(|pts_seconds| pts_seconds <= now_media_seconds + PRESENT_LEAD_SECONDS)
+}
+
+fn current_clock_seconds(inner: &RendererInner) -> f64 {
+    let clock = match inner.clock.lock() {
+        Ok(guard) => *guard,
+        Err(_) => ClockState {
+            anchor_instant: Instant::now(),
+            anchor_media_seconds: 0.0,
+            rate: 1.0,
+        },
+    };
+    let elapsed = Instant::now().saturating_duration_since(clock.anchor_instant);
+    clock.anchor_media_seconds + elapsed.as_secs_f64() * clock.rate.max(0.25)
 }
 
 fn update_dynamic_queue_capacity(

@@ -147,6 +147,7 @@ impl AudioTimeStretchProcessor {
             }
             drained_frames = drained_frames.saturating_add(written_frames);
             let written_samples = written_frames.saturating_mul(self.channels);
+            pcm.reserve(written_samples);
             pcm.extend_from_slice(&self.output_chunk[..written_samples]);
         }
     }
@@ -217,11 +218,19 @@ fn extract_output_samples_into(
             if clamped_bytes < bytes_per_sample {
                 return Ok(());
             }
-            pcm.extend(
-                data[..clamped_bytes]
-                    .chunks_exact(bytes_per_sample)
-                    .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])),
-            );
+            let packed_bytes = &data[..clamped_bytes];
+            // The resampler usually gives us native-endian packed f32, so aligned slices let us
+            // keep the required copy into `pcm` while skipping per-sample decoding work.
+            let (prefix, samples, suffix) = unsafe { packed_bytes.align_to::<f32>() };
+            if prefix.is_empty() && suffix.is_empty() && samples.len() == total_samples {
+                pcm.extend_from_slice(samples);
+            } else {
+                pcm.extend(
+                    packed_bytes
+                        .chunks_exact(bytes_per_sample)
+                        .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])),
+                );
+            }
         }
         AudioOutputSampleFormat::I16Packed => {
             let bytes_per_sample = std::mem::size_of::<i16>();
@@ -230,11 +239,17 @@ fn extract_output_samples_into(
             if clamped_bytes < bytes_per_sample {
                 return Ok(());
             }
-            pcm.extend(
-                data[..clamped_bytes]
-                    .chunks_exact(bytes_per_sample)
-                    .map(|chunk| i16::from_ne_bytes([chunk[0], chunk[1]]) as f32 / (i16::MAX as f32)),
-            );
+            let packed_bytes = &data[..clamped_bytes];
+            let (prefix, samples, suffix) = unsafe { packed_bytes.align_to::<i16>() };
+            if prefix.is_empty() && suffix.is_empty() && samples.len() == total_samples {
+                pcm.extend(samples.iter().map(|sample| (*sample as f32) / (i16::MAX as f32)));
+            } else {
+                pcm.extend(
+                    packed_bytes
+                        .chunks_exact(bytes_per_sample)
+                        .map(|chunk| i16::from_ne_bytes([chunk[0], chunk[1]]) as f32 / (i16::MAX as f32)),
+                );
+            }
         }
     }
     Ok(())

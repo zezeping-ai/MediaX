@@ -18,7 +18,7 @@ interface UseMediaCenterLifecycleOptions {
   };
   playbackRunner: {
     openLocalFileByDialog: () => Promise<string | null>;
-    openPath: (path: string) => Promise<void>;
+    openSource: (source: string) => Promise<void>;
   };
   urlInputController: {
     requestOpenUrlInput: () => void;
@@ -42,7 +42,7 @@ export function useMediaCenterLifecycle(options: UseMediaCenterLifecycleOptions)
         void options.withBusyState(async () => {
           const selectedPath = await options.playbackRunner.openLocalFileByDialog();
           if (selectedPath) {
-            await options.playbackRunner.openPath(selectedPath);
+            await options.playbackRunner.openSource(selectedPath);
           }
         });
       }

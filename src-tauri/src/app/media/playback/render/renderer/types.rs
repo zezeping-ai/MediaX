@@ -89,4 +89,8 @@ pub struct RendererMetricsSnapshot {
     pub last_presented_pts_seconds: Option<f64>,
     pub last_submitted_pts_seconds: Option<f64>,
     pub submit_lead_ms: f64,
+    pub render_loop_wakeups: u64,
+    pub render_attempts: u64,
+    pub render_presents: u64,
+    pub render_uploads: u64,
 }

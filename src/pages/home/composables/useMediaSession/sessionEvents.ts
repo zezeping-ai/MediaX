@@ -4,18 +4,21 @@ import {
   MEDIA_MENU_EVENT,
   MEDIA_PLAYBACK_ERROR_EVENT,
   MEDIA_PLAYBACK_METADATA_EVENT,
+  MEDIA_PLAYBACK_PROGRESS_EVENT,
   MEDIA_PLAYBACK_STATE_EVENT,
   MEDIA_PLAYBACK_TELEMETRY_EVENT,
   type MediaAudioMeterPayload,
   type MediaErrorPayload,
   type MediaEventEnvelope,
   type MediaMetadataPayload,
+  type PlaybackState,
   type MediaSnapshot,
   type MediaTelemetryPayload,
 } from "@/modules/media-types";
 
 interface SessionEventBindings {
   onMenuAction: (action: string) => void;
+  onPlaybackProgress: (playback: PlaybackState) => void;
   onSnapshot: (snapshot: MediaSnapshot) => void;
   onMetadata: (payload: MediaMetadataPayload) => void;
   onError: (payload: MediaErrorPayload) => void;
@@ -28,6 +31,11 @@ export async function registerSessionEvents(bindings: SessionEventBindings) {
     MediaEventEnvelope<MediaSnapshot> | MediaSnapshot
   >(MEDIA_PLAYBACK_STATE_EVENT, (event) => {
     bindings.onSnapshot(resolvePayload(event.payload));
+  });
+  const unlistenPlaybackProgressEvent = await listen<
+    MediaEventEnvelope<PlaybackState> | PlaybackState
+  >(MEDIA_PLAYBACK_PROGRESS_EVENT, (event) => {
+    bindings.onPlaybackProgress(resolvePayload(event.payload));
   });
   const unlistenMenuEvent = await listen<string>(MEDIA_MENU_EVENT, (event) => {
     bindings.onMenuAction(event.payload);
@@ -55,6 +63,7 @@ export async function registerSessionEvents(bindings: SessionEventBindings) {
 
   return [
     unlistenPlaybackStateEvent,
+    unlistenPlaybackProgressEvent,
     unlistenMenuEvent,
     unlistenPlaybackMetadataEvent,
     unlistenPlaybackErrorEvent,
