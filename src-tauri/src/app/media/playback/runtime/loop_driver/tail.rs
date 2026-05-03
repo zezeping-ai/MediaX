@@ -79,11 +79,14 @@ fn flush_audio_decoder(
     runtime: &mut DecodeRuntime,
 ) -> Result<(), String> {
     let has_video_stream = runtime.has_video_stream();
+    let video_frame_duration_seconds = has_video_stream
+        .then(|| runtime.loop_state.playback_clock.frame_duration_seconds());
     let force_low_latency_output = runtime.loop_state.in_rate_switch_settle();
     let building_rate_switch_cover =
         runtime.loop_state.pending_audio_rate.is_some() && !force_low_latency_output;
     let seeking_low_latency_refill = runtime.loop_state.in_seek_refill();
     let in_seek_settle = runtime.loop_state.in_seek_settle();
+    let audio_sync_warmup_factor = runtime.loop_state.audio_sync_warmup_factor();
     let Some(audio_state) = runtime.audio_pipeline.as_mut() else {
         return Ok(());
     };
@@ -106,8 +109,10 @@ fn flush_audio_decoder(
         building_rate_switch_cover,
         seeking_low_latency_refill,
         in_seek_settle,
+        audio_sync_warmup_factor,
         false,
         force_low_latency_output,
+        video_frame_duration_seconds,
     )?;
     if seeking_low_latency_refill && audio_state.stats.seek_refill_logged {
         runtime.loop_state.clear_seek_refill();
@@ -119,7 +124,7 @@ fn flush_audio_decoder(
             .saturating_add(block.len() as u64);
         audio_state
             .output
-            .append_pcm_f32_owned(audio_state.decoder.rate(), channels, block);
+            .append_pcm_f32_owned(audio_state.decoder.rate(), channels, block, None, 0.0);
         runtime.loop_state.audio_queue_depth_sources = Some(audio_state.output.queue_depth());
         runtime.loop_state.audio_queued_seconds =
             Some(audio_state.output.queued_duration_seconds());

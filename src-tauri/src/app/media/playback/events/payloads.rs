@@ -92,6 +92,7 @@ pub struct MediaTelemetryPayload {
     pub audio_queue_depth_sources: Option<usize>,
     pub clock_seconds: f64,
     pub current_video_pts_seconds: Option<f64>,
+    pub current_effective_display_video_pts_seconds: Option<f64>,
     pub current_presented_video_pts_seconds: Option<f64>,
     pub current_submitted_video_pts_seconds: Option<f64>,
     pub current_audio_clock_seconds: Option<f64>,

@@ -24,6 +24,9 @@ use tauri::{AppHandle, Manager};
 
 const VIDEO_SEND_PACKET_RETRY_LIMIT: usize = 3;
 const AUDIO_SEND_PACKET_RETRY_LIMIT: usize = 3;
+const VIDEO_QUEUE_BOOST_WINDOW_MS: u64 = 320;
+const RENDERER_QUEUE_BOOST_WINDOW_MS: u64 = 520;
+const RENDERER_QUEUE_BOOST_MIN_CAPACITY: usize = 5;
 
 pub(super) fn handle_packet(
     app: &AppHandle,
@@ -92,6 +95,15 @@ fn handle_video_packet(
     runtime
         .loop_state
         .record_video_packet(app, packet, video_time_base);
+    if packet.is_key() && !runtime.is_realtime_source {
+        runtime
+            .loop_state
+            .begin_video_queue_boost(Duration::from_millis(VIDEO_QUEUE_BOOST_WINDOW_MS));
+        renderer.boost_queue_capacity(
+            RENDERER_QUEUE_BOOST_MIN_CAPACITY,
+            Duration::from_millis(RENDERER_QUEUE_BOOST_WINDOW_MS),
+        );
+    }
     send_video_packet_with_backpressure_recovery(
         app,
         renderer,
@@ -201,11 +213,14 @@ fn handle_audio_packet(
     packet: &Packet,
 ) -> Result<(), String> {
     let has_video_stream = runtime.has_video_stream();
+    let video_frame_duration_seconds = has_video_stream
+        .then(|| runtime.loop_state.playback_clock.frame_duration_seconds());
     let force_low_latency_output = runtime.loop_state.in_rate_switch_settle();
     let building_rate_switch_cover =
         runtime.loop_state.pending_audio_rate.is_some() && !force_low_latency_output;
     let seeking_low_latency_refill = runtime.loop_state.in_seek_refill();
     let in_seek_settle = runtime.loop_state.in_seek_settle();
+    let audio_sync_warmup_factor = runtime.loop_state.audio_sync_warmup_factor();
     let Some(audio_state) = runtime.audio_pipeline.as_mut() else {
         return Ok(());
     };
@@ -228,7 +243,9 @@ fn handle_audio_packet(
         building_rate_switch_cover,
         seeking_low_latency_refill,
         in_seek_settle,
+        audio_sync_warmup_factor,
         force_low_latency_output,
+        video_frame_duration_seconds,
     )?;
     drain_audio_frames(
         app,
@@ -245,8 +262,10 @@ fn handle_audio_packet(
         building_rate_switch_cover,
         seeking_low_latency_refill,
         in_seek_settle,
+        audio_sync_warmup_factor,
         false,
         force_low_latency_output,
+        video_frame_duration_seconds,
     )?;
     if seeking_low_latency_refill && audio_state.stats.seek_refill_logged {
         runtime.loop_state.clear_seek_refill();
@@ -273,7 +292,9 @@ fn send_audio_packet_with_backpressure_recovery(
     building_rate_switch_cover: bool,
     seeking_low_latency_refill: bool,
     in_seek_settle: bool,
+    audio_sync_warmup_factor: f64,
     force_low_latency_output: bool,
+    video_frame_duration_seconds: Option<f64>,
 ) -> Result<(), String> {
     let mut attempts = 0usize;
     loop {
@@ -301,8 +322,10 @@ fn send_audio_packet_with_backpressure_recovery(
                     building_rate_switch_cover,
                     seeking_low_latency_refill,
                     in_seek_settle,
+                    audio_sync_warmup_factor,
                     true,
                     force_low_latency_output,
+                    video_frame_duration_seconds,
                 )?;
             }
             Err(err) => {
@@ -344,6 +367,7 @@ pub(super) fn drain_video_frames(
         has_audio_stream,
         current_audio_queue_depth,
         runtime.is_realtime_source,
+        runtime.loop_state.in_video_queue_boost(),
     );
     let mut drain_ctx = DrainFramesContext::new(
         app,
@@ -361,6 +385,7 @@ pub(super) fn drain_video_frames(
         &mut runtime.loop_state.current_position_seconds,
         runtime.loop_state.audio_clock,
         runtime.loop_state.audio_queue_depth_sources,
+        runtime.loop_state.audio_queued_seconds,
         &mut runtime.loop_state.active_seek_target_seconds,
         &mut runtime.loop_state.last_video_pts_seconds,
         &mut runtime.loop_state.fps_window,

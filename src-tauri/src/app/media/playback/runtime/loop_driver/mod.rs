@@ -266,6 +266,9 @@ fn apply_pending_seek(
     runtime.loop_state.active_seek_target_seconds = Some(target_seconds.max(0.0));
     runtime.loop_state.begin_seek_refill(Duration::from_millis(220));
     runtime.loop_state.begin_seek_settle(Duration::from_millis(700));
+    runtime
+        .loop_state
+        .begin_audio_sync_warmup(Duration::from_millis(2500));
     if let Some(audio_state) = runtime.audio_pipeline.as_mut() {
         audio_state.stats.seek_refill_logged = false;
     }

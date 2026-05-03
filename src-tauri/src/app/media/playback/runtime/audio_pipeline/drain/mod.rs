@@ -17,7 +17,8 @@ use std::sync::Arc;
 use tauri::AppHandle;
 
 use self::sync::{
-    should_drop_pre_seek_audio_frame, sync_audio_clock, sync_audio_clock_to_output_head,
+    output_latency_compensation_seconds, should_drop_pre_seek_audio_frame, sync_audio_clock,
+    sync_audio_clock_to_output_head,
 };
 
 pub(crate) fn drain_audio_frames(
@@ -35,8 +36,10 @@ pub(crate) fn drain_audio_frames(
     building_rate_switch_cover: bool,
     seeking_low_latency_refill: bool,
     in_seek_settle: bool,
+    audio_sync_warmup_factor: f64,
     decoder_relief_mode: bool,
     force_low_latency_output: bool,
+    video_frame_duration_seconds: Option<f64>,
 ) -> Result<(), String> {
     audio_state.stats.packets = audio_state.stats.packets.saturating_add(1);
     let mut decoded = frame::Audio::empty();
@@ -140,22 +143,61 @@ pub(crate) fn drain_audio_frames(
             force_flush_partial,
         );
         let output_samples: usize = staged_output.blocks.iter().map(Vec::len).sum();
+        let block_timestamp_seconds =
+            timestamp_to_seconds(converted.timestamp(), converted.pts(), audio_state.time_base);
+        let playback_rate_f64 = playback_rate.as_f64().max(0.25);
+        let mut queued_samples_before_blocks = 0usize;
         for block in staged_output.blocks {
+            let block_samples = block.len();
+            let block_frames = block_samples / usize::from(converted.channels().max(1));
+            let block_wall_seconds = block_frames as f64 / converted.rate().max(1) as f64;
+            let block_media_start_seconds = block_timestamp_seconds.map(|start_seconds| {
+                start_seconds
+                    + (queued_samples_before_blocks as f64
+                        / usize::from(converted.channels().max(1)) as f64
+                        / converted.rate().max(1) as f64)
+                        * playback_rate_f64
+            });
+            let block_media_duration_seconds = block_wall_seconds * playback_rate_f64;
             audio_state.stats.queued_samples = audio_state
                 .stats
                 .queued_samples
-                .saturating_add(block.len() as u64);
+                .saturating_add(block_samples as u64);
             audio_state
                 .output
-                .append_pcm_f32_owned(converted.rate(), converted.channels(), block);
+                .append_pcm_f32_owned(
+                    converted.rate(),
+                    converted.channels(),
+                    block,
+                    block_media_start_seconds,
+                    block_media_duration_seconds,
+                );
+            queued_samples_before_blocks =
+                queued_samples_before_blocks.saturating_add(block_samples);
         }
+        let output_frames = output_samples / usize::from(converted.channels().max(1));
+        let output_wall_seconds = output_frames as f64 / converted.rate().max(1) as f64;
+        let tracked_playback_head_seconds = audio_state.output.playback_head_seconds(
+            output_latency_compensation_seconds(
+                output_wall_seconds,
+                audio_state.output.queue_depth(),
+                video_frame_duration_seconds,
+                in_seek_settle,
+                audio_sync_warmup_factor,
+            ),
+        );
         sync_audio_clock_to_output_head(
-            timestamp_to_seconds(converted.timestamp(), converted.pts(), audio_state.time_base),
+            block_timestamp_seconds,
             output_samples,
             converted.channels() as usize,
             converted.rate(),
             playback_rate,
             audio_state.output.queued_duration_seconds(),
+            audio_state.output.queue_depth(),
+            video_frame_duration_seconds,
+            in_seek_settle,
+            audio_sync_warmup_factor,
+            tracked_playback_head_seconds,
             audio_clock,
         );
         if audio_state.output.queue_depth() > 0 {
@@ -203,8 +245,7 @@ fn should_yield_audio_decode(
     seeking_low_latency_refill: bool,
     force_low_latency_output: bool,
 ) -> bool {
-    if has_video_stream
-        || is_realtime_source
+    if is_realtime_source
         || building_rate_switch_cover
         || seeking_low_latency_refill
         || force_low_latency_output
@@ -222,6 +263,9 @@ fn should_yield_audio_decode(
     ) else {
         return false;
     };
+    if has_video_stream {
+        return queued_seconds + 1e-3 >= queue_seconds_limit;
+    }
     queued_seconds + 1e-3 >= queue_seconds_limit
 }
 

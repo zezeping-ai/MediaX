@@ -54,6 +54,23 @@ pub struct ScalerSpec {
     pub flags: Flags,
 }
 
+pub fn preferred_scaling_flags_for_renderer(
+    src_width: u32,
+    src_height: u32,
+    dst_width: u32,
+    dst_height: u32,
+) -> Flags {
+    let src_pixels = u64::from(src_width).saturating_mul(u64::from(src_height));
+    let dst_pixels = u64::from(dst_width).saturating_mul(u64::from(dst_height));
+    // Large downscales are the hot path for smooth playback on 4K-class sources. Favor
+    // a cheaper scaler there so we preserve decode/render cadence under load.
+    if src_pixels > 0 && dst_pixels.saturating_mul(2) <= src_pixels {
+        Flags::FAST_BILINEAR
+    } else {
+        Flags::BILINEAR
+    }
+}
+
 pub fn transfer_hw_frame_if_needed(decoded: &frame::Video) -> Result<frame::Video, String> {
     if !is_hardware_frame(decoded)? {
         let mut software_frame = decoded.clone();
@@ -84,12 +101,68 @@ pub fn can_bypass_scaler_for_renderer(
     frame.width() == output_width
         && frame.height() == output_height
         && matches!(
-            frame.format(),
-            format::pixel::Pixel::NV12
-                | format::pixel::Pixel::P010LE
-                | format::pixel::Pixel::P010BE
-                | format::pixel::Pixel::YUV420P
-        )
+        frame.format(),
+        format::pixel::Pixel::NV12
+            | format::pixel::Pixel::P010LE
+            | format::pixel::Pixel::P010BE
+            | format::pixel::Pixel::YUV420P
+    )
+}
+
+pub fn adaptive_upload_size_for_renderer(
+    src_width: u32,
+    src_height: u32,
+    surface_width: u32,
+    surface_height: u32,
+    source_fps: f64,
+) -> (u32, u32) {
+    if src_width == 0 || src_height == 0 {
+        return (src_width, src_height);
+    }
+    if surface_width == 0 || surface_height == 0 {
+        return even_dimensions(src_width, src_height);
+    }
+    let fit_scale = ((surface_width as f64) / (src_width as f64))
+        .min((surface_height as f64) / (src_height as f64))
+        .min(1.0);
+    let fitted_width = ((src_width as f64) * fit_scale).round().max(2.0) as u32;
+    let fitted_height = ((src_height as f64) * fit_scale).round().max(2.0) as u32;
+    let source_pixels = (src_width as f64) * (src_height as f64);
+    let fitted_pixels = (fitted_width as f64) * (fitted_height as f64);
+    let scale_pressure = if fitted_pixels > 0.0 {
+        source_pixels / fitted_pixels
+    } else {
+        1.0
+    };
+    let fps = if source_fps.is_finite() && source_fps > 1.0 {
+        source_fps
+    } else {
+        24.0
+    };
+    // Favor smoothness for heavy/high-fps sources by allowing a modest undershoot below the
+    // fitted viewport size. Lighter sources retain a bit of supersampling headroom.
+    let mut viewport_quality_factor: f64 = if fps >= 50.0 {
+        0.88
+    } else if fps >= 30.0 {
+        0.94
+    } else {
+        1.0
+    };
+    if scale_pressure >= 6.0 {
+        viewport_quality_factor -= 0.14;
+    } else if scale_pressure >= 4.0 {
+        viewport_quality_factor -= 0.10;
+    } else if scale_pressure >= 2.5 {
+        viewport_quality_factor -= 0.04;
+    }
+    let viewport_quality_factor = viewport_quality_factor.clamp(0.78, 1.08);
+    let target_width = ((fitted_width as f64) * viewport_quality_factor)
+        .round()
+        .clamp(2.0, src_width as f64) as u32;
+    let target_height = ((fitted_height as f64) * viewport_quality_factor)
+        .round()
+        .clamp(2.0, src_height as f64) as u32;
+    even_dimensions(target_width, target_height)
 }
 
 pub fn preferred_scaled_format_for_renderer(frame: &frame::Video) -> format::pixel::Pixel {
@@ -184,4 +257,12 @@ fn bit_depth_for_format(format: format::pixel::Pixel) -> u32 {
         format::pixel::Pixel::P010LE | format::pixel::Pixel::P010BE => 10,
         _ => 8,
     }
+}
+
+fn even_dimensions(width: u32, height: u32) -> (u32, u32) {
+    let mut even_width = width.max(2);
+    let mut even_height = height.max(2);
+    even_width &= !1;
+    even_height &= !1;
+    (even_width.max(2), even_height.max(2))
 }

@@ -20,8 +20,11 @@ use self::renderer_types::{ColorParams, Renderer};
 
 impl RendererState {
     pub fn metrics_snapshot(&self) -> RendererMetricsSnapshot {
+        let (queue_depth, queue_capacity, queued_head_pts_seconds, queued_tail_pts_seconds) =
+            self.queue_metrics_snapshot();
+        let effective_display_pts_seconds = self.effective_display_pts_seconds();
         let last_presented_pts_seconds = self.last_presented_pts_seconds();
-        let last_submitted_pts_seconds = self.last_submitted_pts_seconds();
+        let last_submitted_pts_seconds = queued_tail_pts_seconds.or_else(|| self.last_submitted_pts_seconds());
         let submit_lead_ms = match (last_submitted_pts_seconds, last_presented_pts_seconds) {
             (Some(submitted), Some(presented))
                 if submitted.is_finite() && presented.is_finite() && submitted >= presented =>
@@ -31,14 +34,17 @@ impl RendererState {
             _ => 0.0,
         };
         RendererMetricsSnapshot {
-            queue_depth: self.queue_depth(),
-            queue_capacity: self.queue_capacity(),
+            queue_depth,
+            queue_capacity,
+            queued_head_pts_seconds,
+            queued_tail_pts_seconds,
             last_render_cost_ms: (self.inner.last_render_cost_micros.load(Ordering::Relaxed)
                 as f64)
                 / 1000.0,
             last_present_lag_ms: f32::from_bits(
                 self.inner.last_present_lag_ms_bits.load(Ordering::Relaxed),
             ) as f64,
+            effective_display_pts_seconds,
             last_presented_pts_seconds,
             last_submitted_pts_seconds,
             submit_lead_ms,

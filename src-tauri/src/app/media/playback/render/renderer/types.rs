@@ -84,8 +84,11 @@ impl QueuedFrame {
 pub struct RendererMetricsSnapshot {
     pub queue_depth: usize,
     pub queue_capacity: usize,
+    pub queued_head_pts_seconds: Option<f64>,
+    pub queued_tail_pts_seconds: Option<f64>,
     pub last_render_cost_ms: f64,
     pub last_present_lag_ms: f64,
+    pub effective_display_pts_seconds: Option<f64>,
     pub last_presented_pts_seconds: Option<f64>,
     pub last_submitted_pts_seconds: Option<f64>,
     pub submit_lead_ms: f64,

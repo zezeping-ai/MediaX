@@ -19,6 +19,8 @@ pub(crate) use network_metrics::NetworkMetrics;
 pub(crate) use video_frame_metrics::{VideoFrameTypeMetrics, VideoTimestampMetrics};
 pub(crate) use video_packet_metrics::VideoPacketMetrics;
 
+const AUDIO_SYNC_WARMUP_WINDOW_SECONDS: f64 = 2.5;
+
 pub(crate) struct DecodeLoopState {
     pub last_applied_audio_rate: PlaybackRate,
     pub pending_audio_rate: Option<PlaybackRate>,
@@ -33,6 +35,8 @@ pub(crate) struct DecodeLoopState {
     pub active_seek_target_seconds: Option<f64>,
     pub seek_refill_until: Option<Instant>,
     pub seek_settle_until: Option<Instant>,
+    pub audio_sync_warmup_until: Option<Instant>,
+    pub video_queue_boost_until: Option<Instant>,
     pub last_video_pts_seconds: Option<f64>,
     pub rate_switch_settle_until: Option<Instant>,
     pub rate_switch_hold_logged: bool,
@@ -76,6 +80,8 @@ impl DecodeLoopState {
             active_seek_target_seconds: None,
             seek_refill_until: None,
             seek_settle_until: None,
+            audio_sync_warmup_until: None,
+            video_queue_boost_until: None,
             last_video_pts_seconds: None,
             rate_switch_settle_until: None,
             rate_switch_hold_logged: false,
@@ -138,6 +144,18 @@ impl DecodeLoopState {
         self.audio_queued_seconds = None;
     }
 
+    pub fn audio_sync_warmup_factor(&self) -> f64 {
+        let Some(deadline) = self.audio_sync_warmup_until else {
+            return 0.0;
+        };
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let remaining_seconds = remaining.as_secs_f64();
+        if remaining_seconds <= 0.0 {
+            return 0.0;
+        }
+        (remaining_seconds / AUDIO_SYNC_WARMUP_WINDOW_SECONDS).clamp(0.0, 1.0)
+    }
+
     pub fn in_seek_refill(&self) -> bool {
         self.seek_refill_until
             .map(|deadline| Instant::now() < deadline)
@@ -160,6 +178,20 @@ impl DecodeLoopState {
 
     pub fn begin_seek_settle(&mut self, duration: Duration) {
         self.seek_settle_until = Some(Instant::now() + duration);
+    }
+
+    pub fn begin_audio_sync_warmup(&mut self, duration: Duration) {
+        self.audio_sync_warmup_until = Some(Instant::now() + duration);
+    }
+
+    pub fn in_video_queue_boost(&self) -> bool {
+        self.video_queue_boost_until
+            .map(|deadline| Instant::now() < deadline)
+            .unwrap_or(false)
+    }
+
+    pub fn begin_video_queue_boost(&mut self, duration: Duration) {
+        self.video_queue_boost_until = Some(Instant::now() + duration);
     }
 
     pub fn commit_audio_playback_rate(&mut self, playback_rate: PlaybackRate) {

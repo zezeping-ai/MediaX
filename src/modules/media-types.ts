@@ -188,6 +188,7 @@ export interface MediaTelemetryPayload {
   audio_queue_depth_sources?: number | null;
   clock_seconds: number;
   current_video_pts_seconds?: number | null;
+  current_effective_display_video_pts_seconds?: number | null;
   current_presented_video_pts_seconds?: number | null;
   current_submitted_video_pts_seconds?: number | null;
   current_audio_clock_seconds?: number | null;

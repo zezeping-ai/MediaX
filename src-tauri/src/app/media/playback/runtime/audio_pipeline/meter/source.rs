@@ -2,54 +2,156 @@ use crate::app::media::playback::dto::PlaybackChannelRouting;
 use crate::app::media::state::AudioControls;
 use rodio::Source;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::accumulator::AudioMeterAccumulator;
 use super::shared::{publish_snapshot, SharedAudioMeter};
 
 #[derive(Default)]
 pub(crate) struct QueuedDurationTracker {
-    total_micros: AtomicU64,
-    blocks: Mutex<VecDeque<u64>>,
+    state: Mutex<QueuedDurationState>,
+}
+
+#[derive(Default)]
+struct QueuedDurationState {
+    next_block_id: u64,
+    blocks: VecDeque<QueuedBlock>,
+    active_block: Option<ActiveQueuedBlock>,
+}
+
+#[derive(Clone, Copy)]
+struct QueuedBlock {
+    id: u64,
+    wall_duration_micros: u64,
+    media_start_seconds: Option<f64>,
+    media_duration_seconds: f64,
+}
+
+#[derive(Clone, Copy)]
+struct ActiveQueuedBlock {
+    id: u64,
+    wall_duration_micros: u64,
+    media_start_seconds: Option<f64>,
+    media_duration_seconds: f64,
+    started_at: Instant,
 }
 
 impl QueuedDurationTracker {
-    pub(crate) fn push_block(&self, duration_micros: u64) {
-        self.total_micros
-            .fetch_add(duration_micros, Ordering::Relaxed);
-        if let Ok(mut blocks) = self.blocks.lock() {
-            blocks.push_back(duration_micros);
+    pub(crate) fn push_block(
+        &self,
+        wall_duration_micros: u64,
+        media_start_seconds: Option<f64>,
+        media_duration_seconds: f64,
+    ) -> u64 {
+        let Ok(mut state) = self.state.lock() else {
+            return 0;
+        };
+        state.next_block_id = state.next_block_id.saturating_add(1);
+        let id = state.next_block_id;
+        state.blocks.push_back(QueuedBlock {
+            id,
+            wall_duration_micros,
+            media_start_seconds,
+            media_duration_seconds: media_duration_seconds.max(0.0),
+        });
+        id
+    }
+
+    pub(crate) fn mark_block_started(&self, block_id: u64) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        if state
+            .active_block
+            .is_some_and(|active| active.id == block_id)
+        {
+            return;
+        }
+        let Some(block) = state.blocks.front().copied() else {
+            return;
+        };
+        if block.id != block_id {
+            return;
+        }
+        state.active_block = Some(ActiveQueuedBlock {
+            id: block.id,
+            wall_duration_micros: block.wall_duration_micros,
+            media_start_seconds: block.media_start_seconds,
+            media_duration_seconds: block.media_duration_seconds,
+            started_at: Instant::now(),
+        });
+    }
+
+    pub(crate) fn finish_block(&self, block_id: u64) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        if state
+            .active_block
+            .is_some_and(|active| active.id == block_id)
+        {
+            state.active_block = None;
+        }
+        if let Some(position) = state.blocks.iter().position(|block| block.id == block_id) {
+            state.blocks.remove(position);
         }
     }
 
-    pub(crate) fn finish_block(&self) {
-        let Some(duration_micros) = self
-            .blocks
-            .lock()
-            .ok()
-            .and_then(|mut blocks| blocks.pop_front())
-        else {
-            return;
-        };
-        let _ = self.total_micros.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |total| Some(total.saturating_sub(duration_micros)),
-        );
-    }
-
     pub(crate) fn clear(&self) {
-        self.total_micros.store(0, Ordering::Relaxed);
-        if let Ok(mut blocks) = self.blocks.lock() {
-            blocks.clear();
+        if let Ok(mut state) = self.state.lock() {
+            state.blocks.clear();
+            state.active_block = None;
         }
     }
 
     pub(crate) fn queued_seconds(&self) -> f64 {
-        (self.total_micros.load(Ordering::Relaxed) as f64) / 1_000_000.0
+        let Ok(state) = self.state.lock() else {
+            return 0.0;
+        };
+        let mut total_micros = 0u128;
+        for block in &state.blocks {
+            if let Some(active) = state.active_block.filter(|active| active.id == block.id) {
+                let elapsed_micros = active.started_at.elapsed().as_micros() as u64;
+                let remaining_micros = active.wall_duration_micros.saturating_sub(elapsed_micros);
+                total_micros = total_micros.saturating_add(u128::from(remaining_micros));
+            } else {
+                total_micros = total_micros.saturating_add(u128::from(block.wall_duration_micros));
+            }
+        }
+        (total_micros as f64) / 1_000_000.0
+    }
+
+    pub(crate) fn playback_head_seconds(&self, extra_latency_seconds: f64) -> Option<f64> {
+        let Ok(state) = self.state.lock() else {
+            return None;
+        };
+        let front_block = state.blocks.front().copied()?;
+        let extra_latency_seconds = extra_latency_seconds.max(0.0);
+        if let Some(active) = state.active_block.filter(|active| active.id == front_block.id) {
+            let media_start_seconds = active
+                .media_start_seconds
+                .filter(|value| value.is_finite() && *value >= 0.0)?;
+            let wall_duration_seconds = (active.wall_duration_micros as f64) / 1_000_000.0;
+            if wall_duration_seconds <= 0.0 {
+                return Some(media_start_seconds);
+            }
+            // Samples are considered "started" when rodio pulls them, but the audible device
+            // head is still behind by the downstream output latency. Subtract that reserve so the
+            // reported playback head tracks what users can actually hear, not just what the mixer
+            // has already consumed.
+            let consumed_wall_seconds = (active.started_at.elapsed().as_secs_f64()
+                - extra_latency_seconds)
+                .clamp(0.0, wall_duration_seconds);
+            let progress = (consumed_wall_seconds / wall_duration_seconds).clamp(0.0, 1.0);
+            return Some(
+                (media_start_seconds + active.media_duration_seconds.max(0.0) * progress).max(0.0),
+            );
+        }
+        front_block
+            .media_start_seconds
+            .filter(|value| value.is_finite() && *value >= 0.0)
     }
 }
 
@@ -64,6 +166,8 @@ where
     pending_frame: Vec<f32>,
     pending_frame_index: usize,
     queued_duration: Arc<QueuedDurationTracker>,
+    queued_block_id: u64,
+    playback_started: bool,
 }
 
 impl<S> MeteredSource<S>
@@ -75,6 +179,7 @@ where
         shared: SharedAudioMeter,
         controls: Arc<AudioControls>,
         queued_duration: Arc<QueuedDurationTracker>,
+        queued_block_id: u64,
     ) -> Self {
         let channels = inner.channels().get() as usize;
         let sample_rate = inner.sample_rate().get();
@@ -86,6 +191,8 @@ where
             pending_frame: Vec::with_capacity(channels.max(1)),
             pending_frame_index: 0,
             queued_duration,
+            queued_block_id,
+            playback_started: false,
         }
     }
 
@@ -162,6 +269,10 @@ where
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if !self.playback_started {
+            self.queued_duration.mark_block_started(self.queued_block_id);
+            self.playback_started = true;
+        }
         let processed = self.next_processed_sample()?;
         if let Some(snapshot) = self.accumulator.push_sample(processed) {
             publish_snapshot(&self.shared, snapshot);
@@ -203,7 +314,7 @@ where
         // Network/compressed audio can arrive as many short queued buffers. Flush the
         // last partial meter window so short chunks still drive the live spectrum.
         self.flush_pending_snapshot();
-        self.queued_duration.finish_block();
+        self.queued_duration.finish_block(self.queued_block_id);
     }
 }
 
@@ -214,9 +325,9 @@ mod tests {
     #[test]
     fn queued_duration_clear_does_not_underflow_on_late_drop() {
         let tracker = QueuedDurationTracker::default();
-        tracker.push_block(120_000);
+        let block_id = tracker.push_block(120_000, Some(3.0), 0.12);
         tracker.clear();
-        tracker.finish_block();
+        tracker.finish_block(block_id);
         assert_eq!(tracker.queued_seconds(), 0.0);
     }
 }

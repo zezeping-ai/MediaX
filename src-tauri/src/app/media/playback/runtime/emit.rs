@@ -40,11 +40,15 @@ fn should_persist_debug_stage(stage: &str) -> bool {
     matches!(
         stage,
         "audio_pipeline_ready"
+            | "av_sync"
             | "cache_recording_error"
             | "decode_error"
             | "decode_error_detail"
             | "decoder_ready"
             | "pause_prefetch"
+            | "renderer_starved"
+            | "renderer_efficiency"
+            | "renderer_present_slow"
             | "rate_request"
             | "running"
             | "seek"

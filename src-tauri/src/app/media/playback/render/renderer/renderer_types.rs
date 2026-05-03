@@ -1,4 +1,5 @@
 use super::VideoScaleMode;
+use std::time::Duration;
 
 pub(super) struct Renderer {
     pub(super) window: tauri::WebviewWindow,
@@ -37,4 +38,18 @@ pub(super) struct ColorParams {
     pub(super) row0: [f32; 4],
     pub(super) row1: [f32; 4],
     pub(super) row2: [f32; 4],
+}
+
+#[derive(Clone, Copy, Default)]
+pub(super) struct RenderStageTimings {
+    pub(super) upload_frame: Duration,
+    pub(super) acquire_surface: Duration,
+    pub(super) encode_and_submit: Duration,
+    pub(super) present: Duration,
+}
+
+impl RenderStageTimings {
+    pub(super) fn total(self) -> Duration {
+        self.upload_frame + self.acquire_surface + self.encode_and_submit + self.present
+    }
 }

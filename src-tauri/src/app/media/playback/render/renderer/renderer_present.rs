@@ -1,27 +1,48 @@
+use super::renderer_types::RenderStageTimings;
 use super::{QueuedFrame, Renderer, VideoScaleMode};
+use std::time::Instant;
 
 impl Renderer {
-    pub(super) fn render(&mut self, frame: Option<&QueuedFrame>, force_if_idle: bool) -> Result<(), String> {
+    pub(super) fn render(
+        &mut self,
+        frame: Option<&QueuedFrame>,
+        force_if_idle: bool,
+    ) -> Result<RenderStageTimings, String> {
         let resized = self.resize_if_needed();
         if frame.is_none() && !resized && !force_if_idle {
-            return Ok(());
+            return Ok(RenderStageTimings::default());
         }
+        let upload_started_at = Instant::now();
         if let Some(frame) = frame {
             self.upload_frame(frame);
         }
+        let upload_frame = upload_started_at.elapsed();
+        let acquire_started_at = Instant::now();
         let output = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
                 self.surface.configure(&self.device, &self.config);
-                return Ok(());
+                return Ok(RenderStageTimings {
+                    upload_frame,
+                    acquire_surface: acquire_started_at.elapsed(),
+                    ..RenderStageTimings::default()
+                });
             }
-            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => return Ok(()),
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                return Ok(RenderStageTimings {
+                    upload_frame,
+                    acquire_surface: acquire_started_at.elapsed(),
+                    ..RenderStageTimings::default()
+                });
+            }
             wgpu::CurrentSurfaceTexture::Validation => {
                 return Err("wgpu surface validation error".to_string());
             }
         };
+        let acquire_surface = acquire_started_at.elapsed();
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let encode_and_submit_started_at = Instant::now();
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -53,8 +74,15 @@ impl Renderer {
             }
         }
         self.queue.submit([encoder.finish()]);
+        let encode_and_submit = encode_and_submit_started_at.elapsed();
+        let present_started_at = Instant::now();
         output.present();
-        Ok(())
+        Ok(RenderStageTimings {
+            upload_frame,
+            acquire_surface,
+            encode_and_submit,
+            present: present_started_at.elapsed(),
+        })
     }
 
     fn compute_content_viewport(&self) -> (f32, f32, f32, f32) {

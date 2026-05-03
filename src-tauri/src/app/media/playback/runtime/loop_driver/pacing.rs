@@ -13,6 +13,9 @@ use crate::app::media::state::TimingControls;
 use std::sync::Arc;
 use tauri::AppHandle;
 
+const VIDEO_LEAD_PRESERVE_MIN_SECONDS: f64 = 0.16;
+const VIDEO_LEAD_PRESERVE_MAX_SECONDS: f64 = 0.24;
+
 pub(super) fn refresh_audio_rate(
     _app: &AppHandle,
     runtime: &mut DecodeRuntime,
@@ -174,23 +177,78 @@ pub(super) fn should_wait_for_audio_queue_drain(
     );
     let resume_queue_seconds_limit =
         queue_seconds_limit.map(|seconds| (seconds * 0.6_f64).max(0.05_f64));
-    let should_wait = if audio.stats.audio_only_backpressure_logged {
+    let depth_limit_reached = if audio.stats.audio_only_backpressure_logged {
         queue_depth > resume_queue_depth_limit
-            && resume_queue_seconds_limit
-                .map(|seconds| queued_seconds > seconds)
-                .unwrap_or(true)
     } else {
         queue_depth >= queue_depth_limit
-            && queue_seconds_limit
+    };
+    let seconds_limit_reached = if audio.stats.audio_only_backpressure_logged {
+        resume_queue_seconds_limit
+            .map(|seconds| queued_seconds > seconds)
+            .unwrap_or(false)
+    } else {
+        queue_seconds_limit
+            .map(|seconds| queued_seconds >= seconds)
+            .unwrap_or(false)
+    };
+    let should_wait = if audio.stats.audio_only_backpressure_logged {
+        if has_video_stream && !runtime.is_realtime_source {
+            depth_limit_reached || seconds_limit_reached
+        } else {
+            depth_limit_reached && resume_queue_seconds_limit
+                .map(|seconds| queued_seconds > seconds)
+                .unwrap_or(true)
+        }
+    } else {
+        if has_video_stream && !runtime.is_realtime_source {
+            depth_limit_reached || seconds_limit_reached
+        } else {
+            depth_limit_reached && queue_seconds_limit
                 .map(|seconds| queued_seconds >= seconds)
                 .unwrap_or(true)
+        }
     };
     if should_wait && !audio.stats.audio_only_backpressure_logged {
         audio.stats.audio_only_backpressure_logged = true;
     } else if !should_wait && audio.stats.audio_only_backpressure_logged {
         audio.stats.audio_only_backpressure_logged = false;
     }
-    should_wait && (!has_video_stream || runtime.is_realtime_source)
+    if should_wait && should_preserve_video_decode_headroom(runtime, has_video_stream) {
+        return false;
+    }
+    should_wait
+}
+
+fn should_preserve_video_decode_headroom(runtime: &DecodeRuntime, has_video_stream: bool) -> bool {
+    if !has_video_stream || runtime.is_realtime_source {
+        return false;
+    }
+    let Some(audio_now_seconds) = runtime
+        .loop_state
+        .audio_clock
+        .as_ref()
+        .map(|clock| clock.now_seconds())
+        .filter(|value| value.is_finite() && *value >= 0.0)
+    else {
+        return false;
+    };
+    let Some(video_tail_seconds) = runtime
+        .loop_state
+        .last_video_pts_seconds
+        .filter(|value| value.is_finite() && *value >= 0.0)
+    else {
+        return true;
+    };
+    let frame_duration_seconds = runtime
+        .loop_state
+        .playback_clock
+        .frame_duration_seconds()
+        .clamp(0.0, 0.08);
+    let minimum_video_lead_seconds =
+        (frame_duration_seconds * 4.0).clamp(VIDEO_LEAD_PRESERVE_MIN_SECONDS, VIDEO_LEAD_PRESERVE_MAX_SECONDS);
+    let current_video_lead_seconds = video_tail_seconds - audio_now_seconds;
+    current_video_lead_seconds.is_finite()
+        && current_video_lead_seconds < minimum_video_lead_seconds
 }
 
 fn audio_queue_resume_depth_limit(

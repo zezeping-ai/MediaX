@@ -73,7 +73,19 @@ impl AudioOutput {
         self.queued_duration.queued_seconds()
     }
 
-    pub fn append_pcm_f32_owned(&self, sample_rate: u32, channels: u16, pcm: Vec<f32>) {
+    pub fn playback_head_seconds(&self, extra_latency_seconds: f64) -> Option<f64> {
+        self.queued_duration
+            .playback_head_seconds(extra_latency_seconds)
+    }
+
+    pub fn append_pcm_f32_owned(
+        &self,
+        sample_rate: u32,
+        channels: u16,
+        pcm: Vec<f32>,
+        media_start_seconds: Option<f64>,
+        media_duration_seconds: f64,
+    ) {
         let Some(channels) = NonZeroU16::new(channels) else {
             return;
         };
@@ -86,13 +98,18 @@ impl AudioOutput {
         let frame_count = pcm.len() / usize::from(channels.get());
         let duration_micros =
             ((frame_count as u128) * 1_000_000u128 / u128::from(sample_rate.get())) as u64;
-        self.queued_duration.push_block(duration_micros);
+        let queued_block_id = self.queued_duration.push_block(
+            duration_micros,
+            media_start_seconds,
+            media_duration_seconds,
+        );
         let source = OwnedPcmSource::new(channels, sample_rate, pcm);
         self.player.append(MeteredSource::new(
             source,
             self.meter_shared.clone(),
             self.controls.clone(),
             self.queued_duration.clone(),
+            queued_block_id,
         ));
     }
 }

@@ -2,7 +2,7 @@
 
 ## MacOS安装打不开
 ```bash
-$ sudo xattr -rd com.apple.quarantine /Applications/sanmuyi.app
+$ sudo xattr -d com.apple.quarantine /Applications/mediax.app
 ```
 
 ## 支持的打开协议

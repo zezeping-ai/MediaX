@@ -3,7 +3,8 @@ use super::telemetry::emit_video_telemetry;
 use super::DrainFramesContext;
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::render::video_frame::{
-    can_bypass_scaler_for_renderer, ensure_scaler, preferred_scaled_format_for_renderer,
+    adaptive_upload_size_for_renderer, can_bypass_scaler_for_renderer, ensure_scaler,
+    preferred_scaled_format_for_renderer, preferred_scaling_flags_for_renderer,
     transfer_hw_frame_if_needed, ScalerSpec,
 };
 use crate::app::media::playback::runtime::emit_debug;
@@ -14,7 +15,6 @@ use crate::app::media::playback::runtime::write_latest_stream_position;
 use crate::app::media::state::MediaState;
 use ffmpeg_next::ffi;
 use ffmpeg_next::frame;
-use ffmpeg_next::software::scaling::flag::Flags;
 use std::time::{Duration, Instant};
 use tauri::Manager;
 
@@ -208,7 +208,25 @@ fn scale_frame_for_render(
     };
     let hw_transfer_cost = hw_transfer_cost_start.elapsed();
     let scale_cost_start = Instant::now();
-    if can_bypass_scaler_for_renderer(&frame_for_scale, ctx.output_width, ctx.output_height) {
+    let (surface_width, surface_height) = ctx.renderer.surface_size();
+    let render_target_width = if surface_width > 0 {
+        surface_width
+    } else {
+        ctx.output_width
+    };
+    let render_target_height = if surface_height > 0 {
+        surface_height
+    } else {
+        ctx.output_height
+    };
+    let (target_width, target_height) = adaptive_upload_size_for_renderer(
+        frame_for_scale.width(),
+        frame_for_scale.height(),
+        render_target_width,
+        render_target_height,
+        ctx.playback_clock.source_fps(),
+    );
+    if can_bypass_scaler_for_renderer(&frame_for_scale, target_width, target_height) {
         return Some((frame_for_scale, hw_transfer_cost, scale_cost_start.elapsed()));
     }
     if let Err(err) = ensure_scaler(
@@ -218,9 +236,14 @@ fn scale_frame_for_render(
             src_width: frame_for_scale.width(),
             src_height: frame_for_scale.height(),
             dst_format: preferred_scaled_format_for_renderer(&frame_for_scale),
-            dst_width: ctx.output_width,
-            dst_height: ctx.output_height,
-            flags: Flags::BILINEAR,
+            dst_width: target_width,
+            dst_height: target_height,
+            flags: preferred_scaling_flags_for_renderer(
+                frame_for_scale.width(),
+                frame_for_scale.height(),
+                target_width,
+                target_height,
+            ),
         },
     ) {
         ctx.frame_pipeline.on_scale_failed(ctx.app, &err);
@@ -295,7 +318,14 @@ fn render_clock_anchor_seconds(ctx: &DrainFramesContext<'_>) -> f64 {
     // With audio present, rebasing the renderer to the decode thread's newest position can
     // collapse queued future frames into "already due", which hurts smoothness on heavier GOPs.
     ctx.audio_clock
-        .map(|clock| clock.now_seconds())
+        .map(|clock| {
+            let renderer_audio_lead_seconds = if ctx.is_realtime_source {
+                0.0
+            } else {
+                (ctx.audio_allowed_lead_seconds * 0.5).min(0.006)
+            };
+            clock.now_seconds() + renderer_audio_lead_seconds
+        })
         .filter(|value| value.is_finite() && *value >= 0.0)
         .unwrap_or_else(|| (*ctx.current_position_seconds).max(0.0))
 }

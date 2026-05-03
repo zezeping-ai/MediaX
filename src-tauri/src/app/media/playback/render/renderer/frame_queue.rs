@@ -1,32 +1,71 @@
 use super::renderer_state::{recycle_frame, RendererInner, FRAME_QUEUE_HARD_CAPACITY};
 use super::QueuedFrame;
+use std::collections::VecDeque;
+
+const PRESENT_LEAD_MIN_SECONDS: f64 = 0.004;
+const PRESENT_LEAD_MAX_SECONDS: f64 = 0.018;
+const PRESENT_LEAD_FRACTION_OF_FRAME: f64 = 0.50;
+const STALE_DROP_LAG_MIN_SECONDS: f64 = 0.012;
+const STALE_DROP_LAG_MAX_SECONDS: f64 = 0.050;
+const STALE_DROP_LAG_FRACTION_OF_FRAME: f64 = 1.25;
 
 pub(super) struct FramePresentSelection {
     pub frame: Option<QueuedFrame>,
     pub remaining_queue_depth: usize,
 }
 
+pub(super) fn present_lead_seconds_for_queue(queue: &VecDeque<QueuedFrame>) -> f64 {
+    frame_interval_seconds_for_queue(queue)
+        .map(|frame_interval| {
+            (frame_interval * PRESENT_LEAD_FRACTION_OF_FRAME)
+                .clamp(PRESENT_LEAD_MIN_SECONDS, PRESENT_LEAD_MAX_SECONDS)
+        })
+        .unwrap_or(PRESENT_LEAD_MIN_SECONDS)
+}
+
+fn stale_drop_lag_seconds_for_queue(queue: &VecDeque<QueuedFrame>) -> f64 {
+    frame_interval_seconds_for_queue(queue)
+        .map(|frame_interval| {
+            (frame_interval * STALE_DROP_LAG_FRACTION_OF_FRAME)
+                .clamp(STALE_DROP_LAG_MIN_SECONDS, STALE_DROP_LAG_MAX_SECONDS)
+        })
+        .unwrap_or(STALE_DROP_LAG_MAX_SECONDS)
+}
+
+fn frame_interval_seconds_for_queue(queue: &VecDeque<QueuedFrame>) -> Option<f64> {
+    let mut frames = queue.iter();
+    let head_pts = frames.next()?.pts_seconds();
+    let next_pts = frames.next()?.pts_seconds();
+    let frame_interval = (next_pts - head_pts).abs();
+    frame_interval.is_finite().then_some(frame_interval)
+}
+
 pub(super) fn pick_frame_for_present(
     inner: &RendererInner,
     now_media_seconds: f64,
 ) -> FramePresentSelection {
-    let present_lead = 0.004;
-    let stale_drop_lag = 0.050;
-    let deadline = now_media_seconds + present_lead;
-    let stale_deadline = now_media_seconds - stale_drop_lag;
+    // Allow a modest early-present window so small main-thread / vsync jitter does not
+    // force us to miss the frame and show it one wakeup late.
+    let present_lead = inner
+        .queued_frames
+        .lock()
+        .ok()
+        .map(|queue| present_lead_seconds_for_queue(&queue))
+        .unwrap_or(PRESENT_LEAD_MIN_SECONDS);
     let Ok(mut queue) = inner.queued_frames.lock() else {
         return FramePresentSelection {
             frame: None,
             remaining_queue_depth: 0,
         };
     };
+    let stale_drop_lag = stale_drop_lag_seconds_for_queue(&queue);
+    let deadline = now_media_seconds + present_lead;
+    let stale_deadline = now_media_seconds - stale_drop_lag;
     let mut dropped_stale = false;
-    let mut dropped_stale_count = 0usize;
     while let Some(frame) = queue.front() {
         let pts_seconds = frame.pts_seconds();
         if !pts_seconds.is_finite() || pts_seconds < stale_deadline {
             dropped_stale = true;
-            dropped_stale_count = dropped_stale_count.saturating_add(1);
             let dropped = queue.pop_front().expect("frame exists");
             recycle_frame(inner, dropped);
             continue;

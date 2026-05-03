@@ -41,8 +41,9 @@ impl MediaPlaybackService {
         self.session.transport.status = PlaybackStatus::Paused;
         self.session.transport.error = None;
         reset_runtime_decode_state(&mut self.session);
-        // Opening a new source should not inherit previous source's manual downscale setting.
-        self.session.source.quality_mode = PlaybackQualityMode::Source;
+        // Default new playback to the adaptive path so large sources start from the
+        // smoother, cross-platform quality profile instead of always forcing source size.
+        self.session.source.quality_mode = PlaybackQualityMode::Auto;
         self.session.source.adaptive_quality_supported = adaptive_quality_supported;
         self.state()
     }
