@@ -7,6 +7,8 @@ use crate::app::media::state;
 use crate::app::media::state::MediaState;
 use tauri::{AppHandle, Manager, State};
 
+use super::super::helpers::set_pending_seek;
+
 pub(super) fn restart_active_playback(
     app: &AppHandle,
     state: &State<'_, MediaState>,
@@ -22,7 +24,7 @@ pub(super) fn restart_active_playback(
         "restart_begin",
         format!("restart playback source={source} resume={resume_position:.3}s"),
     );
-    super::set_pending_seek(state, resume_position)?;
+    set_pending_seek(state, resume_position)?;
     state.runtime.stream.advance_generation();
     let restart_epoch = state.runtime.stream.next_restart_epoch();
     // Run stop(join)+start in background so Tauri command won't freeze when FFmpeg demux stalls.

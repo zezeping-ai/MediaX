@@ -42,10 +42,19 @@ pub fn emit_snapshot_with_request_id(
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, String> {
     let snapshot = snapshot_from_state(state)?;
-    let envelope = build_media_event("playback_state", request_id.clone(), snapshot.clone());
+    emit_playback_state_snapshot(app, snapshot.clone(), request_id)?;
+    Ok(snapshot)
+}
+
+pub fn emit_playback_state_snapshot(
+    app: &AppHandle,
+    snapshot: MediaSnapshot,
+    request_id: Option<String>,
+) -> Result<(), String> {
+    let envelope = build_media_event("playback_state", request_id, snapshot);
     app.emit(MEDIA_PLAYBACK_STATE_EVENT, &envelope)
         .map_err(|err| format!("emit playback state failed: {err}"))?;
-    Ok(snapshot)
+    Ok(())
 }
 
 pub fn snapshot_from_state(state: &State<'_, MediaState>) -> Result<MediaSnapshot, String> {

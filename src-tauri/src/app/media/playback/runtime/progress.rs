@@ -1,10 +1,6 @@
-use crate::app::media::error::MediaError;
-use crate::app::media::playback::events::{
-    build_media_event, MEDIA_PLAYBACK_STATE_EVENT,
-};
 use crate::app::media::state::MediaState;
 use ffmpeg_next::{ffi, format};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 pub fn resolve_buffered_position_seconds(
     input_ctx: &format::context::Input,
@@ -45,17 +41,8 @@ pub fn update_playback_progress(
         return Ok(());
     }
     let snapshot = {
-        let library = state
-            .session
-            .library
-            .lock()
-            .map_err(|_| MediaError::state_poisoned_lock("media library state").to_string())?
-            .state();
-        let mut playback = state
-            .session
-            .playback
-            .lock()
-            .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())?;
+        let library = crate::app::media::state::library(&state)?.state();
+        let mut playback = crate::app::media::state::playback(&state)?;
         if finalize {
             playback.stop();
             state
@@ -73,9 +60,7 @@ pub fn update_playback_progress(
         }
         playback.snapshot(library)
     };
-    let envelope = build_media_event("playback_state", None, snapshot);
-    app.emit(MEDIA_PLAYBACK_STATE_EVENT, &envelope)
-        .map_err(|err| format!("emit playback state failed: {err}"))?;
+    crate::app::media::state::emit_playback_state_snapshot(app, snapshot, None)?;
     Ok(())
 }
 

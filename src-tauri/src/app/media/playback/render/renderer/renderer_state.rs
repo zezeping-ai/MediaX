@@ -5,24 +5,20 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize,
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+mod queue_policy;
 
 use crate::app::media::error::MediaError;
-use crate::app::media::playback::runtime::emit_debug;
 use tauri::Manager;
 
 use super::frame_queue::{pick_frame_for_present, submit_frame_to_queue};
 use super::helpers::wait_for_render_signal;
 
 pub(super) const FRAME_QUEUE_HARD_CAPACITY: usize = 6;
-const FRAME_QUEUE_TARGET_BASE_REALTIME: usize = 1;
-const FRAME_QUEUE_TARGET_BASE_NON_REALTIME: usize = 4;
 const RENDER_LOOP_IDLE_TICK: Duration = Duration::from_millis(8);
 const QUEUE_GROW_LAG_MS: f64 = 24.0;
 const QUEUE_SHRINK_LAG_MS: f64 = 8.0;
 const QUEUE_GROW_STREAK: u8 = 2;
 const QUEUE_SHRINK_STREAK: u8 = 18;
-const QUEUE_GROW_HOLD_AFTER_RESET_REALTIME: Duration = Duration::from_millis(3000);
-const QUEUE_GROW_HOLD_AFTER_RESET_NON_REALTIME: Duration = Duration::from_millis(350);
 
 #[derive(Clone)]
 pub struct RendererState {
@@ -84,7 +80,9 @@ impl RendererState {
                 frame_slot_cv: Condvar::new(),
                 video_scale_mode: AtomicU8::new(VideoScaleMode::Contain.as_u8()),
                 is_realtime_source: AtomicBool::new(false),
-                target_queue_capacity: AtomicUsize::new(FRAME_QUEUE_TARGET_BASE_NON_REALTIME),
+                target_queue_capacity: AtomicUsize::new(
+                    queue_policy::FRAME_QUEUE_TARGET_BASE_NON_REALTIME,
+                ),
                 last_render_cost_micros: AtomicU64::new(0),
                 last_present_lag_ms_bits: AtomicU32::new(0f32.to_bits()),
                 last_presented_pts_bits: AtomicU64::new(f64::NAN.to_bits()),
@@ -106,7 +104,7 @@ impl RendererState {
             .store(is_realtime_source, Ordering::Relaxed);
         self.inner
             .target_queue_capacity
-            .store(base_target_queue_capacity(&self.inner), Ordering::Relaxed);
+            .store(queue_policy::base_target_queue_capacity(&self.inner), Ordering::Relaxed);
         if let Ok(mut tuning) = self.inner.queue_tuning.lock() {
             *tuning = QueueTuningState::default();
         }
@@ -245,7 +243,7 @@ impl RendererState {
             .store(f64::NAN.to_bits(), Ordering::Relaxed);
         self.inner
             .target_queue_capacity
-            .store(base_target_queue_capacity(&self.inner), Ordering::Relaxed);
+            .store(queue_policy::base_target_queue_capacity(&self.inner), Ordering::Relaxed);
         if let Ok(mut tuning) = self.inner.queue_tuning.lock() {
             *tuning = QueueTuningState::default();
         }
@@ -253,7 +251,7 @@ impl RendererState {
             // After seek/restart/pause-resume we still debounce reactive growth, but for
             // non-realtime playback the hold must stay short so heavy GOP/B-frame content can
             // rebuild a useful render lead immediately instead of starving at depth 1.
-            *hold_until = Some(Instant::now() + queue_growth_hold_after_reset(&self.inner));
+            *hold_until = Some(Instant::now() + queue_policy::queue_growth_hold_after_reset(&self.inner));
         }
         self.update_clock(media_seconds, playback_rate);
         if let Ok(mut pending) = self.inner.pending_render.lock() {
@@ -343,8 +341,8 @@ impl RendererState {
     }
 
     pub fn queue_capacity(&self) -> usize {
-        let min_capacity = base_target_queue_capacity(&self.inner);
-        let max_capacity = max_target_queue_capacity(&self.inner);
+        let min_capacity = queue_policy::base_target_queue_capacity(&self.inner);
+        let max_capacity = queue_policy::max_target_queue_capacity(&self.inner);
         self.inner
             .target_queue_capacity
             .load(Ordering::Relaxed)
@@ -408,8 +406,8 @@ fn update_dynamic_queue_capacity(
     let Ok(mut tuning) = inner.queue_tuning.lock() else {
         return;
     };
-    let min_capacity = base_target_queue_capacity(inner);
-    let max_capacity = max_target_queue_capacity(inner);
+    let min_capacity = queue_policy::base_target_queue_capacity(inner);
+    let max_capacity = queue_policy::max_target_queue_capacity(inner);
     let current_capacity = inner
         .target_queue_capacity
         .load(Ordering::Relaxed)
@@ -443,7 +441,7 @@ fn update_dynamic_queue_capacity(
             inner
                 .target_queue_capacity
                 .store(next_capacity, Ordering::Relaxed);
-            emit_queue_capacity_debug(
+            queue_policy::emit_queue_capacity_debug(
                 inner,
                 "renderer_queue_grow",
                 current_capacity,
@@ -463,7 +461,7 @@ fn update_dynamic_queue_capacity(
             inner
                 .target_queue_capacity
                 .store(next_capacity, Ordering::Relaxed);
-            emit_queue_capacity_debug(
+            queue_policy::emit_queue_capacity_debug(
                 inner,
                 "renderer_queue_shrink",
                 current_capacity,
@@ -479,56 +477,3 @@ fn update_dynamic_queue_capacity(
     tuning.healthy_present_streak = 0;
 }
 
-fn base_target_queue_capacity(inner: &RendererInner) -> usize {
-    if inner.is_realtime_source.load(Ordering::Relaxed) {
-        FRAME_QUEUE_TARGET_BASE_REALTIME
-    } else {
-        FRAME_QUEUE_TARGET_BASE_NON_REALTIME
-    }
-}
-
-fn max_target_queue_capacity(inner: &RendererInner) -> usize {
-    if inner.is_realtime_source.load(Ordering::Relaxed) {
-        FRAME_QUEUE_TARGET_BASE_REALTIME
-    } else {
-        FRAME_QUEUE_HARD_CAPACITY
-    }
-}
-
-fn queue_growth_hold_after_reset(inner: &RendererInner) -> Duration {
-    if inner.is_realtime_source.load(Ordering::Relaxed) {
-        QUEUE_GROW_HOLD_AFTER_RESET_REALTIME
-    } else {
-        QUEUE_GROW_HOLD_AFTER_RESET_NON_REALTIME
-    }
-}
-
-fn emit_queue_capacity_debug(
-    inner: &RendererInner,
-    stage: &'static str,
-    from_capacity: usize,
-    to_capacity: usize,
-    lag_ms: f64,
-    remaining_queue_depth: usize,
-) {
-    let Some(app_handle) = inner
-        .app_handle
-        .lock()
-        .ok()
-        .and_then(|value| value.clone())
-    else {
-        return;
-    };
-    emit_debug(
-        &app_handle,
-        stage,
-        format!(
-            "capacity {}->{} lag_ms={:.3} remaining_queue_depth={} realtime={}",
-            from_capacity,
-            to_capacity,
-            lag_ms,
-            remaining_queue_depth,
-            inner.is_realtime_source.load(Ordering::Relaxed),
-        ),
-    );
-}

@@ -5,7 +5,6 @@ use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::dto::{
     HardwareDecodeMode, PlaybackChannelRouting, PlaybackQualityMode,
 };
-use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::session::coordinator;
 use crate::app::media::state::MediaState;
 use tauri::{AppHandle, State};
@@ -39,7 +38,6 @@ pub fn playback_set_rate(
     let playback_rate = playback_rate
         .or(playbackRate)
         .ok_or_else(|| MediaError::invalid_input("missing playback_rate"))?;
-    emit_debug(&app, "rate_request", format!("requested playback_rate={playback_rate:.3}"));
     command_result(coordinator::set_rate(app, state, playback_rate, request_id))
 }
 
@@ -142,7 +140,6 @@ pub fn playback_set_quality(
     mode: PlaybackQualityMode,
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, MediaCommandError> {
-    emit_debug(&app, "quality_request", format!("requested quality_mode={mode:?}"));
     command_result(coordinator::set_quality_mode(app, state, mode, request_id))
 }
 

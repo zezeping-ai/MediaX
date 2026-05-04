@@ -1,12 +1,10 @@
 use super::emit_debug;
 use super::pacing::current_audio_allowed_lead_seconds;
 use super::DecodeRuntime;
+mod cache_recording;
 use crate::app::media::playback::rate::video_drain_batch_limit;
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::audio_pipeline::drain_audio_frames;
-use crate::app::media::playback::runtime::session::{
-    current_recording_target, update_cache_session_error, CacheRemuxWriter,
-};
 use crate::app::media::playback::runtime::video_pipeline::{
     drain_frames, DrainFramesContext, VideoFrameTypeMetricsRef, VideoTimestampMetricsRef,
 };
@@ -36,7 +34,7 @@ pub(super) fn handle_packet(
     packet: Packet,
 ) -> Result<(), String> {
     track_packet_windows(runtime, &packet);
-    update_cache_recording(app, source, runtime, &packet)?;
+    cache_recording::update_cache_recording(app, source, runtime, &packet)?;
 
     if is_video_packet(runtime, &packet) {
         handle_video_packet(
@@ -443,63 +441,3 @@ fn update_audio_only_progress(
     Ok(())
 }
 
-fn update_cache_recording(
-    app: &AppHandle,
-    source: &str,
-    runtime: &mut DecodeRuntime,
-    packet: &Packet,
-) -> Result<(), String> {
-    let recording_target = current_recording_target(app, source)?;
-    sync_cache_writer_target(app, source, runtime, recording_target.as_deref());
-    if let Some(writer) = runtime.loop_state.cache_writer.as_mut() {
-        if let Err(err) = writer.write_packet(&runtime.video_ctx.input_ctx, packet) {
-            writer.finish();
-            runtime.loop_state.cache_writer = None;
-            update_cache_session_error(app, source, err.to_string());
-            emit_debug(app, "cache_recording_error", err);
-        }
-    }
-    Ok(())
-}
-
-fn sync_cache_writer_target(
-    app: &AppHandle,
-    source: &str,
-    runtime: &mut DecodeRuntime,
-    recording_target: Option<&str>,
-) {
-    match (runtime.loop_state.cache_writer.as_ref(), recording_target) {
-        (None, Some(target)) => start_cache_writer(app, source, runtime, target),
-        (Some(writer), Some(target)) if writer.output_path != target => {
-            finish_cache_writer(runtime);
-        }
-        (Some(_), None) => {
-            finish_cache_writer(runtime);
-        }
-        _ => {}
-    }
-}
-
-fn start_cache_writer(app: &AppHandle, source: &str, runtime: &mut DecodeRuntime, target: &str) {
-    match CacheRemuxWriter::new(&runtime.video_ctx.input_ctx, target) {
-        Ok(writer) => {
-            emit_debug(
-                app,
-                "cache_recording",
-                format!("start remux recording: {target}"),
-            );
-            runtime.loop_state.cache_writer = Some(writer);
-        }
-        Err(err) => {
-            update_cache_session_error(app, source, err.clone());
-            emit_debug(app, "cache_recording_error", err);
-        }
-    }
-}
-
-fn finish_cache_writer(runtime: &mut DecodeRuntime) {
-    if let Some(writer) = runtime.loop_state.cache_writer.as_mut() {
-        writer.finish();
-    }
-    runtime.loop_state.cache_writer = None;
-}
