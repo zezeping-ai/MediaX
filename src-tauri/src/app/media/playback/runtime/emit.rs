@@ -50,6 +50,8 @@ fn should_persist_debug_stage(stage: &str) -> bool {
             | "restart_begin"
             | "restart_join_begin"
             | "restart_join_end"
+            | "restart_join_timeout"
+            | "restart_skipped"
             | "restart_stream_start"
             | "running"
             | "seek"

@@ -24,13 +24,30 @@ pub(super) fn restart_active_playback(
     );
     super::set_pending_seek(state, resume_position)?;
     state.runtime.stream.advance_generation();
+    let restart_epoch = state.runtime.stream.next_restart_epoch();
     // Run stop(join)+start in background so Tauri command won't freeze when FFmpeg demux stalls.
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let state = app.state::<MediaState>();
+        if !state.runtime.stream.is_restart_epoch_current(restart_epoch) {
+            emit_debug(&app, "restart_skipped", "restart aborted by newer request");
+            return;
+        }
         emit_debug(&app, "restart_join_begin", "stop decode stream (blocking join)");
         if let Err(err) = stop_decode_stream_blocking(&state) {
-            emit_debug(&app, "restart_error", format!("stop decode stream failed: {err}"));
+            if err.contains("join timeout") {
+                emit_debug(
+                    &app,
+                    "restart_join_timeout",
+                    format!("decode thread join timeout, continue with degraded restart: {err}"),
+                );
+            } else {
+                emit_debug(&app, "restart_error", format!("stop decode stream failed: {err}"));
+                return;
+            }
+        }
+        if !state.runtime.stream.is_restart_epoch_current(restart_epoch) {
+            emit_debug(&app, "restart_skipped", "restart aborted after join by newer request");
             return;
         }
         emit_debug(&app, "restart_join_end", "decode stream stopped");

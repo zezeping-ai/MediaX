@@ -2,7 +2,9 @@ mod decode_thread;
 mod error_events;
 
 use crate::app::media::state::{DecodeStreamHandles, MediaState, StreamRuntimeState};
+use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 use tauri::{AppHandle, State};
 
 use self::decode_thread::spawn_decode_stream;
@@ -17,6 +19,8 @@ fn take_decode_stream_handles(
         .map_err(|err| err.to_string())
 }
 
+const DECODE_JOIN_TIMEOUT_MS: u64 = 1200;
+
 /// Request decode stream stop and wait for thread exit.
 ///
 /// Use this when the caller is about to start a new decode stream and must avoid
@@ -27,7 +31,9 @@ pub fn stop_decode_stream_blocking(state: &State<'_, MediaState>) -> Result<(), 
         return Ok(());
     }
     StreamRuntimeState::request_stop(&handles);
-    StreamRuntimeState::join(handles);
+    if let Some(handle) = handles.1 {
+        join_decode_thread_with_timeout(handle, Duration::from_millis(DECODE_JOIN_TIMEOUT_MS))?;
+    }
     Ok(())
 }
 
@@ -88,4 +94,20 @@ pub fn read_latest_stream_position(state: &State<'_, MediaState>) -> Result<f64,
         .stream
         .latest_position_seconds()
         .map_err(|err| err.to_string())
+}
+
+fn join_decode_thread_with_timeout(
+    handle: thread::JoinHandle<()>,
+    timeout: Duration,
+) -> Result<(), String> {
+    let timeout_ms = timeout.as_millis();
+    let (done_tx, done_rx) = mpsc::channel::<()>();
+    thread::spawn(move || {
+        let _ = handle.join();
+        let _ = done_tx.send(());
+    });
+    done_rx
+        .recv_timeout(timeout)
+        .map_err(|_| format!("decode thread join timeout after {timeout_ms}ms"))?;
+    Ok(())
 }

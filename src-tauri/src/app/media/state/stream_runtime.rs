@@ -1,5 +1,5 @@
 use crate::app::media::error::MediaError;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -10,11 +10,20 @@ pub struct StreamRuntimeState {
     pending_seek_seconds: Mutex<Option<f64>>,
     latest_position_seconds: Mutex<f64>,
     generation: AtomicU32,
+    restart_epoch: AtomicU64,
 }
 
 pub type DecodeStreamHandles = (Option<Arc<AtomicBool>>, Option<JoinHandle<()>>);
 
 impl StreamRuntimeState {
+    pub fn next_restart_epoch(&self) -> u64 {
+        self.restart_epoch.fetch_add(1, Ordering::Relaxed).wrapping_add(1)
+    }
+
+    pub fn is_restart_epoch_current(&self, epoch: u64) -> bool {
+        self.restart_epoch.load(Ordering::Relaxed) == epoch
+    }
+
     pub fn take_decode_stream_handles(&self) -> Result<DecodeStreamHandles, MediaError> {
         let stop_flag = self
             .stop_flag
@@ -62,12 +71,6 @@ impl StreamRuntimeState {
     pub fn request_stop(handles: &DecodeStreamHandles) {
         if let Some(flag) = handles.0.as_ref() {
             flag.store(true, Ordering::Relaxed);
-        }
-    }
-
-    pub fn join(handles: DecodeStreamHandles) {
-        if let Some(handle) = handles.1 {
-            let _ = handle.join();
         }
     }
 

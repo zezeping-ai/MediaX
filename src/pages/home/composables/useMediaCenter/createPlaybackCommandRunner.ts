@@ -2,6 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type { MediaSnapshot, PlaybackChannelRouting, PlaybackQualityMode } from "@/modules/media-types";
 
 const DEV_SEEK_LOG = import.meta.env.DEV;
+const SEEK_COALESCE_WINDOW_MS = 90;
 
 type CreatePlaybackCommandRunnerOptions = {
   commands: {
@@ -32,6 +33,57 @@ type CreatePlaybackCommandRunnerOptions = {
 };
 
 export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunnerOptions) {
+  let seekTimer: number | null = null;
+  let seekInFlight: Promise<void> | null = null;
+  let seekQueuedTarget: number | null = null;
+  let seekQueuedResolver: (() => void) | null = null;
+  let seekQueuedRejecter: ((error: unknown) => void) | null = null;
+
+  function flushSeekQueueSoon() {
+    if (seekTimer !== null) {
+      return;
+    }
+    seekTimer = window.setTimeout(() => {
+      seekTimer = null;
+      void runSeekFlush();
+    }, SEEK_COALESCE_WINDOW_MS);
+  }
+
+  async function runSeekFlush() {
+    if (seekInFlight) {
+      return;
+    }
+    if (seekQueuedTarget === null) {
+      return;
+    }
+    const target = seekQueuedTarget;
+    seekQueuedTarget = null;
+    const resolve = seekQueuedResolver;
+    const reject = seekQueuedRejecter;
+    seekQueuedResolver = null;
+    seekQueuedRejecter = null;
+
+    seekInFlight = (async () => {
+      try {
+        const status = options.playback.value?.status ?? "unknown";
+        const forceRender = status === "paused";
+        logSeekDecision("seek", target, forceRender, status);
+        await run(() => options.commands.seek(target, forceRender));
+        resolve?.();
+      } catch (error) {
+        reject?.(error);
+        options.errorMessage.value = options.toUserErrorMessage(error);
+      } finally {
+        seekInFlight = null;
+        if (seekQueuedTarget !== null) {
+          flushSeekQueueSoon();
+        }
+      }
+    })();
+
+    await seekInFlight;
+  }
+
   async function run(command: () => Promise<MediaSnapshot>) {
     const nextSnapshot = await command();
     options.updateSnapshot(nextSnapshot);
@@ -86,11 +138,29 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     await options.refreshCacheRecordingStatus();
   }
 
-  async function seek(positionSeconds: number) {
-    const status = options.playback.value?.status ?? "unknown";
-    const forceRender = status === "paused";
-    logSeekDecision("seek", positionSeconds, forceRender, status);
-    await run(() => options.commands.seek(positionSeconds, forceRender));
+  function seek(positionSeconds: number) {
+    seekQueuedTarget = positionSeconds;
+    if (!seekQueuedResolver) {
+      const promise = new Promise<void>((resolve, reject) => {
+        seekQueuedResolver = resolve;
+        seekQueuedRejecter = reject;
+      });
+      flushSeekQueueSoon();
+      return promise;
+    }
+    flushSeekQueueSoon();
+    return new Promise<void>((resolve, reject) => {
+      const prevResolve = seekQueuedResolver;
+      const prevReject = seekQueuedRejecter;
+      seekQueuedResolver = () => {
+        prevResolve?.();
+        resolve();
+      };
+      seekQueuedRejecter = (error) => {
+        prevReject?.(error);
+        reject(error);
+      };
+    });
   }
 
   async function seekPreview(positionSeconds: number) {
