@@ -63,31 +63,31 @@ pub(super) fn create_decode_runtime(
         request.stream_generation,
         &video_ctx,
     );
-    let audio_pipeline = prepare_audio_pipeline(
-        dependencies.app,
-        &video_ctx,
-        dependencies.audio_controls,
-    )?;
+    let audio_pipeline =
+        prepare_audio_pipeline(dependencies.app, &video_ctx, dependencies.audio_controls)?;
     emit_runtime_metadata(dependencies.app, &video_ctx);
-    dependencies.renderer.set_realtime_source(is_realtime_source);
+    dependencies
+        .renderer
+        .set_realtime_source(is_realtime_source);
     dependencies.renderer.reset_timeline(
         0.0,
         effective_playback_rate(
-            crate::app::media::playback::rate::PlaybackRate::new(
-                clamp_playback_rate(dependencies.timing_controls.playback_rate()),
-            ),
+            crate::app::media::playback::rate::PlaybackRate::new(clamp_playback_rate(
+                dependencies.timing_controls.playback_rate(),
+            )),
             is_realtime_source,
         )
         .as_f64(),
     );
     prime_audio_poster_frame(dependencies.renderer, &video_ctx);
     emit_debug(dependencies.app, "running", "decode loop running");
+    let loop_state = DecodeLoopState::new(
+        video_ctx.fps_value,
+        dependencies.timing_controls.clone(),
+        is_realtime_source,
+    );
     Ok(DecodeRuntime {
-        loop_state: DecodeLoopState::new(
-            video_ctx.fps_value,
-            dependencies.timing_controls.clone(),
-            is_realtime_source,
-        ),
+        loop_state,
         video_ctx,
         scaler: None,
         audio_pipeline,

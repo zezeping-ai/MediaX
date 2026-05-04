@@ -10,7 +10,6 @@ const AUDIO_OUTPUT_LATENCY_COMPENSATION_SHALLOW_QUEUE_BONUS_SECONDS: f64 = 0.010
 const AUDIO_OUTPUT_LATENCY_COMPENSATION_SEEK_SETTLE_BONUS_SECONDS: f64 = 0.008;
 const AUDIO_OUTPUT_LATENCY_COMPENSATION_WARMUP_MAX_SECONDS: f64 = 0.016;
 const AUDIO_OUTPUT_LATENCY_COMPENSATION_TOTAL_MAX_SECONDS: f64 = 0.090;
-
 pub(super) fn output_latency_compensation_seconds(
     output_wall_seconds: f64,
     queued_block_depth: usize,
@@ -45,10 +44,9 @@ pub(super) fn output_latency_compensation_seconds(
     let base_output_latency_seconds = (output_wall_seconds.max(0.0) * latency_block_multiplier
         + shallow_queue_bonus_seconds)
         .min(AUDIO_OUTPUT_LATENCY_COMPENSATION_MAX_SECONDS);
-    let extra_output_latency_seconds = (base_output_latency_seconds
-        + seek_settle_bonus_seconds
-        + warmup_bonus_seconds)
-        .min(AUDIO_OUTPUT_LATENCY_COMPENSATION_TOTAL_MAX_SECONDS);
+    let extra_output_latency_seconds =
+        (base_output_latency_seconds + seek_settle_bonus_seconds + warmup_bonus_seconds)
+            .min(AUDIO_OUTPUT_LATENCY_COMPENSATION_TOTAL_MAX_SECONDS);
     let display_hold_compensation_seconds = video_frame_duration_seconds
         .filter(|value| value.is_finite() && *value > 0.0)
         .map(|value| value * 0.5)
@@ -73,15 +71,12 @@ pub(super) fn sync_audio_clock(
             *active_seek_target_seconds = None;
         }
         if audio_clock.is_none() {
-            *audio_clock = Some(AudioClock::new(
-                seconds,
-                playback_rate.as_f64(),
-            ));
+            *audio_clock = Some(AudioClock::new(seconds, playback_rate.as_f64()));
         }
     }
 }
 
-pub(super) fn sync_audio_clock_to_output_head(
+pub(super) fn sync_audio_clock_to_queue_estimate(
     frame_start_seconds: Option<f64>,
     output_samples: usize,
     channels: usize,
@@ -92,19 +87,8 @@ pub(super) fn sync_audio_clock_to_output_head(
     video_frame_duration_seconds: Option<f64>,
     in_seek_settle: bool,
     audio_sync_warmup_factor: f64,
-    tracked_playback_head_seconds: Option<f64>,
     audio_clock: &mut Option<AudioClock>,
 ) {
-    if let Some(playback_head_seconds) =
-        tracked_playback_head_seconds.filter(|value| value.is_finite() && *value >= 0.0)
-    {
-        let playback_rate_f64 = playback_rate.as_f64().max(0.25);
-        match audio_clock.as_mut() {
-            Some(clock) => clock.rebase_position(playback_head_seconds, playback_rate_f64),
-            None => *audio_clock = Some(AudioClock::new(playback_head_seconds, playback_rate_f64)),
-        }
-        return;
-    }
     let Some(frame_start_seconds) =
         frame_start_seconds.filter(|value| value.is_finite() && *value >= 0.0)
     else {
@@ -117,6 +101,9 @@ pub(super) fn sync_audio_clock_to_output_head(
     if output_frames == 0 {
         return;
     }
+    // Keep scheduling on queue-derived media math only. Real backend playback heads are tracked
+    // separately and must not directly steer decode/pacing, otherwise measured jitter feeds back
+    // into scheduling and can make long-running A/V sync less stable.
     let playback_rate_f64 = playback_rate.as_f64().max(0.25);
     let output_wall_seconds = output_frames as f64 / sample_rate as f64;
     let enqueued_media_end_seconds = frame_start_seconds + output_wall_seconds * playback_rate_f64;

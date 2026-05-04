@@ -48,12 +48,16 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
     openSource: (source: string) => runStartupAction(async () => {
       await playbackRunner.openSource(source);
     }),
-    openLocalFileByDialog: () => runStartupAction(async () => {
+    // Avoid isBusy overlay while the native picker is open — it sits above the webview and can block
+    // interaction or confuse focus on transparent windows.
+    openLocalFileByDialog: async () => {
       const selectedPath = await playbackRunner.openLocalFileByDialog();
       if (selectedPath) {
-        await playbackRunner.openSource(selectedPath);
+        await runStartupAction(async () => {
+          await playbackRunner.openSource(selectedPath);
+        });
       }
-    }),
+    },
     openUrl: (url: string) => runStartupAction(async () => {
       await urlInputController.submitUrl(url);
     }),

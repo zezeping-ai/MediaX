@@ -5,12 +5,14 @@ import { PREVIEW_SEEK_INTERVAL_MS } from "../../components/PlaybackControls/play
 
 interface UsePlaybackTimelineStateArgs {
   playback: () => PlaybackState | null;
+  progressPosition: () => number | null | undefined;
   onSeek: (seconds: number) => void;
   onSeekPreview: (seconds: number) => void;
 }
 
 export function usePlaybackTimelineState({
   playback,
+  progressPosition,
   onSeek,
   onSeekPreview,
 }: UsePlaybackTimelineStateArgs) {
@@ -52,9 +54,12 @@ export function usePlaybackTimelineState({
   watch(
     () => {
       const value = playback();
+      const override = progressPosition();
       return {
         status: value?.status,
         positionSeconds: value?.position_seconds ?? 0,
+        progressPositionSeconds:
+          typeof override === "number" && Number.isFinite(override) ? Math.max(0, override) : null,
         playbackRate: value?.playback_rate ?? 1,
         durationSeconds: value?.duration_seconds ?? 0,
       };
@@ -71,7 +76,7 @@ export function usePlaybackTimelineState({
         return;
       }
 
-      const backendPos = nextState.positionSeconds;
+      const backendPos = nextState.progressPositionSeconds ?? nextState.positionSeconds;
       const drift = backendPos - anchorPosition.value;
       const backendJumped = Math.abs(drift) >= 0.5;
       const backendAdvanced = drift > 0.05;

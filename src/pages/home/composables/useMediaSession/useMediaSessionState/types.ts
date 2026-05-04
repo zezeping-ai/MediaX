@@ -12,6 +12,14 @@ export interface MediaSessionStateRefs {
   currentSource: Ref<string>;
   networkReadBytesPerSecond: Ref<number | null>;
   networkSustainRatio: Ref<number | null>;
+  progressClockSeconds: Ref<number | null>;
+  displayVideoPtsSeconds: Ref<number | null>;
+  effectiveDisplayVideoPtsSeconds: Ref<number | null>;
+  syncVideoPtsSeconds: Ref<number | null>;
+  presentedVideoPtsSeconds: Ref<number | null>;
+  submittedVideoPtsSeconds: Ref<number | null>;
+  currentAudioClockSeconds: Ref<number | null>;
+  syncVideoMinusAudioSeconds: Ref<number | null>;
   lastTelemetryAtMs: Ref<number>;
   telemetryStaleTimeoutId: Ref<number | null>;
 }

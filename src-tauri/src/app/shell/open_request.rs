@@ -5,9 +5,9 @@ use crate::app::shell::window_actions::reveal_main_window;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager};
 #[cfg(any(desktop, target_os = "macos"))]
 use tauri::Url;
+use tauri::{AppHandle, Manager};
 #[cfg(desktop)]
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -103,6 +103,44 @@ pub fn dispatch_open_request(app: &AppHandle, request: OpenSourceRequest<'_>) {
     }
 
     schedule_open_source(app.clone(), request.source.to_string(), request.stage);
+}
+
+/// Desktop: native file picker on a worker thread + same open/play path as CLI drops (reliable vs webview dialog IPC).
+#[cfg(desktop)]
+pub fn schedule_native_open_local_dialog(app: &AppHandle) {
+    use tauri_plugin_dialog::DialogExt;
+
+    const MEDIA_DLG_FILTERS: &[&str] = &[
+        "mp4", "mkv", "mov", "avi", "webm", "flv", "m4v", "wmv", "mpeg", "mpg", "ts", "m2ts",
+        "mts", "mxf", "rm", "rmvb", "3gp", "3g2", "ogv", "asf", "vob", "f4v", "divx", "mp3",
+        "flac", "wav", "aac", "m4a", "ogg", "opus", "wma", "aif", "aiff", "ape", "alac", "amr",
+        "ac3", "dts", "mp2", "mka",
+    ];
+
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("选择本地媒体文件")
+            .add_filter("Media", MEDIA_DLG_FILTERS)
+            .blocking_pick_file();
+
+        let Some(file) = picked else {
+            return;
+        };
+        let Ok(path) = file.into_path() else {
+            return;
+        };
+        let source = normalize_path(path);
+        dispatch_open_request(
+            &app,
+            OpenSourceRequest {
+                source: &source,
+                stage: "native_file_dialog",
+            },
+        );
+    });
 }
 
 fn has_autoprobe_source() -> bool {
@@ -206,7 +244,9 @@ fn schedule_open_source(app: AppHandle, source: String, stage: &'static str) {
         std::thread::sleep(Duration::from_millis(320));
         append_shell_log(&app, stage, &format!("open source: {source}"));
         let _ = reveal_main_window(&app);
-        if let Err(err) = coordinator::open(app.clone(), app.state::<MediaState>(), source.clone(), None) {
+        if let Err(err) =
+            coordinator::open(app.clone(), app.state::<MediaState>(), source.clone(), None)
+        {
             append_shell_log(&app, "launch_error", &format!("open failed: {err}"));
             return;
         }

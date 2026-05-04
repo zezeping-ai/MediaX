@@ -9,6 +9,9 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [vue(), vueJsx(), tailwindcss()],
+  build: {
+    chunkSizeWarningLimit: 900,
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

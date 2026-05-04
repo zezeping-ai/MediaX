@@ -41,7 +41,9 @@ impl Renderer {
             }
         };
         let acquire_surface = acquire_started_at.elapsed();
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         let encode_and_submit_started_at = Instant::now();
         let mut encoder = self
             .device

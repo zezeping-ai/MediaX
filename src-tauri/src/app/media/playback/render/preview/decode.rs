@@ -3,8 +3,8 @@ use super::encoder::create_preview_frame;
 use crate::app::media::model::PreviewFrame;
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::render::video_frame::{
-    detect_color_profile, ensure_scaler, preferred_scaled_format_for_renderer,
-    transfer_hw_frame_if_needed, ScalerSpec,
+    can_bypass_scaler_for_renderer, detect_color_profile, ensure_scaler,
+    preferred_scaled_format_for_renderer, transfer_or_prepare_decoder_frame_for_scale, ScalerSpec,
 };
 use ffmpeg_next::format;
 use ffmpeg_next::frame;
@@ -23,31 +23,42 @@ where
         if should_abort() {
             return Ok(true);
         }
-        let frame_for_scale = match transfer_hw_frame_if_needed(&decoded) {
-            Ok(frame) => frame,
+        let hinted_seconds =
+            timestamp_to_seconds(decoded.timestamp(), decoded.pts(), ctx.video_time_base);
+        let hw_cpu = match transfer_or_prepare_decoder_frame_for_scale(&mut decoded) {
+            Ok(v) => v,
             Err(_) => continue,
         };
+        let src: &frame::Video = hw_cpu.as_ref().unwrap_or(&decoded);
         ensure_scaler(
             ctx.scaler,
             ScalerSpec {
-                src_format: frame_for_scale.format(),
-                src_width: frame_for_scale.width(),
-                src_height: frame_for_scale.height(),
-                dst_format: preferred_scaled_format_for_renderer(&frame_for_scale),
+                src_format: src.format(),
+                src_width: src.width(),
+                src_height: src.height(),
+                dst_format: preferred_scaled_format_for_renderer(src),
                 dst_width: ctx.output_width,
                 dst_height: ctx.output_height,
                 flags: Flags::BILINEAR,
             },
         )?;
-        let mut scaled_frame = frame::Video::empty();
-        if let Some(scaler) = ctx.scaler.as_mut() {
-            scaler
-                .run(&frame_for_scale, &mut scaled_frame)
+        let scaled_frame = if can_bypass_scaler_for_renderer(src, ctx.output_width, ctx.output_height)
+        {
+            if let Some(frame) = hw_cpu {
+                frame
+            } else {
+                std::mem::replace(&mut decoded, frame::Video::empty())
+            }
+        } else {
+            let mut out = frame::Video::empty();
+            ctx.scaler
+                .as_mut()
+                .ok_or_else(|| "preview scaler missing after ensure_scaler".to_string())?
+                .run(src, &mut out)
                 .map_err(|err| format!("scale frame failed: {err}"))?;
-        }
+            out
+        };
         let color_profile = detect_color_profile(&scaled_frame);
-        let hinted_seconds =
-            timestamp_to_seconds(decoded.timestamp(), decoded.pts(), ctx.video_time_base);
         let submit_preview_frame = |renderer: &crate::app::media::playback::render::renderer::RendererState,
                                     frame: frame::Video,
                                     pts_seconds: Option<f64>,
@@ -101,33 +112,44 @@ where
         let hinted_seconds =
             timestamp_to_seconds(decoded.timestamp(), decoded.pts(), ctx.video_time_base);
         if !ctx.seek_applied
-            && hinted_seconds
-                .is_some_and(|seconds| seconds + 0.04 < ctx.target_seconds && Instant::now() < ctx.deadline)
+            && hinted_seconds.is_some_and(|seconds| {
+                seconds + 0.04 < ctx.target_seconds && Instant::now() < ctx.deadline
+            })
         {
             continue;
         }
-        let frame_for_scale = match transfer_hw_frame_if_needed(&decoded) {
-            Ok(frame) => frame,
+        let hw_cpu = match transfer_or_prepare_decoder_frame_for_scale(&mut decoded) {
+            Ok(v) => v,
             Err(_) => continue,
         };
+        let src: &frame::Video = hw_cpu.as_ref().unwrap_or(&decoded);
         ensure_scaler(
             ctx.scaler,
             ScalerSpec {
-                src_format: frame_for_scale.format(),
-                src_width: frame_for_scale.width(),
-                src_height: frame_for_scale.height(),
+                src_format: src.format(),
+                src_width: src.width(),
+                src_height: src.height(),
                 dst_format: format::pixel::Pixel::RGB24,
                 dst_width: ctx.output_width,
                 dst_height: ctx.output_height,
                 flags: Flags::BILINEAR,
             },
         )?;
-        let mut rgb_frame = frame::Video::empty();
-        if let Some(scaler) = ctx.scaler.as_mut() {
-            scaler
-                .run(&frame_for_scale, &mut rgb_frame)
+        let rgb_frame = if can_bypass_scaler_for_renderer(src, ctx.output_width, ctx.output_height) {
+            if let Some(frame) = hw_cpu {
+                frame
+            } else {
+                std::mem::replace(&mut decoded, frame::Video::empty())
+            }
+        } else {
+            let mut out = frame::Video::empty();
+            ctx.scaler
+                .as_mut()
+                .ok_or_else(|| "preview scaler missing after ensure_scaler".to_string())?
+                .run(src, &mut out)
                 .map_err(|err| format!("preview scale rgb frame failed: {err}"))?;
-        }
+            out
+        };
         return Ok(Some(create_preview_frame(
             &rgb_frame,
             hinted_seconds.unwrap_or(ctx.target_seconds),

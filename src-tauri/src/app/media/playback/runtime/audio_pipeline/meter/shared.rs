@@ -23,13 +23,13 @@ pub(crate) struct SharedAudioMeterCell {
 }
 
 #[derive(Clone)]
-pub(super) struct AudioMeterSnapshot {
-    pub(super) sample_rate: u32,
-    pub(super) channels: u16,
-    pub(super) left_peak: f32,
-    pub(super) right_peak: f32,
-    pub(super) left_samples: Vec<f32>,
-    pub(super) right_samples: Vec<f32>,
+pub(crate) struct AudioMeterSnapshot {
+    pub(crate) sample_rate: u32,
+    pub(crate) channels: u16,
+    pub(crate) left_peak: f32,
+    pub(crate) right_peak: f32,
+    pub(crate) left_samples: Vec<f32>,
+    pub(crate) right_samples: Vec<f32>,
 }
 
 pub(crate) type SharedAudioMeter = Arc<SharedAudioMeterCell>;
@@ -62,11 +62,7 @@ pub(crate) fn spawn_audio_meter_emitter(
         let mut last_emitted_sequence = 0u64;
         let mut spectrum_cache = SpectrumCache::default();
         while !stop_flag.load(Ordering::Relaxed) {
-            let next_payload = wait_for_snapshot(
-                &shared,
-                &stop_flag,
-                last_emitted_sequence,
-            );
+            let next_payload = wait_for_snapshot(&shared, &stop_flag, last_emitted_sequence);
             if let Some((sequence, Some(snapshot))) = next_payload {
                 last_emitted_sequence = sequence;
                 emit_audio_meter_payloads(&app, build_payload(snapshot, &mut spectrum_cache));
@@ -90,10 +86,7 @@ fn wait_for_snapshot(
         }
         let (next_state, _) = shared
             .wake
-            .wait_timeout(
-                state,
-                Duration::from_millis(AUDIO_METER_WAIT_TIMEOUT_MS),
-            )
+            .wait_timeout(state, Duration::from_millis(AUDIO_METER_WAIT_TIMEOUT_MS))
             .ok()?;
         state = next_state;
     }

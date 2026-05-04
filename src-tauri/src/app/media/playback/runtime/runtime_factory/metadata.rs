@@ -1,7 +1,7 @@
-use crate::app::media::playback::dto::PlaybackMediaKind;
 use crate::app::media::playback::decode_context::{
     cover_frame_from_image_bytes, load_deferred_audio_cover_frame, VideoDecodeContext,
 };
+use crate::app::media::playback::dto::PlaybackMediaKind;
 use crate::app::media::playback::events::MediaMetadataPayload;
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::emit::{emit_debug, emit_metadata_payloads};

@@ -1,9 +1,9 @@
+use crate::app::media::playback::debug_log::append_playback_debug_log;
 use crate::app::media::playback::events::{
     build_media_event, unix_epoch_ms_now, MediaAudioMeterPayload, MediaMetadataPayload,
     MediaTelemetryPayload, MEDIA_PLAYBACK_AUDIO_METER_EVENT, MEDIA_PLAYBACK_METADATA_EVENT,
     MEDIA_PLAYBACK_TELEMETRY_EVENT,
 };
-use crate::app::media::playback::debug_log::append_playback_debug_log;
 use tauri::{AppHandle, Emitter};
 
 pub(crate) fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) {
@@ -40,6 +40,7 @@ fn should_persist_debug_stage(stage: &str) -> bool {
     matches!(
         stage,
         "audio_pipeline_ready"
+            | "audio_head_selection"
             | "av_sync"
             | "cache_recording_error"
             | "decode_error"
@@ -53,6 +54,7 @@ fn should_persist_debug_stage(stage: &str) -> bool {
             | "running"
             | "seek"
             | "stop"
+            | "timeline_split"
             | "video"
     ) || stage.contains("error")
 }

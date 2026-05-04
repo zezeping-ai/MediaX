@@ -1,7 +1,8 @@
-use crate::app::media::state::TimingControls;
 use crate::app::media::playback::runtime::audio::{
     effective_playback_rate, playback_rate_limited_reason,
 };
+use crate::app::media::playback::runtime::sync_clock::PlaybackClockInput;
+use crate::app::media::state::TimingControls;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -131,18 +132,26 @@ impl PlaybackClock {
         )
     }
 
-    pub fn tick(
-        &mut self,
-        hinted_seconds: Option<f64>,
-        audio_position_seconds: Option<f64>,
-        audio_queue_depth_sources: Option<usize>,
-        audio_allowed_lead_seconds: f64,
-    ) -> f64 {
+    pub fn tick(&mut self, input: PlaybackClockInput) -> f64 {
         let rate = self.playback_rate().max(0.25);
-        let low_audio_buffer = audio_queue_depth_sources
-            .map(|depth| depth < 3)
-            .unwrap_or(false);
         let now = Instant::now();
+
+        // Prefer the queue-derived scheduling clock whenever it is available.
+        if let Some(scheduling_target_seconds) = input.scheduling_target_seconds() {
+            self.last_emit_instant = Some(now);
+            self.media_seconds = scheduling_target_seconds;
+            return self.media_seconds;
+        }
+
+        // Starved output: do not advance by wall-clock — that races video ahead of audible audio
+        // (CPAL underruns, preroll edges). Tie to measured head when present, else hold.
+        if input.critically_low_audio_buffer {
+            self.last_emit_instant = Some(now);
+            if let Some(target) = input.starved_hold_target_seconds() {
+                self.media_seconds = target;
+            }
+            return self.media_seconds;
+        }
 
         if let Some(last) = self.last_emit_instant {
             let elapsed = now.saturating_duration_since(last).as_secs_f64();
@@ -152,22 +161,66 @@ impl PlaybackClock {
         }
         self.last_emit_instant = Some(now);
 
-        if !low_audio_buffer {
-            if let Some(audio_seconds) =
-                audio_position_seconds.filter(|v| v.is_finite() && *v >= 0.0)
-            {
-                let allowed_lead_seconds = audio_allowed_lead_seconds.max(0.0);
-                self.media_seconds = (audio_seconds + allowed_lead_seconds).max(0.0);
-                return self.media_seconds;
-            }
-        }
-
         if self.media_seconds <= 0.0 {
-            if let Some(hint) = hinted_seconds.filter(|v| v.is_finite() && *v >= 0.0) {
+            if let Some(hint) = input.hinted_seconds.filter(|v| v.is_finite() && *v >= 0.0) {
                 self.media_seconds = hint;
             }
         }
 
         self.media_seconds
+    }
+}
+
+#[cfg(test)]
+mod tick_tests {
+    use super::PlaybackClock;
+    use crate::app::media::playback::runtime::sync_clock::{
+        PlaybackClockInput, SyncClockSample, SyncClockSource,
+    };
+    use crate::app::media::state::TimingControls;
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    fn starved_buffer_holds_without_observed_head() {
+        let timing = Arc::new(TimingControls::default());
+        let mut clock = PlaybackClock::new(30.0, 0, 0.0, timing, false);
+        let synced = PlaybackClockInput {
+            estimated_audio_anchor: SyncClockSample::new(2.0, SyncClockSource::AudioEstimated),
+            critically_low_audio_buffer: false,
+            scheduling_lead_seconds: 0.0,
+            ..PlaybackClockInput::default()
+        };
+        assert_eq!(clock.tick(synced), 2.0);
+        thread::sleep(Duration::from_millis(80));
+        let starved = PlaybackClockInput {
+            critically_low_audio_buffer: true,
+            ..PlaybackClockInput::default()
+        };
+        assert_eq!(clock.tick(starved), 2.0);
+    }
+
+    #[test]
+    fn starved_buffer_tracks_observed_plus_lead() {
+        let timing = Arc::new(TimingControls::default());
+        let mut clock = PlaybackClock::new(30.0, 0, 0.0, timing, false);
+        let synced = PlaybackClockInput {
+            estimated_audio_anchor: SyncClockSample::new(1.0, SyncClockSource::AudioEstimated),
+            critically_low_audio_buffer: false,
+            scheduling_lead_seconds: 0.0,
+            ..PlaybackClockInput::default()
+        };
+        assert_eq!(clock.tick(synced), 1.0);
+        thread::sleep(Duration::from_millis(80));
+        let starved = PlaybackClockInput {
+            critically_low_audio_buffer: true,
+            estimated_audio_anchor: SyncClockSample::new(1.0, SyncClockSource::AudioEstimated),
+            measured_audio_anchor: SyncClockSample::new(1.02, SyncClockSource::AudioMeasured),
+            scheduling_lead_seconds: 0.01,
+            ..PlaybackClockInput::default()
+        };
+        let out = clock.tick(starved);
+        assert!((out - 1.03).abs() < 0.002, "expected ~1.03 got {out}");
     }
 }

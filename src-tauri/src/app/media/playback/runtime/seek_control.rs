@@ -21,7 +21,7 @@ pub fn apply_seek_to_stream(
     decoder: Option<&mut ffmpeg::decoder::Video>,
     target_seconds: f64,
     playback_clock: &mut PlaybackClock,
-    current_position_seconds: &mut f64,
+    progress_position_seconds: &mut f64,
     audio_pipeline: Option<&mut AudioPipeline>,
 ) -> Result<(), String> {
     let clamped = target_seconds.max(0.0);
@@ -30,7 +30,7 @@ pub fn apply_seek_to_stream(
     // should behave as a no-op instead of failing playback.
     if clamped <= f64::EPSILON {
         playback_clock.reset_to(0.0);
-        *current_position_seconds = 0.0;
+        *progress_position_seconds = 0.0;
         return Ok(());
     }
     let ts = (clamped * f64::from(ffmpeg::ffi::AV_TIME_BASE)).round() as i64;
@@ -50,7 +50,7 @@ pub fn apply_seek_to_stream(
         audio_state.restart_after_discontinuity(current_rate, current_rate, false);
     }
     playback_clock.reset_to(clamped);
-    *current_position_seconds = clamped;
+    *progress_position_seconds = clamped;
     Ok(())
 }
 

@@ -1,6 +1,10 @@
 use crate::app::integration::default_player::open_default_player_settings;
 use crate::app::integration::updater::check_and_install_update;
-use crate::app::shell::frontend_events::{emit_open_local_request, emit_open_url_request};
+#[cfg(not(desktop))]
+use crate::app::shell::frontend_events::emit_open_local_request;
+use crate::app::shell::frontend_events::emit_open_url_request;
+#[cfg(desktop)]
+use crate::app::shell::open_request::schedule_native_open_local_dialog;
 use crate::app::shell::window_actions::reveal_preferences_window;
 use tauri::menu::{
     AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
@@ -127,7 +131,10 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         &[&set_default_player, &check_update],
     )?;
 
-    let menu = Menu::with_items(app, &[&app_submenu, &file_submenu, &edit_submenu, &help_submenu])?;
+    let menu = Menu::with_items(
+        app,
+        &[&app_submenu, &file_submenu, &edit_submenu, &help_submenu],
+    )?;
     app.set_menu(menu)?;
     Ok(())
 }
@@ -150,6 +157,9 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: MenuEvent) {
             });
         }
         MENU_FILE_OPEN_LOCAL_ID => {
+            #[cfg(desktop)]
+            schedule_native_open_local_dialog(app);
+            #[cfg(not(desktop))]
             emit_open_local_request(app);
         }
         MENU_FILE_OPEN_URL_ID => {

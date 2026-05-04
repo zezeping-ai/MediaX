@@ -1,4 +1,5 @@
 use super::DrainFramesContext;
+use crate::app::media::playback::render::renderer::resolve_playback_references;
 use crate::app::media::playback::runtime::video_pipeline::frame_pipeline::VideoStagePerfSnapshot;
 use crate::app::media::playback::events::{
     MediaDecodeQuantileStats, MediaFrameTypeStats, MediaTelemetryPayload,
@@ -7,6 +8,7 @@ use crate::app::media::playback::events::{
 use crate::app::media::playback::runtime::{
     emit_debug, emit_telemetry_payloads, METRICS_EMIT_INTERVAL_MS,
 };
+use crate::app::media::playback::runtime::sync_clock::{build_audio_sync_faces, PlaybackClockInput};
 use ffmpeg_next::ffi;
 use ffmpeg_next::frame;
 use std::time::{Duration, Instant};
@@ -28,10 +30,24 @@ pub(super) fn emit_video_telemetry(
     let presented_video_pts = renderer_metrics.last_presented_pts_seconds;
     let effective_display_video_pts = renderer_metrics.effective_display_pts_seconds;
     let submitted_video_pts = renderer_metrics.last_submitted_pts_seconds;
-    let audio_now = ctx.audio_clock.map(|clock| clock.now_seconds());
-    let sync_video_pts = effective_display_video_pts
-        .or(presented_video_pts)
-        .unwrap_or_else(|| estimated_pts.max(0.0));
+    let playback_references =
+        resolve_playback_references(renderer_metrics.playback_heads, estimated_pts);
+    let scheduled_audio_now = ctx.audio_clock.map(|clock| clock.now_seconds());
+    let observed_audio_now = ctx.observed_audio_clock.map(|sample| sample.seconds);
+    let (est_anchor, ms_anchor) = build_audio_sync_faces(
+        ctx.audio_output_paused,
+        scheduled_audio_now,
+        ctx.observed_audio_clock,
+    );
+    let audio_now = PlaybackClockInput {
+        estimated_audio_anchor: est_anchor,
+        measured_audio_anchor: ms_anchor,
+        ..PlaybackClockInput::default()
+    }
+    .composite_head_seconds()
+    .or(observed_audio_now.or(scheduled_audio_now));
+    let sync_video_pts = playback_references.sync.position.seconds;
+    let display_video_pts_seconds = playback_references.display_video_pts_seconds();
     let ts_stats = take_video_timestamp_stats(ctx);
     let frame_type_stats = take_frame_type_stats(ctx);
     let decode_quantiles = perf_snapshot
@@ -73,7 +89,25 @@ pub(super) fn emit_video_telemetry(
     let (process_cpu_percent, process_memory_mb) = process_snapshot.unwrap_or((0.0, 0.0));
     emit_renderer_efficiency_debug(ctx, &renderer_metrics);
     emit_renderer_starved_debug(ctx, &renderer_metrics, stage_perf_snapshot.as_ref());
-    emit_av_sync_debug(ctx, &renderer_metrics, audio_now, sync_video_pts);
+    emit_timeline_split_debug(
+        ctx,
+        audio_now,
+        scheduled_audio_now,
+        observed_audio_now,
+        *ctx.progress_position_seconds,
+        display_video_pts_seconds,
+        sync_video_pts,
+        presented_video_pts,
+        effective_display_video_pts,
+        playback_references.sync,
+    );
+    emit_av_sync_debug(
+        ctx,
+        &renderer_metrics,
+        audio_now,
+        sync_video_pts,
+        playback_references.sync,
+    );
     emit_telemetry_payloads(
         ctx.app,
         MediaTelemetryPayload {
@@ -81,11 +115,12 @@ pub(super) fn emit_video_telemetry(
             render_fps,
             queue_depth: renderer_metrics.queue_depth,
             audio_queue_depth_sources: ctx.audio_queue_depth_sources,
-            clock_seconds: *ctx.current_position_seconds,
-            current_video_pts_seconds: Some(sync_video_pts),
-            current_effective_display_video_pts_seconds: effective_display_video_pts,
-            current_presented_video_pts_seconds: presented_video_pts,
-            current_submitted_video_pts_seconds: submitted_video_pts,
+            progress_clock_seconds: *ctx.progress_position_seconds,
+            display_video_pts_seconds: Some(display_video_pts_seconds),
+            effective_display_video_pts_seconds: effective_display_video_pts,
+            sync_video_pts_seconds: Some(sync_video_pts),
+            presented_video_pts_seconds: presented_video_pts,
+            submitted_video_pts_seconds: submitted_video_pts,
             current_audio_clock_seconds: audio_now,
             current_frame_type: Some(picture_type_label(pict_type).to_string()),
             current_frame_width: Some(nv12_frame.width()),
@@ -102,7 +137,7 @@ pub(super) fn emit_video_telemetry(
                 }
                 _ => None,
             },
-            audio_drift_seconds: audio_now.map(|value| sync_video_pts - value),
+            sync_video_minus_audio_seconds: audio_now.map(|value| sync_video_pts - value),
             video_pts_gap_seconds: *ctx.video_timestamp_metrics.last_gap_seconds,
             seek_settle_ms: None,
             decode_avg_frame_cost_ms: perf_snapshot.as_ref().map(|value| value.avg_ms),
@@ -239,6 +274,7 @@ fn emit_av_sync_debug(
     renderer_metrics: &crate::app::media::playback::render::renderer::RendererMetricsSnapshot,
     audio_now: Option<f64>,
     sync_video_pts: f64,
+    sync_reference: crate::app::media::playback::render::renderer::VideoSyncReference,
 ) {
     let Some(audio_seconds) = audio_now.filter(|value| value.is_finite() && *value >= 0.0) else {
         return;
@@ -252,8 +288,11 @@ fn emit_av_sync_debug(
         ctx.app,
         "av_sync",
         format!(
-            "drift_ms={:.2} effective_display_pts_ms={:.2?} presented_drift_ms={:.2?} audio_queue_depth={:?} audio_queued_ms={:.2?} queue={}/{} lag_ms={:.2} submit_lead_ms={:.2}",
+            "drift_ms={:.2} video_head={}({}){} effective_display_pts_ms={:.2?} presented_drift_ms={:.2?} audio_queue_depth={:?} audio_queued_ms={:.2?} queue={}/{} lag_ms={:.2} submit_lead_ms={:.2}",
             drift_ms,
+            sync_reference.precision_label(),
+            sync_reference.source_label(),
+            sync_reference.fallback_label(),
             renderer_metrics
                 .effective_display_pts_seconds
                 .map(|video_pts| (video_pts - audio_seconds) * 1000.0),
@@ -264,6 +303,60 @@ fn emit_av_sync_debug(
             renderer_metrics.queue_capacity,
             renderer_metrics.last_present_lag_ms,
             renderer_metrics.submit_lead_ms,
+        ),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_timeline_split_debug(
+    ctx: &DrainFramesContext<'_>,
+    audio_now: Option<f64>,
+    scheduled_audio_now: Option<f64>,
+    observed_audio_now: Option<f64>,
+    progress_clock_seconds: f64,
+    display_video_pts_seconds: f64,
+    sync_video_pts_seconds: f64,
+    presented_video_pts_seconds: Option<f64>,
+    effective_display_video_pts_seconds: Option<f64>,
+    sync_reference: crate::app::media::playback::render::renderer::VideoSyncReference,
+) {
+    let audio_now = audio_now.filter(|value| value.is_finite() && *value >= 0.0);
+    let progress_minus_audio_ms =
+        audio_now.map(|audio| (progress_clock_seconds - audio) * 1000.0);
+    let display_minus_audio_ms =
+        audio_now.map(|audio| (display_video_pts_seconds - audio) * 1000.0);
+    let sync_minus_audio_ms = audio_now.map(|audio| (sync_video_pts_seconds - audio) * 1000.0);
+    let observed_minus_scheduled_ms = match (observed_audio_now, scheduled_audio_now) {
+        (Some(observed), Some(scheduled))
+            if observed.is_finite()
+                && scheduled.is_finite()
+                && observed >= 0.0
+                && scheduled >= 0.0 =>
+        {
+            Some((observed - scheduled) * 1000.0)
+        }
+        _ => None,
+    };
+    emit_debug(
+        ctx.app,
+        "timeline_split",
+        format!(
+            "progress_clock_s={:.3} display_video_s={:.3} sync_video_s={:.3} presented_video_s={:.3?} effective_display_s={:.3?} audio_clock_s={:.3?} scheduled_audio_s={:.3?} observed_audio_s={:.3?} observed_minus_scheduled_ms={:.2?} progress_minus_audio_ms={:.2?} display_minus_audio_ms={:.2?} sync_minus_audio_ms={:.2?} sync_head={}({}){}",
+            progress_clock_seconds,
+            display_video_pts_seconds,
+            sync_video_pts_seconds,
+            presented_video_pts_seconds,
+            effective_display_video_pts_seconds,
+            audio_now,
+            scheduled_audio_now,
+            observed_audio_now,
+            observed_minus_scheduled_ms,
+            progress_minus_audio_ms,
+            display_minus_audio_ms,
+            sync_minus_audio_ms,
+            sync_reference.precision_label(),
+            sync_reference.source_label(),
+            sync_reference.fallback_label(),
         ),
     );
 }

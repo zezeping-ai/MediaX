@@ -17,6 +17,7 @@ pub(crate) struct AudioPipeline {
     pub decoder: ffmpeg_next::decoder::Audio,
     pub time_base: ffmpeg_next::Rational,
     pub resampler: ResamplingContext,
+    pub output_sample_rate: u32,
     pub output_sample_format: AudioOutputSampleFormat,
     pub time_stretch: super::time_stretch::AudioTimeStretch,
     pub output: super::output::AudioOutput,
@@ -27,6 +28,7 @@ pub(crate) struct AudioPipeline {
     pub(crate) output_staging_channels: u16,
     pub(crate) output_staging_samples: Vec<f32>,
     pub(crate) output_staging_start: usize,
+    pub(crate) output_media_cursor_seconds: Option<f64>,
     pub(crate) recent_output_tail_channels: u16,
     pub(crate) recent_output_tail_samples: Vec<f32>,
     pub(crate) discontinuity_crossfade_tail_channels: u16,
@@ -73,6 +75,7 @@ impl AudioPipeline {
         self.output_staging_channels = 0;
         self.output_staging_samples.clear();
         self.output_staging_start = 0;
+        self.output_media_cursor_seconds = None;
     }
 
     pub fn mark_refill_completed(&mut self) {
@@ -103,8 +106,9 @@ impl AudioPipeline {
                 *sample *= gain;
             }
         }
-        self.discontinuity_fade_in_frames_remaining =
-            self.discontinuity_fade_in_frames_remaining.saturating_sub(fade_frames);
+        self.discontinuity_fade_in_frames_remaining = self
+            .discontinuity_fade_in_frames_remaining
+            .saturating_sub(fade_frames);
     }
 
     pub fn stage_output_pcm_owned(
@@ -113,6 +117,7 @@ impl AudioPipeline {
         channels: u16,
         staging_frames: usize,
         force_flush_partial: bool,
+        min_partial_flush_frames: usize,
     ) -> StagedOutputPcm {
         if pcm.is_empty() || channels == 0 {
             return StagedOutputPcm {
@@ -126,8 +131,17 @@ impl AudioPipeline {
             self.output_staging_start = 0;
         }
         let samples_per_block = staging_frames.max(1).saturating_mul(usize::from(channels));
+        let min_partial_flush_samples = min_partial_flush_frames
+            .max(1)
+            .saturating_mul(usize::from(channels));
         if self.available_staging_samples() == 0 {
-            return self.stage_output_pcm_direct(pcm, channels, samples_per_block, force_flush_partial);
+            return self.stage_output_pcm_direct(
+                pcm,
+                channels,
+                samples_per_block,
+                force_flush_partial,
+                min_partial_flush_samples,
+            );
         }
 
         self.output_staging_samples.extend_from_slice(&pcm);
@@ -139,7 +153,9 @@ impl AudioPipeline {
             blocks.push(block);
         }
         self.compact_staging_buffer_if_needed();
-        if force_flush_partial && self.available_staging_samples() > 0 {
+        if force_flush_partial
+            && self.available_staging_samples() >= min_partial_flush_samples
+        {
             let block = self.take_remaining_staging_samples();
             self.remember_output_tail(&block, channels);
             blocks.push(block);
@@ -215,7 +231,8 @@ impl AudioPipeline {
         let start = pcm.len().saturating_sub(tail_samples);
         self.recent_output_tail_channels = channels;
         self.recent_output_tail_samples.clear();
-        self.recent_output_tail_samples.extend_from_slice(&pcm[start..]);
+        self.recent_output_tail_samples
+            .extend_from_slice(&pcm[start..]);
     }
 
     fn available_staging_samples(&self) -> usize {
@@ -230,6 +247,7 @@ impl AudioPipeline {
         channels: u16,
         samples_per_block: usize,
         force_flush_partial: bool,
+        min_partial_flush_samples: usize,
     ) -> StagedOutputPcm {
         let mut blocks = Vec::new();
         while pcm.len() >= samples_per_block && samples_per_block > 0 {
@@ -238,7 +256,7 @@ impl AudioPipeline {
             self.remember_output_tail(&block, channels);
             blocks.push(block);
         }
-        if force_flush_partial && !pcm.is_empty() {
+        if force_flush_partial && pcm.len() >= min_partial_flush_samples {
             self.remember_output_tail(&pcm, channels);
             blocks.push(pcm);
             return StagedOutputPcm {

@@ -20,6 +20,7 @@ export interface PlaybackControlsProps {
   cacheOutputPath: string;
   durationSecondsOverride: number;
   bufferedPositionSecondsOverride?: number;
+  progressPositionSecondsOverride?: number | null;
   qualityOptions: PlaybackQualityOption[];
   selectedQuality: string;
   requestPreviewFrame?: RequestPreviewFrame;

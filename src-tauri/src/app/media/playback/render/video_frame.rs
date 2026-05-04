@@ -71,12 +71,8 @@ pub fn preferred_scaling_flags_for_renderer(
     }
 }
 
-pub fn transfer_hw_frame_if_needed(decoded: &frame::Video) -> Result<frame::Video, String> {
-    if !is_hardware_frame(decoded)? {
-        let mut software_frame = decoded.clone();
-        apply_visible_cropping(&mut software_frame)?;
-        return Ok(software_frame);
-    }
+/// GPU → CPU transfer only. Caller must not invoke on software frames.
+pub fn transfer_hw_frame_to_software(decoded: &frame::Video) -> Result<frame::Video, String> {
     let mut sw_frame = frame::Video::empty();
     // SAFETY: Both frame pointers are owned AVFrame instances. `sw_frame` is empty output
     // buffer and `decoded` is a valid decoded frame from FFmpeg.
@@ -93,6 +89,27 @@ pub fn transfer_hw_frame_if_needed(decoded: &frame::Video) -> Result<frame::Vide
     Ok(sw_frame)
 }
 
+/// In-place crop metadata for CPU frames; avoids a full-buffer clone on the decode hot path.
+pub fn prepare_sw_decoder_frame_for_scale(decoded: &mut frame::Video) -> Result<(), String> {
+    if is_hardware_frame(decoded)? {
+        return Err("prepare_sw_decoder_frame_for_scale called on hardware frame".to_string());
+    }
+    apply_visible_cropping(decoded)
+}
+
+/// `Ok(None)` → scale from `decoded` (software, cropped in place). `Ok(Some(f))` → scale from transferred CPU frame.
+pub fn transfer_or_prepare_decoder_frame_for_scale(
+    decoded: &mut frame::Video,
+) -> Result<Option<frame::Video>, String> {
+    if decoder_frame_is_hw_accel(decoded)? {
+        transfer_hw_frame_to_software(decoded).map(Some)
+    } else {
+        prepare_sw_decoder_frame_for_scale(decoded)?;
+        Ok(None)
+    }
+}
+
+
 pub fn can_bypass_scaler_for_renderer(
     frame: &frame::Video,
     output_width: u32,
@@ -101,12 +118,12 @@ pub fn can_bypass_scaler_for_renderer(
     frame.width() == output_width
         && frame.height() == output_height
         && matches!(
-        frame.format(),
-        format::pixel::Pixel::NV12
-            | format::pixel::Pixel::P010LE
-            | format::pixel::Pixel::P010BE
-            | format::pixel::Pixel::YUV420P
-    )
+            frame.format(),
+            format::pixel::Pixel::NV12
+                | format::pixel::Pixel::P010LE
+                | format::pixel::Pixel::P010BE
+                | format::pixel::Pixel::YUV420P
+        )
 }
 
 pub fn adaptive_upload_size_for_renderer(
@@ -167,11 +184,13 @@ pub fn adaptive_upload_size_for_renderer(
 
 pub fn preferred_scaled_format_for_renderer(frame: &frame::Video) -> format::pixel::Pixel {
     match frame.format() {
-        format::pixel::Pixel::P010LE | format::pixel::Pixel::P010BE => {
-            format::pixel::Pixel::P010LE
-        }
+        format::pixel::Pixel::P010LE | format::pixel::Pixel::P010BE => format::pixel::Pixel::P010LE,
         _ => format::pixel::Pixel::NV12,
     }
+}
+
+pub fn decoder_frame_is_hw_accel(frame: &frame::Video) -> Result<bool, String> {
+    is_hardware_frame(frame)
 }
 
 fn is_hardware_frame(frame: &frame::Video) -> Result<bool, String> {

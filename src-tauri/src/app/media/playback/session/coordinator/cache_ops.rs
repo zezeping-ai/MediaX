@@ -1,9 +1,7 @@
 use super::helpers::{create_cache_recorder_session, is_network_source};
 use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::model::CacheRecordingStatus;
-use crate::app::media::playback::events::{
-    build_media_event, MEDIA_CACHE_RECORDING_STATUS_EVENT,
-};
+use crate::app::media::playback::events::{build_media_event, MEDIA_CACHE_RECORDING_STATUS_EVENT};
 use crate::app::media::state;
 use crate::app::media::state::MediaState;
 use std::fs;
@@ -25,7 +23,9 @@ pub fn cache_recording_status_from_state(
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
     if let Some(session) = guard.as_ref() {
-        let output_size_bytes = fs::metadata(&session.output_path).ok().map(|meta| meta.len());
+        let output_size_bytes = fs::metadata(&session.output_path)
+            .ok()
+            .map(|meta| meta.len());
         Ok(CacheRecordingStatus {
             recording: session.active,
             source: Some(session.source.clone()),
@@ -171,7 +171,9 @@ pub fn stop_cache_recording(
         );
         return Ok(status);
     };
-    let output_size_bytes = fs::metadata(&session.output_path).ok().map(|meta| meta.len());
+    let output_size_bytes = fs::metadata(&session.output_path)
+        .ok()
+        .map(|meta| meta.len());
     let status = CacheRecordingStatus {
         recording: false,
         source: Some(session.source),

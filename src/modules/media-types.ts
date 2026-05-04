@@ -186,11 +186,12 @@ export interface MediaTelemetryPayload {
   render_fps: number;
   queue_depth: number;
   audio_queue_depth_sources?: number | null;
-  clock_seconds: number;
-  current_video_pts_seconds?: number | null;
-  current_effective_display_video_pts_seconds?: number | null;
-  current_presented_video_pts_seconds?: number | null;
-  current_submitted_video_pts_seconds?: number | null;
+  progress_clock_seconds: number;
+  display_video_pts_seconds?: number | null;
+  effective_display_video_pts_seconds?: number | null;
+  sync_video_pts_seconds?: number | null;
+  presented_video_pts_seconds?: number | null;
+  submitted_video_pts_seconds?: number | null;
   current_audio_clock_seconds?: number | null;
   current_frame_type?: string | null;
   current_frame_width?: number | null;
@@ -202,7 +203,7 @@ export interface MediaTelemetryPayload {
   network_read_bytes_per_second?: number | null;
   media_required_bytes_per_second?: number | null;
   network_sustain_ratio?: number | null;
-  audio_drift_seconds: number | null;
+  sync_video_minus_audio_seconds: number | null;
   video_pts_gap_seconds: number | null;
   seek_settle_ms: number | null;
   decode_avg_frame_cost_ms: number | null;

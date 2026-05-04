@@ -11,9 +11,12 @@ const DISCONTINUITY_FADE_IN_FRAMES_MAX: usize = 640;
 const DISCONTINUITY_CROSSFADE_FRAMES_BASE: usize = 256;
 const DISCONTINUITY_CROSSFADE_FRAMES_MAX: usize = 512;
 
-const OUTPUT_STAGING_FRAMES_FAST: usize = 768;
-const OUTPUT_STAGING_FRAMES_DEFAULT: usize = 1024;
-const OUTPUT_STAGING_FRAMES_SLOW: usize = 1280;
+const OUTPUT_STAGING_FRAMES_VIDEO_FAST: usize = 1024;
+const OUTPUT_STAGING_FRAMES_VIDEO_DEFAULT: usize = 1536;
+const OUTPUT_STAGING_FRAMES_VIDEO_SLOW: usize = 2048;
+const OUTPUT_STAGING_FRAMES_AUDIO_ONLY_FAST: usize = 768;
+const OUTPUT_STAGING_FRAMES_AUDIO_ONLY_DEFAULT: usize = 1024;
+const OUTPUT_STAGING_FRAMES_AUDIO_ONLY_SLOW: usize = 1280;
 const OUTPUT_STAGING_FRAMES_RATE_SWITCH_COVER_REALTIME: usize = 1024;
 const OUTPUT_STAGING_FRAMES_RATE_SWITCH_COVER_VIDEO: usize = 2048;
 const OUTPUT_STAGING_FRAMES_RATE_SWITCH_COVER_AUDIO_ONLY: usize = 4096;
@@ -22,7 +25,7 @@ const OUTPUT_STAGING_FRAMES_SEEK_REFILL_AUDIO_ONLY: usize = 512;
 const OUTPUT_STAGING_FRAMES_SEEK_SETTLE_VIDEO: usize = 1024;
 const OUTPUT_STAGING_FRAMES_SEEK_SETTLE_AUDIO_ONLY_LOCAL: usize = 2048;
 const OUTPUT_STAGING_FRAMES_SEEK_SETTLE_AUDIO_ONLY_NETWORK: usize = 1024;
-const AUDIO_QUEUE_PREFILL_VIDEO: usize = 3;
+const AUDIO_QUEUE_PREFILL_VIDEO: usize = 5;
 const AUDIO_QUEUE_PREFILL_AUDIO_ONLY_LOCAL: usize = 3;
 const AUDIO_QUEUE_PREFILL_AUDIO_ONLY_NETWORK: usize = 6;
 const AUDIO_QUEUE_PREFILL_REALTIME_VIDEO: usize = 3;
@@ -40,9 +43,9 @@ const AUDIO_RATE_SWITCH_MIN_APPLY_SECONDS_AUDIO_ONLY_NETWORK: f64 = 1.20;
 const AUDIO_QUEUE_SECONDS_LIMIT_AUDIO_ONLY_LOCAL_FAST: f64 = 0.16;
 const AUDIO_QUEUE_SECONDS_LIMIT_AUDIO_ONLY_LOCAL_DEFAULT: f64 = 0.18;
 const AUDIO_QUEUE_SECONDS_LIMIT_AUDIO_ONLY_LOCAL_SLOW: f64 = 0.24;
-const AUDIO_QUEUE_SECONDS_LIMIT_VIDEO_FAST: f64 = 0.09;
-const AUDIO_QUEUE_SECONDS_LIMIT_VIDEO_DEFAULT: f64 = 0.10;
-const AUDIO_QUEUE_SECONDS_LIMIT_VIDEO_SLOW: f64 = 0.14;
+const AUDIO_QUEUE_SECONDS_LIMIT_VIDEO_FAST: f64 = 0.16;
+const AUDIO_QUEUE_SECONDS_LIMIT_VIDEO_DEFAULT: f64 = 0.18;
+const AUDIO_QUEUE_SECONDS_LIMIT_VIDEO_SLOW: f64 = 0.22;
 const AUDIO_QUEUE_SOURCE_DEPTH_LIMIT_SEEK_SETTLE_AUDIO_ONLY_LOCAL: usize = 6;
 const AUDIO_QUEUE_SOURCE_DEPTH_LIMIT_SEEK_SETTLE_AUDIO_ONLY_NETWORK: usize = 8;
 const AUDIO_QUEUE_SOURCE_DEPTH_LIMIT_SEEK_SETTLE_VIDEO: usize = 4;
@@ -112,16 +115,24 @@ pub fn discontinuity_smoothing_profile(
 
 pub fn output_staging_frames(
     playback_rate: PlaybackRate,
-    _has_video_stream: bool,
+    has_video_stream: bool,
     _is_network_source: bool,
 ) -> usize {
     let playback_rate = playback_rate.as_f32();
-    if playback_rate >= 1.25 {
-        OUTPUT_STAGING_FRAMES_FAST
+    if has_video_stream {
+        if playback_rate >= 1.25 {
+            OUTPUT_STAGING_FRAMES_VIDEO_FAST
+        } else if playback_rate <= 0.75 {
+            OUTPUT_STAGING_FRAMES_VIDEO_SLOW
+        } else {
+            OUTPUT_STAGING_FRAMES_VIDEO_DEFAULT
+        }
+    } else if playback_rate >= 1.25 {
+        OUTPUT_STAGING_FRAMES_AUDIO_ONLY_FAST
     } else if playback_rate <= 0.75 {
-        OUTPUT_STAGING_FRAMES_SLOW
+        OUTPUT_STAGING_FRAMES_AUDIO_ONLY_SLOW
     } else {
-        OUTPUT_STAGING_FRAMES_DEFAULT
+        OUTPUT_STAGING_FRAMES_AUDIO_ONLY_DEFAULT
     }
 }
 
@@ -147,10 +158,7 @@ pub fn seek_refill_output_staging_frames(has_video_stream: bool) -> usize {
     }
 }
 
-pub fn seek_settle_output_staging_frames(
-    has_video_stream: bool,
-    is_network_source: bool,
-) -> usize {
+pub fn seek_settle_output_staging_frames(has_video_stream: bool, is_network_source: bool) -> usize {
     if has_video_stream {
         OUTPUT_STAGING_FRAMES_SEEK_SETTLE_VIDEO
     } else if is_network_source {
@@ -249,6 +257,27 @@ pub fn audio_queue_seconds_limit(
     })
 }
 
+pub fn audio_queue_refill_floor_seconds(
+    playback_rate: PlaybackRate,
+    has_video_stream: bool,
+    is_realtime_source: bool,
+    is_network_source: bool,
+) -> Option<f64> {
+    let queue_seconds_limit = audio_queue_seconds_limit(
+        playback_rate,
+        has_video_stream,
+        is_realtime_source,
+        is_network_source,
+    )?;
+    Some(if has_video_stream {
+        (queue_seconds_limit * 0.9).max(0.09)
+    } else if is_network_source {
+        (queue_seconds_limit * 0.8).max(0.12)
+    } else {
+        (queue_seconds_limit * 0.75).max(0.06)
+    })
+}
+
 pub fn seek_settle_queue_depth_limit(
     default_limit: usize,
     has_video_stream: bool,
@@ -278,8 +307,7 @@ pub fn video_drain_batch_limit(
     if !has_audio_stream {
         return None;
     }
-    let prefill_target =
-        audio_queue_prefill_target(playback_rate, true, is_realtime_source, false);
+    let prefill_target = audio_queue_prefill_target(playback_rate, true, is_realtime_source, false);
     let critical_threshold = (prefill_target / 2).max(1);
     match audio_queue_depth {
         None if is_realtime_source => Some(VIDEO_DRAIN_BATCH_LIMIT_CRITICAL),
@@ -292,12 +320,10 @@ pub fn video_drain_batch_limit(
         Some(_) if is_realtime_source && playback_rate.as_f32() > 1.0 => {
             Some(VIDEO_DRAIN_BATCH_LIMIT_WARMUP)
         }
+        Some(depth) if allow_heavy_video_burst && depth >= prefill_target.saturating_add(1) => None,
         Some(depth)
-            if allow_heavy_video_burst && depth >= prefill_target.saturating_add(1) =>
+            if playback_rate.as_f32() >= 1.25 && depth <= prefill_target.saturating_add(1) =>
         {
-            None
-        }
-        Some(depth) if playback_rate.as_f32() >= 1.25 && depth <= prefill_target.saturating_add(1) => {
             Some(VIDEO_DRAIN_BATCH_LIMIT_WARMUP)
         }
         Some(_) => None,
@@ -320,24 +346,44 @@ fn realtime_audio_queue_depth_limit(playback_rate: PlaybackRate) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        audio_queue_depth_limit, audio_queue_prefill_target, audio_queue_seconds_limit,
-        audio_rate_switch_cover_seconds, audio_rate_switch_min_apply_seconds,
-        discontinuity_smoothing_profile, output_staging_frames,
+        audio_queue_depth_limit, audio_queue_prefill_target, audio_queue_refill_floor_seconds,
+        audio_queue_seconds_limit, audio_rate_switch_cover_seconds,
+        audio_rate_switch_min_apply_seconds, discontinuity_smoothing_profile,
+        output_staging_frames, rate_switch_cover_output_staging_frames,
         seek_refill_output_staging_frames, seek_settle_output_staging_frames,
-        seek_settle_queue_depth_limit, rate_switch_cover_output_staging_frames,
-        video_drain_batch_limit, PlaybackRate,
+        seek_settle_queue_depth_limit, video_drain_batch_limit, PlaybackRate,
         DISCONTINUITY_CROSSFADE_FRAMES_BASE, DISCONTINUITY_FADE_IN_FRAMES_BASE,
-        OUTPUT_STAGING_FRAMES_DEFAULT, OUTPUT_STAGING_FRAMES_FAST, OUTPUT_STAGING_FRAMES_SLOW,
+        OUTPUT_STAGING_FRAMES_AUDIO_ONLY_DEFAULT, OUTPUT_STAGING_FRAMES_AUDIO_ONLY_FAST,
+        OUTPUT_STAGING_FRAMES_AUDIO_ONLY_SLOW, OUTPUT_STAGING_FRAMES_VIDEO_DEFAULT,
+        OUTPUT_STAGING_FRAMES_VIDEO_FAST, OUTPUT_STAGING_FRAMES_VIDEO_SLOW,
     };
 
     #[test]
     fn queue_depth_policy_tracks_playback_rate() {
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.5), true, false, false), 14);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.25), true, false, false), 18);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(0.75), true, false, false), 30);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.25), true, true, true), 10);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, false), 8);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, true), 16);
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(1.5), true, false, false),
+            3
+        );
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(1.25), true, false, false),
+            4
+        );
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(0.75), true, false, false),
+            7
+        );
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(1.25), true, true, true),
+            10
+        );
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, false),
+            8
+        );
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, true),
+            16
+        );
     }
 
     #[test]
@@ -354,15 +400,15 @@ mod tests {
     fn output_staging_tracks_playback_rate() {
         assert_eq!(
             output_staging_frames(PlaybackRate::new(1.0), true, false),
-            OUTPUT_STAGING_FRAMES_DEFAULT
+            OUTPUT_STAGING_FRAMES_VIDEO_DEFAULT
         );
         assert_eq!(
             output_staging_frames(PlaybackRate::new(1.5), true, false),
-            OUTPUT_STAGING_FRAMES_FAST
+            OUTPUT_STAGING_FRAMES_VIDEO_FAST
         );
         assert_eq!(
             output_staging_frames(PlaybackRate::new(0.5), true, false),
-            OUTPUT_STAGING_FRAMES_SLOW
+            OUTPUT_STAGING_FRAMES_VIDEO_SLOW
         );
     }
 
@@ -370,15 +416,15 @@ mod tests {
     fn audio_only_local_output_staging_stays_on_shared_defaults() {
         assert_eq!(
             output_staging_frames(PlaybackRate::new(1.0), false, false),
-            OUTPUT_STAGING_FRAMES_DEFAULT
+            OUTPUT_STAGING_FRAMES_AUDIO_ONLY_DEFAULT
         );
         assert_eq!(
             output_staging_frames(PlaybackRate::new(1.5), false, false),
-            OUTPUT_STAGING_FRAMES_FAST
+            OUTPUT_STAGING_FRAMES_AUDIO_ONLY_FAST
         );
         assert_eq!(
             output_staging_frames(PlaybackRate::new(0.5), false, false),
-            OUTPUT_STAGING_FRAMES_SLOW
+            OUTPUT_STAGING_FRAMES_AUDIO_ONLY_SLOW
         );
     }
 
@@ -406,17 +452,32 @@ mod tests {
     fn seek_settle_queue_limit_stays_tighter_than_default() {
         assert_eq!(seek_settle_queue_depth_limit(8, false, false, false), 6);
         assert_eq!(seek_settle_queue_depth_limit(16, false, false, true), 8);
-        assert_eq!(seek_settle_queue_depth_limit(24, true, false, false), 8);
+        assert_eq!(seek_settle_queue_depth_limit(24, true, false, false), 4);
         assert_eq!(seek_settle_queue_depth_limit(10, true, true, true), 10);
     }
 
     #[test]
     fn audio_prefill_tracks_media_type_and_rate() {
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), true, false, false), 5);
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, false), 3);
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, true), 6);
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(0.5), false, false, false), 5);
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), true, true, true), 3);
+        assert_eq!(
+            audio_queue_prefill_target(PlaybackRate::new(1.0), true, false, false),
+            5
+        );
+        assert_eq!(
+            audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, false),
+            3
+        );
+        assert_eq!(
+            audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, true),
+            6
+        );
+        assert_eq!(
+            audio_queue_prefill_target(PlaybackRate::new(0.5), false, false, false),
+            5
+        );
+        assert_eq!(
+            audio_queue_prefill_target(PlaybackRate::new(1.0), true, true, true),
+            3
+        );
     }
 
     #[test]
@@ -456,15 +517,52 @@ mod tests {
     }
 
     #[test]
+    fn video_queue_refill_floor_prefers_healthier_buffer() {
+        let floor =
+            audio_queue_refill_floor_seconds(PlaybackRate::new(1.0), true, false, false).unwrap();
+        let limit = audio_queue_seconds_limit(PlaybackRate::new(1.0), true, false, false).unwrap();
+        assert!(floor >= 0.09);
+        assert!(floor < limit);
+        assert!(floor > limit * 0.85);
+    }
+
+    #[test]
     fn video_drain_batch_limit_protects_audio_queue() {
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), false, None, false, false), None);
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), true, None, false, false), Some(3));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(2), false, false), Some(1));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(4), false, false), Some(2));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.5), true, Some(5), false, false), Some(3));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(8), false, false), None);
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.25), true, None, true, false), Some(1));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.25), true, Some(4), true, false), Some(2));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(5), false, true), None);
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), false, None, false, false),
+            None
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), true, None, false, false),
+            Some(3)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(2), false, false),
+            Some(1)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(4), false, false),
+            Some(2)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.5), true, Some(5), false, false),
+            Some(3)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(8), false, false),
+            None
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.25), true, None, true, false),
+            Some(1)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.25), true, Some(4), true, false),
+            Some(2)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(5), false, true),
+            None
+        );
     }
 }

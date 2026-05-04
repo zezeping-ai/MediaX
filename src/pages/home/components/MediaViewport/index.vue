@@ -108,9 +108,20 @@ async function handleViewportMouseDown(event: MouseEvent) {
     @dblclick.capture="handleViewportDoubleClick"
     @mousedown.capture="handleViewportMouseDown"
   >
-    <div v-if="source" class="h-full w-full" />
-    <div v-else class="p-5">
-      <a-empty description="请从 File 菜单打开本地文件或 URL">
+    <!-- No full-bleed opaque bg: would occlude native renderer underneath the webview. -->
+    <div
+      v-if="loading"
+      class="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-transparent text-zinc-100"
+    >
+      <a-spin size="large" />
+      <span class="text-sm text-zinc-300 drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]">正在打开媒体…</span>
+    </div>
+    <div v-if="source" class="h-full w-full bg-transparent" />
+    <div
+      v-else
+      class="absolute inset-0 z-10 flex items-center justify-center bg-zinc-950 p-6 text-zinc-100"
+    >
+      <a-empty description="请从 File 菜单打开本地文件或 URL" class="text-zinc-100 [&_.ant-empty-description]:text-zinc-300">
         <template #default>
           <a-space>
             <a-button type="primary" @click="emit('quick-open-local')">打开本地文件</a-button>

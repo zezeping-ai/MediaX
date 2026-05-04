@@ -1,7 +1,5 @@
 use crate::app::media::error::MediaError;
-use crate::app::media::playback::events::{
-    build_media_event, MEDIA_PLAYBACK_PROGRESS_EVENT,
-};
+use crate::app::media::playback::events::{build_media_event, MEDIA_PLAYBACK_PROGRESS_EVENT};
 use crate::app::media::playback::session::coordinator::emit_cache_recording_status;
 use crate::app::media::state::MediaState;
 use ffmpeg_next::{ffi, format};
@@ -42,7 +40,11 @@ pub fn update_playback_progress(
     finalize: bool,
 ) -> Result<(), String> {
     let state = app.state::<MediaState>();
-    if !state.runtime.stream.is_generation_current(stream_generation) {
+    if !state
+        .runtime
+        .stream
+        .is_generation_current(stream_generation)
+    {
         return Ok(());
     }
     let playback_state = {
@@ -64,7 +66,11 @@ pub fn update_playback_progress(
                 .reset_pending_seek_to_zero()
                 .map_err(|err| err.to_string())?;
         } else {
-            playback.sync_position(position_seconds, duration_seconds, buffered_position_seconds);
+            playback.sync_position(
+                position_seconds,
+                duration_seconds,
+                buffered_position_seconds,
+            );
         }
         playback.state()
     };

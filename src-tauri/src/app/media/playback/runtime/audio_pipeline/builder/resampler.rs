@@ -13,11 +13,13 @@ pub(super) fn fallback_channel_layout(decoder: &ffmpeg_next::decoder::Audio) -> 
 pub(super) fn create_compatible_resampler(
     decoder: &ffmpeg_next::decoder::Audio,
     channel_layout: ChannelLayout,
+    target_sample_rate: u32,
 ) -> Result<(ResamplingContext, AudioOutputSampleFormat), String> {
     let candidates = [
         AudioOutputSampleFormat::F32Packed,
         AudioOutputSampleFormat::I16Packed,
     ];
+    let output_sample_rate = target_sample_rate.max(1);
     let mut errors = Vec::with_capacity(candidates.len());
 
     for candidate in candidates {
@@ -27,7 +29,7 @@ pub(super) fn create_compatible_resampler(
             decoder.rate(),
             candidate.ffmpeg_sample_format(),
             channel_layout,
-            decoder.rate(),
+            output_sample_rate,
         ) {
             Ok(resampler) => return Ok((resampler, candidate)),
             Err(err) => errors.push(format!("{}: {err}", candidate.debug_label())),
@@ -35,9 +37,10 @@ pub(super) fn create_compatible_resampler(
     }
 
     Err(format!(
-        "decoder_fmt={:?} rate={}Hz channels={} attempts=[{}]",
+        "decoder_fmt={:?} decoder_rate={}Hz output_rate={}Hz channels={} attempts=[{}]",
         decoder.format(),
         decoder.rate(),
+        output_sample_rate,
         decoder.channels(),
         errors.join("; ")
     ))

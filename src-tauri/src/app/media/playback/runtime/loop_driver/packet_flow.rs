@@ -1,7 +1,9 @@
 use super::emit_debug;
 use super::pacing::current_audio_allowed_lead_seconds;
 use super::DecodeRuntime;
-use crate::app::media::playback::rate::video_drain_batch_limit;
+use crate::app::media::playback::rate::{
+    audio_queue_prefill_target, audio_queue_refill_floor_seconds, video_drain_batch_limit,
+};
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::audio_pipeline::drain_audio_frames;
 use crate::app::media::playback::runtime::session::{
@@ -22,7 +24,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
-const VIDEO_SEND_PACKET_RETRY_LIMIT: usize = 3;
+/// EAGAIN on video `send_packet` needs repeated drain/receive; shallow drains + low retry counts
+/// falsely trip `hw_decode_fallback` (especially when audio prefill caps drains to 1 frame).
+const VIDEO_SEND_PACKET_RETRY_LIMIT: usize = 48;
+/// Minimum decoded frames pushed per drain pass while relieving decoder backpressure (HW stacks
+/// often buffer more than one picture before accepting further packets).
+const VIDEO_DECODER_RELIEVE_MIN_FRAMES_PER_PASS: usize = 16;
 const AUDIO_SEND_PACKET_RETRY_LIMIT: usize = 3;
 const VIDEO_QUEUE_BOOST_WINDOW_MS: u64 = 320;
 const RENDERER_QUEUE_BOOST_WINDOW_MS: u64 = 520;
@@ -118,6 +125,7 @@ fn handle_video_packet(
         stop_flag,
         runtime,
         current_audio_allowed_lead_seconds(runtime),
+        false,
         stream_generation,
     )
     .map_err(|err| handle_video_soft_error(app, runtime, "video_drain_failed", err))?;
@@ -149,6 +157,7 @@ fn send_video_packet_with_backpressure_recovery(
                     stop_flag,
                     runtime,
                     current_audio_allowed_lead_seconds(runtime),
+                    true,
                     stream_generation,
                 )
                 .map_err(|drain_err| {
@@ -234,6 +243,7 @@ fn handle_audio_packet(
         packet,
         runtime.loop_state.last_applied_audio_rate,
         &mut runtime.loop_state.audio_clock,
+        &mut runtime.loop_state.observed_audio_clock,
         &mut runtime.loop_state.audio_queue_depth_sources,
         &mut runtime.loop_state.audio_queued_seconds,
         &mut runtime.loop_state.active_seek_target_seconds,
@@ -253,6 +263,7 @@ fn handle_audio_packet(
         stop_flag,
         runtime.loop_state.last_applied_audio_rate,
         &mut runtime.loop_state.audio_clock,
+        &mut runtime.loop_state.observed_audio_clock,
         &mut runtime.loop_state.audio_queue_depth_sources,
         &mut runtime.loop_state.audio_queued_seconds,
         &mut runtime.loop_state.active_seek_target_seconds,
@@ -283,6 +294,7 @@ fn send_audio_packet_with_backpressure_recovery(
     packet: &Packet,
     applied_playback_rate: crate::app::media::playback::rate::PlaybackRate,
     audio_clock: &mut Option<crate::app::media::playback::runtime::clock::AudioClock>,
+    observed_audio_clock: &mut Option<crate::app::media::playback::runtime::sync_clock::SyncClockSample>,
     audio_queue_depth_sources: &mut Option<usize>,
     audio_queued_seconds: &mut Option<f64>,
     active_seek_target_seconds: &mut Option<f64>,
@@ -313,6 +325,7 @@ fn send_audio_packet_with_backpressure_recovery(
                     stop_flag,
                     applied_playback_rate,
                     audio_clock,
+                    observed_audio_clock,
                     audio_queue_depth_sources,
                     audio_queued_seconds,
                     active_seek_target_seconds,
@@ -346,6 +359,7 @@ pub(super) fn drain_video_frames(
     stop_flag: &Arc<AtomicBool>,
     runtime: &mut DecodeRuntime,
     audio_allowed_lead_seconds: f64,
+    force_decoder_relief: bool,
     stream_generation: u32,
 ) -> Result<(), String> {
     let Some(decoder) = runtime.video_ctx.decoder.as_mut() else {
@@ -362,13 +376,53 @@ pub(super) fn drain_video_frames(
         .as_ref()
         .map(|audio| audio.output.queue_depth())
         .or(runtime.loop_state.audio_queue_depth_sources);
+    let current_audio_queued_seconds = runtime
+        .audio_pipeline
+        .as_ref()
+        .map(|audio| audio.output.queued_duration_seconds())
+        .or(runtime.loop_state.audio_queued_seconds);
+    let audio_output_paused = runtime
+        .audio_pipeline
+        .as_ref()
+        .map(|audio| audio.output.is_paused())
+        .unwrap_or(false);
+    let audio_prefill_target = audio_queue_prefill_target(
+        runtime.loop_state.last_applied_audio_rate,
+        true,
+        runtime.is_realtime_source,
+        runtime.is_network_source,
+    );
+    let audio_refill_floor_seconds = audio_queue_refill_floor_seconds(
+        runtime.loop_state.last_applied_audio_rate,
+        true,
+        runtime.is_realtime_source,
+        runtime.is_network_source,
+    )
+    .unwrap_or(0.09);
+    let audio_refill_priority_pending = matches!(
+        (current_audio_queue_depth, current_audio_queued_seconds),
+        (Some(depth), Some(queued_seconds))
+            if depth < audio_prefill_target
+                && queued_seconds + 1e-3 < audio_refill_floor_seconds
+    );
     let max_frames_per_pass = video_drain_batch_limit(
         runtime.loop_state.last_applied_audio_rate,
         has_audio_stream,
         current_audio_queue_depth,
         runtime.is_realtime_source,
         runtime.loop_state.in_video_queue_boost(),
-    );
+    )
+    .map(|limit| {
+        if audio_refill_priority_pending {
+            if force_decoder_relief {
+                limit.max(VIDEO_DECODER_RELIEVE_MIN_FRAMES_PER_PASS)
+            } else {
+                0
+            }
+        } else {
+            limit
+        }
+    });
     let mut drain_ctx = DrainFramesContext::new(
         app,
         renderer,
@@ -382,8 +436,10 @@ pub(super) fn drain_video_frames(
         stop_flag,
         &mut runtime.loop_state.playback_clock,
         &mut runtime.loop_state.last_progress_emit,
-        &mut runtime.loop_state.current_position_seconds,
+        &mut runtime.loop_state.progress_position_seconds,
         runtime.loop_state.audio_clock,
+        runtime.loop_state.observed_audio_clock,
+        audio_output_paused,
         runtime.loop_state.audio_queue_depth_sources,
         runtime.loop_state.audio_queued_seconds,
         &mut runtime.loop_state.active_seek_target_seconds,
@@ -434,31 +490,31 @@ fn update_audio_only_progress(
         .loop_state
         .audio_clock
         .map(|clock| clock.now_seconds())
-        .unwrap_or(runtime.loop_state.current_position_seconds);
+        .unwrap_or(runtime.loop_state.progress_position_seconds);
     if duration_seconds > 0.0 {
         position_seconds = position_seconds.min(duration_seconds);
     }
-    runtime.loop_state.current_position_seconds = position_seconds.max(0.0);
+    runtime.loop_state.progress_position_seconds = position_seconds.max(0.0);
     renderer.update_clock(
-        runtime.loop_state.current_position_seconds,
+        runtime.loop_state.progress_position_seconds,
         timing_controls.playback_rate() as f64,
     );
     write_latest_stream_position(
         &app.state::<crate::app::media::state::MediaState>(),
-        runtime.loop_state.current_position_seconds,
+        runtime.loop_state.progress_position_seconds,
     )?;
     if runtime.loop_state.last_progress_emit.elapsed() >= Duration::from_millis(200) {
         let buffered_position_seconds = resolve_buffered_position_seconds(
             &runtime.video_ctx.input_ctx,
             duration_seconds,
-            runtime.loop_state.current_position_seconds,
+            runtime.loop_state.progress_position_seconds,
             runtime.is_network_source,
             runtime.is_realtime_source,
         );
         update_playback_progress(
             app,
             stream_generation,
-            runtime.loop_state.current_position_seconds,
+            runtime.loop_state.progress_position_seconds,
             duration_seconds,
             buffered_position_seconds,
             false,

@@ -99,6 +99,7 @@ export function useMediaCenter() {
   });
 
   const mediaCenterLifecycle = useMediaCenterLifecycle({
+    captureError,
     withBusyState,
     mediaSession,
     cacheRecordingController,
@@ -148,6 +149,7 @@ export function useMediaCenter() {
     cacheWriteSpeedBytesPerSecond: cacheRecordingController.cacheWriteSpeedBytesPerSecond,
     networkReadBytesPerSecond: mediaSession.networkReadBytesPerSecond,
     networkSustainRatio: mediaSession.networkSustainRatio,
+    displayVideoPtsSeconds: mediaSession.displayVideoPtsSeconds,
     cacheOutputDir: cacheRecordingController.cacheOutputDir,
     errorMessage,
     recordingNoticeMessage,

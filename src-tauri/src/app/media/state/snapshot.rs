@@ -2,9 +2,7 @@ use super::MediaState;
 use crate::app::media::error::MediaError;
 use crate::app::media::library::MediaLibraryService;
 use crate::app::media::model::MediaSnapshot;
-use crate::app::media::playback::events::{
-    build_media_event, MEDIA_PLAYBACK_STATE_EVENT,
-};
+use crate::app::media::playback::events::{build_media_event, MEDIA_PLAYBACK_STATE_EVENT};
 use crate::app::media::playback::session::service::MediaPlaybackService;
 use std::sync::MutexGuard;
 use tauri::{AppHandle, Emitter, State};

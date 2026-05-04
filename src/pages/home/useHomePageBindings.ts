@@ -58,6 +58,11 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     cacheOutputPath: viewModel.cacheOutputPath.value,
     durationSecondsOverride: viewModel.effectiveDurationSeconds.value,
     bufferedPositionSecondsOverride: viewModel.playback.value?.buffered_position_seconds ?? 0,
+    progressPositionSecondsOverride:
+      viewModel.playback.value?.status === "playing"
+      && viewModel.playback.value?.media_kind === "video"
+        ? viewModel.displayVideoPtsSeconds.value
+        : null,
     qualityOptions: viewModel.playbackQualityOptions.value,
     selectedQuality: viewModel.selectedQuality.value,
     disabled: !viewModel.currentSource.value || viewModel.isBusy.value,

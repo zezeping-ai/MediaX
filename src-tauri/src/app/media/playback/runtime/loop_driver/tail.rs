@@ -1,7 +1,7 @@
 use super::emit_debug;
 use super::{drain_video_frames, refresh_tail_audio_rate, DecodeRuntime};
-use crate::app::media::playback::runtime::audio::effective_playback_rate;
 use crate::app::media::playback::render::renderer::RendererState;
+use crate::app::media::playback::runtime::audio::effective_playback_rate;
 use crate::app::media::playback::runtime::audio_pipeline::drain_audio_frames;
 use crate::app::media::playback::runtime::progress::{
     resolve_buffered_position_seconds, update_playback_progress,
@@ -35,7 +35,7 @@ pub(crate) fn finish_decode_runtime(
     update_playback_progress(
         app,
         stream_generation,
-        runtime.loop_state.current_position_seconds.max(0.0),
+        runtime.loop_state.progress_position_seconds.max(0.0),
         runtime.video_ctx.duration_seconds,
         runtime.video_ctx.duration_seconds.max(0.0),
         true,
@@ -68,6 +68,7 @@ fn flush_video_decoder(
         stop_flag,
         runtime,
         super::AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT,
+        true,
         stream_generation,
     )
 }
@@ -79,8 +80,8 @@ fn flush_audio_decoder(
     runtime: &mut DecodeRuntime,
 ) -> Result<(), String> {
     let has_video_stream = runtime.has_video_stream();
-    let video_frame_duration_seconds = has_video_stream
-        .then(|| runtime.loop_state.playback_clock.frame_duration_seconds());
+    let video_frame_duration_seconds =
+        has_video_stream.then(|| runtime.loop_state.playback_clock.frame_duration_seconds());
     let force_low_latency_output = runtime.loop_state.in_rate_switch_settle();
     let building_rate_switch_cover =
         runtime.loop_state.pending_audio_rate.is_some() && !force_low_latency_output;
@@ -100,6 +101,7 @@ fn flush_audio_decoder(
         stop_flag,
         runtime.loop_state.last_applied_audio_rate,
         &mut runtime.loop_state.audio_clock,
+        &mut runtime.loop_state.observed_audio_clock,
         &mut runtime.loop_state.audio_queue_depth_sources,
         &mut runtime.loop_state.audio_queued_seconds,
         &mut runtime.loop_state.active_seek_target_seconds,
@@ -122,9 +124,13 @@ fn flush_audio_decoder(
             .stats
             .queued_samples
             .saturating_add(block.len() as u64);
-        audio_state
-            .output
-            .append_pcm_f32_owned(audio_state.decoder.rate(), channels, block, None, 0.0);
+        audio_state.output.append_pcm_f32_owned(
+            audio_state.decoder.rate(),
+            channels,
+            block,
+            None,
+            0.0,
+        );
         runtime.loop_state.audio_queue_depth_sources = Some(audio_state.output.queue_depth());
         runtime.loop_state.audio_queued_seconds =
             Some(audio_state.output.queued_duration_seconds());
@@ -150,7 +156,7 @@ fn complete_eof_tail(
     runtime: &mut DecodeRuntime,
     stream_generation: u32,
 ) -> Result<(), String> {
-    let mut tail_position_seconds = runtime.loop_state.current_position_seconds.max(0.0);
+    let mut tail_position_seconds = runtime.loop_state.progress_position_seconds.max(0.0);
     let mut last_tail_tick = Instant::now();
     let mut last_tail_progress_emit = Instant::now() - Duration::from_millis(250);
     loop {
@@ -172,7 +178,7 @@ fn complete_eof_tail(
             tail_position_seconds =
                 (tail_position_seconds + elapsed.as_secs_f64() * rate).min(duration_seconds);
         }
-        runtime.loop_state.current_position_seconds = tail_position_seconds;
+        runtime.loop_state.progress_position_seconds = tail_position_seconds;
         renderer.update_clock(tail_position_seconds, rate);
         write_latest_stream_position(&app.state::<MediaState>(), tail_position_seconds)?;
         if last_tail_progress_emit.elapsed() >= Duration::from_millis(200) {

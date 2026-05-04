@@ -1,4 +1,4 @@
-use super::shared::{main_window_restore_bounds, MAIN_WINDOW_LABEL, WindowRestoreBounds};
+use super::shared::{main_window_restore_bounds, WindowRestoreBounds, MAIN_WINDOW_LABEL};
 use crate::app::media::playback::render::renderer::{RendererState, VideoScaleMode};
 use std::thread;
 use std::time::Duration;

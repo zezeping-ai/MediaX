@@ -96,4 +96,105 @@ pub struct RendererMetricsSnapshot {
     pub render_attempts: u64,
     pub render_presents: u64,
     pub render_uploads: u64,
+    pub playback_heads: VideoPlaybackHeads,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VideoPlaybackHeadPrecision {
+    Measured,
+    Estimated,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VideoPlaybackHeadSource {
+    Presented,
+    EffectiveDisplay,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct VideoPlaybackHeadPosition {
+    pub seconds: f64,
+    pub precision: VideoPlaybackHeadPrecision,
+    pub source: VideoPlaybackHeadSource,
+}
+
+impl VideoPlaybackHeadPosition {
+    pub fn precision_label(self) -> &'static str {
+        match self.precision {
+            VideoPlaybackHeadPrecision::Measured => "measured",
+            VideoPlaybackHeadPrecision::Estimated => "estimated",
+        }
+    }
+
+    pub fn source_label(self) -> &'static str {
+        match self.source {
+            VideoPlaybackHeadSource::Presented => "presented",
+            VideoPlaybackHeadSource::EffectiveDisplay => "effective-display",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct VideoPlaybackHeads {
+    pub measured: Option<VideoPlaybackHeadPosition>,
+    pub estimated: Option<VideoPlaybackHeadPosition>,
+}
+
+impl VideoPlaybackHeads {
+    pub fn preferred(self) -> Option<VideoPlaybackHeadPosition> {
+        self.measured.or(self.estimated)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VideoSyncFallbackKind {
+    EstimatedPts,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct VideoSyncReference {
+    pub position: VideoPlaybackHeadPosition,
+    pub fallback: Option<VideoSyncFallbackKind>,
+}
+
+impl VideoSyncReference {
+    pub fn precision_label(self) -> &'static str {
+        self.position.precision_label()
+    }
+
+    pub fn source_label(self) -> &'static str {
+        self.position.source_label()
+    }
+
+    pub fn fallback_label(self) -> &'static str {
+        match self.fallback {
+            Some(VideoSyncFallbackKind::EstimatedPts) => " fallback=estimated-pts",
+            None => "",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct VideoDisplayReference {
+    pub position: Option<VideoPlaybackHeadPosition>,
+}
+
+impl VideoDisplayReference {
+    pub fn seconds(self) -> Option<f64> {
+        self.position.map(|position| position.seconds)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct VideoPlaybackReferenceSet {
+    pub sync: VideoSyncReference,
+    pub display: VideoDisplayReference,
+}
+
+impl VideoPlaybackReferenceSet {
+    pub fn display_video_pts_seconds(self) -> f64 {
+        self.display
+            .seconds()
+            .unwrap_or(self.sync.position.seconds)
+    }
 }

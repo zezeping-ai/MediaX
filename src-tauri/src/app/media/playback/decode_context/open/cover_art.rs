@@ -17,7 +17,9 @@ pub(super) fn extract_cover_packet_bytes(
     input_ctx: &format::context::Input,
     stream_index: usize,
 ) -> Option<Vec<u8>> {
-    let stream = input_ctx.streams().find(|value| value.index() == stream_index)?;
+    let stream = input_ctx
+        .streams()
+        .find(|value| value.index() == stream_index)?;
     // SAFETY: `stream` comes from the live format context and `attached_pic` is read-only.
     let packet = unsafe { &(*stream.as_ptr()).attached_pic };
     if packet.data.is_null() || packet.size <= 0 {
@@ -29,8 +31,8 @@ pub(super) fn extract_cover_packet_bytes(
 }
 
 pub(crate) fn cover_frame_from_image_bytes(bytes: &[u8]) -> Result<VideoFrame, String> {
-    let image = image::load_from_memory(bytes)
-        .map_err(|err| format!("decode cover art failed: {err}"))?;
+    let image =
+        image::load_from_memory(bytes).map_err(|err| format!("decode cover art failed: {err}"))?;
     let rgb = image.to_rgb8();
     let (scaled_width, scaled_height) =
         fit_dimensions_within(rgb.width(), rgb.height(), COVER_MAX_EDGE);
@@ -63,7 +65,9 @@ pub(crate) fn cover_frame_from_image_bytes(bytes: &[u8]) -> Result<VideoFrame, S
         for x in 0..width {
             let pixel = resized.get_pixel(x, y);
             let (r, g, b) = (pixel[0] as f32, pixel[1] as f32, pixel[2] as f32);
-            let luma = (0.299 * r + 0.587 * g + 0.114 * b).round().clamp(0.0, 255.0) as u8;
+            let luma = (0.299 * r + 0.587 * g + 0.114 * b)
+                .round()
+                .clamp(0.0, 255.0) as u8;
             y_plane.push(luma);
         }
     }

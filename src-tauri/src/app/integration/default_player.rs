@@ -31,9 +31,7 @@ pub fn open_default_player_settings(app: &AppHandle) {
     #[cfg(target_os = "linux")]
     {
         app.dialog()
-            .message(
-                "请在系统默认应用或文件属性中，将音频/视频文件的默认打开方式改为 MediaX。",
-            )
+            .message("请在系统默认应用或文件属性中，将音频/视频文件的默认打开方式改为 MediaX。")
             .title("设为默认播放器")
             .kind(MessageDialogKind::Info)
             .show(|_| {});

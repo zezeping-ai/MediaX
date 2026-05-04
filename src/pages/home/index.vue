@@ -29,6 +29,7 @@ const {
 </script>
 
 <template>
+  <!-- Transparent shell: video is drawn by the Rust/wgpu layer under the webview; opaque bg here would hide it. -->
   <main class="h-screen w-screen overflow-hidden bg-transparent">
     <section
       class="relative h-full w-full"

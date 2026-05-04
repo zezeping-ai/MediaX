@@ -8,6 +8,7 @@ mod telemetry;
 
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::clock::{AudioClock, FpsWindow, PlaybackClock};
+use crate::app::media::playback::runtime::sync_clock::SyncClockSample;
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::format;
 use ffmpeg_next::software::scaling::context::Context as ScalingContext;
@@ -34,8 +35,10 @@ pub(super) struct DrainFramesContext<'a> {
     pub stop_flag: &'a std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub playback_clock: &'a mut PlaybackClock,
     pub last_progress_emit: &'a mut Instant,
-    pub current_position_seconds: &'a mut f64,
+    pub progress_position_seconds: &'a mut f64,
     pub audio_clock: Option<AudioClock>,
+    pub observed_audio_clock: Option<SyncClockSample>,
+    pub audio_output_paused: bool,
     pub audio_queue_depth_sources: Option<usize>,
     pub audio_queued_seconds: Option<f64>,
     pub active_seek_target_seconds: &'a mut Option<f64>,
@@ -70,8 +73,10 @@ impl<'a> DrainFramesContext<'a> {
         stop_flag: &'a std::sync::Arc<std::sync::atomic::AtomicBool>,
         playback_clock: &'a mut PlaybackClock,
         last_progress_emit: &'a mut Instant,
-        current_position_seconds: &'a mut f64,
+        progress_position_seconds: &'a mut f64,
         audio_clock: Option<AudioClock>,
+        observed_audio_clock: Option<SyncClockSample>,
+        audio_output_paused: bool,
         audio_queue_depth_sources: Option<usize>,
         audio_queued_seconds: Option<f64>,
         active_seek_target_seconds: &'a mut Option<f64>,
@@ -103,8 +108,10 @@ impl<'a> DrainFramesContext<'a> {
             stop_flag,
             playback_clock,
             last_progress_emit,
-            current_position_seconds,
+            progress_position_seconds,
             audio_clock,
+            observed_audio_clock,
+            audio_output_paused,
             audio_queue_depth_sources,
             audio_queued_seconds,
             active_seek_target_seconds,

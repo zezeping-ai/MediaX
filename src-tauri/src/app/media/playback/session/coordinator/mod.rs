@@ -10,8 +10,8 @@ mod timing_ops;
 
 use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::model::MediaSnapshot;
-use crate::app::media::state::MediaState;
 use crate::app::media::state::snapshot_from_state;
+use crate::app::media::state::MediaState;
 use tauri::State;
 
 pub use cache_ops::{

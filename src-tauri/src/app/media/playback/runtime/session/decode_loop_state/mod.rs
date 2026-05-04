@@ -5,6 +5,7 @@ mod video_packet_metrics;
 use super::cache_remux::CacheRemuxWriter;
 use crate::app::media::playback::rate::{PlaybackRate, RATE_SWITCH_SETTLE_WINDOW_MS};
 use crate::app::media::playback::runtime::clock::{AudioClock, FpsWindow, PlaybackClock};
+use crate::app::media::playback::runtime::sync_clock::SyncClockSample;
 use crate::app::media::playback::runtime::video_pipeline::{
     ProcessMetricsSampler, VideoFramePipeline,
 };
@@ -26,8 +27,13 @@ pub(crate) struct DecodeLoopState {
     pub pending_audio_rate: Option<PlaybackRate>,
     pub playback_clock: PlaybackClock,
     pub last_progress_emit: Instant,
-    pub current_position_seconds: f64,
+    // Transport progress for UI/progress emission. This is allowed to be slightly predictive
+    // and must not be treated as the authoritative rendered video head.
+    pub progress_position_seconds: f64,
+    // Queue-derived scheduling clock used by decode, pacing, and sync decisions.
     pub audio_clock: Option<AudioClock>,
+    // Backend-observed playback head used for telemetry and future bounded correction only.
+    pub observed_audio_clock: Option<SyncClockSample>,
     pub audio_queue_depth_sources: Option<usize>,
     pub audio_queued_seconds: Option<f64>,
     pub pause_prefetch_mode: bool,
@@ -58,10 +64,11 @@ impl DecodeLoopState {
     ) -> Self {
         let now = Instant::now();
         Self {
-            last_applied_audio_rate: crate::app::media::playback::runtime::audio::effective_playback_rate(
-                timing_controls.playback_rate_value(),
-                is_realtime_source,
-            ),
+            last_applied_audio_rate:
+                crate::app::media::playback::runtime::audio::effective_playback_rate(
+                    timing_controls.playback_rate_value(),
+                    is_realtime_source,
+                ),
             pending_audio_rate: None,
             playback_clock: PlaybackClock::new(
                 fps_value,
@@ -71,8 +78,9 @@ impl DecodeLoopState {
                 is_realtime_source,
             ),
             last_progress_emit: Instant::now() - Duration::from_millis(250),
-            current_position_seconds: 0.0,
+            progress_position_seconds: 0.0,
             audio_clock: None,
+            observed_audio_clock: None,
             audio_queue_depth_sources: None,
             audio_queued_seconds: None,
             pause_prefetch_mode: false,
@@ -140,6 +148,7 @@ impl DecodeLoopState {
 
     pub fn reset_audio_sync_state(&mut self) {
         self.audio_clock = None;
+        self.observed_audio_clock = None;
         self.audio_queue_depth_sources = None;
         self.audio_queued_seconds = None;
     }

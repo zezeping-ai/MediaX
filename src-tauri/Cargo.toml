@@ -30,6 +30,7 @@ walkdir = "2"
 wgpu = "29.0.1"
 pollster = "0.4.0"
 rodio = "0.22.2"
+cpal = "0.17.3"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 base64 = "0.22"
 sysinfo = "0.38.4"

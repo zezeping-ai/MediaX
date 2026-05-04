@@ -51,7 +51,8 @@ pub(super) fn build_source_metadata(
             .and_then(|stream| first_metadata_value(&stream.metadata(), ALBUM_METADATA_KEYS))
     });
     let lyrics = load_source_lyrics(source, input_ctx, audio_stream_index)?;
-    let should_defer_cover_art = should_defer_audio_cover_art(source, media_kind, cover_stream_index);
+    let should_defer_cover_art =
+        should_defer_audio_cover_art(source, media_kind, cover_stream_index);
     let deferred_cover_bytes = if should_defer_cover_art {
         cover_stream_index.and_then(|index| extract_cover_packet_bytes(input_ctx, index))
     } else {
@@ -94,10 +95,7 @@ pub(crate) fn load_deferred_audio_cover_frame(source: &str) -> Result<Option<Vid
     Ok(extract_cover_frame(&input_ctx, cover_stream_index))
 }
 
-fn first_metadata_value(
-    dictionary: &ffmpeg::DictionaryRef<'_>,
-    keys: &[&str],
-) -> Option<String> {
+fn first_metadata_value(dictionary: &ffmpeg::DictionaryRef<'_>, keys: &[&str]) -> Option<String> {
     keys.iter()
         .find_map(|key| dictionary_value_lossy(dictionary, key))
         .and_then(|value| normalize_metadata_value(&value))
@@ -115,7 +113,9 @@ pub(super) fn dictionary_value_lossy(
         if entry.is_null() || (*entry).value.is_null() {
             return None;
         }
-        CStr::from_ptr((*entry).value).to_string_lossy().into_owned()
+        CStr::from_ptr((*entry).value)
+            .to_string_lossy()
+            .into_owned()
     };
     Some(value)
 }
@@ -134,12 +134,10 @@ fn resolve_media_kind(
     audio_stream_index: Option<usize>,
 ) -> PlaybackMediaKind {
     let has_audio_stream = audio_stream_index.is_some();
-    let has_primary_video_stream = input_ctx
-        .streams()
-        .any(|stream| {
-            stream.parameters().medium() == Type::Video
-                && !stream.disposition().contains(Disposition::ATTACHED_PIC)
-        });
+    let has_primary_video_stream = input_ctx.streams().any(|stream| {
+        stream.parameters().medium() == Type::Video
+            && !stream.disposition().contains(Disposition::ATTACHED_PIC)
+    });
     resolve_media_kind_from_stream_flags(has_audio_stream, has_primary_video_stream)
 }
 
@@ -195,7 +193,11 @@ mod tests {
 
     #[test]
     fn deferred_audio_cover_art_still_marks_cover_presence() {
-        assert!(super::resolve_cover_art_presence(None, Some(&vec![1]), true));
+        assert!(super::resolve_cover_art_presence(
+            None,
+            Some(&vec![1]),
+            true
+        ));
         assert!(!super::resolve_cover_art_presence(None, None, false));
     }
 

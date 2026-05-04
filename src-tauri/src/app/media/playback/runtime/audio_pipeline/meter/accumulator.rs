@@ -5,7 +5,7 @@ use super::spectrum::AUDIO_SPECTRUM_WINDOW;
 
 const AUDIO_METER_EMIT_HZ: u32 = 30;
 
-pub(super) struct AudioMeterAccumulator {
+pub(crate) struct AudioMeterAccumulator {
     sample_rate: u32,
     channels: usize,
     frames_per_emit: usize,
@@ -18,7 +18,7 @@ pub(super) struct AudioMeterAccumulator {
 }
 
 impl AudioMeterAccumulator {
-    pub(super) fn new(sample_rate: u32, channels: usize) -> Self {
+    pub(crate) fn new(sample_rate: u32, channels: usize) -> Self {
         let frames_per_emit = (sample_rate / AUDIO_METER_EMIT_HZ).max(1) as usize;
         Self {
             sample_rate,
@@ -33,7 +33,7 @@ impl AudioMeterAccumulator {
         }
     }
 
-    pub(super) fn push_sample(&mut self, sample: f32) -> Option<AudioMeterSnapshot> {
+    pub(crate) fn push_sample(&mut self, sample: f32) -> Option<AudioMeterSnapshot> {
         self.pending_frame.push(sample);
         if self.pending_frame.len() < self.channels {
             return None;
@@ -48,7 +48,7 @@ impl AudioMeterAccumulator {
         Some(self.build_snapshot())
     }
 
-    pub(super) fn flush_snapshot(&mut self) -> Option<AudioMeterSnapshot> {
+    pub(crate) fn flush_snapshot(&mut self) -> Option<AudioMeterSnapshot> {
         if self.left_window.is_empty()
             && self.right_window.is_empty()
             && self.pending_frame.is_empty()

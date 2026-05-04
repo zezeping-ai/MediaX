@@ -1,8 +1,8 @@
 use super::DecodeRuntime;
 use crate::app::media::playback::runtime::audio::effective_playback_rate;
 use crate::app::media::playback::rate::{
-    audio_queue_depth_limit, audio_queue_prefill_target, audio_queue_seconds_limit,
-    audio_rate_switch_cover_seconds, audio_rate_switch_min_apply_seconds,
+    audio_queue_depth_limit, audio_queue_prefill_target, audio_queue_refill_floor_seconds,
+    audio_queue_seconds_limit, audio_rate_switch_cover_seconds, audio_rate_switch_min_apply_seconds,
     seek_settle_queue_depth_limit,
 };
 use crate::app::media::playback::runtime::{
@@ -15,6 +15,7 @@ use tauri::AppHandle;
 
 const VIDEO_LEAD_PRESERVE_MIN_SECONDS: f64 = 0.16;
 const VIDEO_LEAD_PRESERVE_MAX_SECONDS: f64 = 0.24;
+const AUDIO_PRIORITY_VIDEO_LEAD_MIN_SECONDS: f64 = 0.080;
 
 pub(super) fn refresh_audio_rate(
     _app: &AppHandle,
@@ -90,6 +91,30 @@ pub(super) fn should_wait_for_rate_switch_drain(
     false
 }
 
+pub(super) fn should_prioritize_audio_continuity(runtime: &DecodeRuntime) -> bool {
+    let has_video_stream = runtime.has_video_stream();
+    let Some(audio) = runtime.audio_pipeline.as_ref() else {
+        return false;
+    };
+    let queue_depth = audio.output.queue_depth();
+    let queued_seconds = audio.output.queued_duration_seconds();
+    let playback_rate = runtime.loop_state.last_applied_audio_rate;
+    let prefill_target = audio_queue_prefill_target(
+        playback_rate,
+        has_video_stream,
+        runtime.is_realtime_source,
+        runtime.is_network_source,
+    );
+    let refill_floor_seconds = audio_queue_refill_floor_seconds(
+        playback_rate,
+        has_video_stream,
+        runtime.is_realtime_source,
+        runtime.is_network_source,
+    )
+    .unwrap_or(0.09);
+    queue_depth <= prefill_target || queued_seconds + 1e-3 < refill_floor_seconds
+}
+
 pub(super) fn should_wait_for_decode_lead(runtime: &DecodeRuntime) -> bool {
     let in_rate_switch_settle = runtime.loop_state.in_rate_switch_settle();
     let max_lead_seconds = if runtime.is_realtime_source {
@@ -108,6 +133,16 @@ pub(super) fn should_wait_for_decode_lead(runtime: &DecodeRuntime) -> bool {
         (runtime.loop_state.last_video_pts_seconds, audio_now_seconds)
     {
         let lead = video_pts - audio_pts;
+        if should_prioritize_audio_continuity(runtime) {
+            let frame_duration_seconds = runtime
+                .loop_state
+                .playback_clock
+                .frame_duration_seconds()
+                .clamp(0.0, 0.08);
+            let tightened_lead_seconds =
+                (frame_duration_seconds * 2.0).max(AUDIO_PRIORITY_VIDEO_LEAD_MIN_SECONDS);
+            return lead.is_finite() && lead > tightened_lead_seconds;
+        }
         return lead.is_finite() && lead > max_lead_seconds;
     }
     false

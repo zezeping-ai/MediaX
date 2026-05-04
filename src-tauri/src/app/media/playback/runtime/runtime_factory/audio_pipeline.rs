@@ -1,7 +1,7 @@
 use super::diagnostics::emit_audio_stream_diagnostics;
 use crate::app::media::playback::decode_context::VideoDecodeContext;
 use crate::app::media::playback::runtime::audio_pipeline::{
-    build_audio_pipeline, AudioPipeline,
+    build_audio_pipeline, AudioPipeline, PlaybackHeadPrecision,
 };
 use crate::app::media::playback::runtime::emit::emit_debug;
 use crate::app::media::state::AudioControls;
@@ -27,16 +27,26 @@ pub(super) fn prepare_audio_pipeline(
         audio_controls,
     )?;
     let debug_message = match audio_pipeline.as_ref() {
-        Some(pipeline) => format!(
-            "stream={} decoder_rate={}Hz decoder_channels={} decoder_fmt={:?} output=rodio/{} mode=unified-metered",
-            pipeline.stream_index,
-            pipeline.decoder.rate(),
-            pipeline.decoder.channels(),
-            pipeline.decoder.format(),
-            pipeline.output_sample_format.debug_label(),
-        ),
+        Some(pipeline) => {
+            let playback_head_mode = match pipeline.output.playback_head_precision() {
+                PlaybackHeadPrecision::Measured => "measured",
+                PlaybackHeadPrecision::Estimated => "estimated",
+            };
+            format!(
+                "stream={} decoder_rate={}Hz output_rate={}Hz decoder_channels={} decoder_fmt={:?} output={}/{} playback_head={} mode=unified-metered",
+                pipeline.stream_index,
+                pipeline.decoder.rate(),
+                pipeline.output_sample_rate,
+                pipeline.decoder.channels(),
+                pipeline.decoder.format(),
+                pipeline.output.backend_name(),
+                pipeline.output_sample_format.debug_label(),
+                playback_head_mode,
+            )
+        }
         None => "audio pipeline skipped (no audio stream)".to_string(),
     };
+    eprintln!("mediax audio pipeline: {debug_message}");
     emit_debug(app, "audio_pipeline_ready", debug_message);
     Ok(audio_pipeline)
 }

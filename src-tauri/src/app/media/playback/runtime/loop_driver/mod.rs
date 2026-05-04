@@ -19,7 +19,7 @@ mod tail;
 
 use self::pacing::{
     refresh_audio_rate, refresh_tail_audio_rate, should_wait_for_audio_queue_drain,
-    should_wait_for_rate_switch_drain,
+    should_prioritize_audio_continuity, should_wait_for_rate_switch_drain,
     should_wait_for_decode_lead,
 };
 use self::packet_flow::{drain_video_frames, handle_packet};
@@ -46,11 +46,15 @@ pub(super) fn run_decode_loop(
             std::thread::sleep(Duration::from_millis(video_pipeline::DECODE_LEAD_SLEEP_MS));
             continue;
         }
-        if should_wait_for_decode_lead(runtime) {
+        if should_wait_for_audio_queue_drain(app, runtime) {
             std::thread::sleep(Duration::from_millis(video_pipeline::DECODE_LEAD_SLEEP_MS));
             continue;
         }
-        if should_wait_for_audio_queue_drain(app, runtime) {
+        if should_prioritize_audio_continuity(runtime) && should_wait_for_decode_lead(runtime) {
+            std::thread::sleep(Duration::from_millis(video_pipeline::DECODE_LEAD_SLEEP_MS));
+            continue;
+        }
+        if should_wait_for_decode_lead(runtime) {
             std::thread::sleep(Duration::from_millis(video_pipeline::DECODE_LEAD_SLEEP_MS));
             continue;
         }
@@ -147,7 +151,7 @@ fn enter_pause_prefetch(renderer: &RendererState, runtime: &mut DecodeRuntime) {
     if let Some(audio) = runtime.audio_pipeline.as_ref() {
         audio.output.pause_and_clear_queue();
     }
-    renderer.reset_timeline(runtime.loop_state.current_position_seconds.max(0.0), 1.0);
+    renderer.reset_timeline(runtime.loop_state.progress_position_seconds.max(0.0), 1.0);
     runtime.loop_state.pause_prefetch_mode = true;
     runtime.loop_state.pause_prefetch_logged_buffered_seconds = None;
 }
@@ -177,11 +181,11 @@ fn emit_pause_prefetch_progress(
         .stream
         .latest_position_seconds()
         .map_err(|err| err.to_string())?;
-    runtime.loop_state.current_position_seconds = position_seconds.max(0.0);
+    runtime.loop_state.progress_position_seconds = position_seconds.max(0.0);
     let buffered_position_seconds = resolve_buffered_position_seconds(
         &runtime.video_ctx.input_ctx,
         runtime.video_ctx.duration_seconds,
-        runtime.loop_state.current_position_seconds,
+        runtime.loop_state.progress_position_seconds,
         runtime.is_network_source,
         runtime.is_realtime_source,
     );
@@ -196,7 +200,7 @@ fn emit_pause_prefetch_progress(
             "pause_prefetch_progress",
             format!(
                 "position={:.3}s buffered={:.3}s duration={:.3}s",
-                runtime.loop_state.current_position_seconds,
+                runtime.loop_state.progress_position_seconds,
                 buffered_position_seconds,
                 runtime.video_ctx.duration_seconds.max(0.0),
             ),
@@ -206,7 +210,7 @@ fn emit_pause_prefetch_progress(
     update_playback_progress(
         app,
         stream_generation,
-        runtime.loop_state.current_position_seconds,
+        runtime.loop_state.progress_position_seconds,
         runtime.video_ctx.duration_seconds,
         buffered_position_seconds,
         false,
@@ -245,13 +249,20 @@ fn apply_pending_seek(
     let Some(target_seconds) = seek_control::take_pending_seek_seconds(app)? else {
         return Ok(false);
     };
+    if target_seconds <= f64::EPSILON
+        && runtime.loop_state.progress_position_seconds <= f64::EPSILON
+        && runtime.loop_state.last_video_pts_seconds.is_none()
+    {
+        emit_debug(app, "seek", "skip startup no-op seek to 0.000s");
+        return Ok(false);
+    }
     emit_debug(app, "seek", format!("apply seek to {target_seconds:.3}s"));
     seek_control::apply_seek_to_stream(
         &mut runtime.video_ctx.input_ctx,
         runtime.video_ctx.decoder.as_mut(),
         target_seconds,
         &mut runtime.loop_state.playback_clock,
-        &mut runtime.loop_state.current_position_seconds,
+        &mut runtime.loop_state.progress_position_seconds,
         runtime.audio_pipeline.as_mut(),
     )?;
     renderer.reset_timeline(

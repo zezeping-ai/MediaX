@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import {
   invokeMediaCommandValidated,
   invokeMediaCommandWithRequestIdValidated,
@@ -37,6 +38,11 @@ export function playbackOpenSource(source: string) {
     isMediaSnapshot,
     { source },
   );
+}
+
+/** Desktop schedules Rust native picker + open/play; returns false → caller should use plugin-dialog. */
+export async function playbackPickLocalFile(): Promise<boolean> {
+  return invoke<boolean>("playback_pick_local_file");
 }
 
 export function playbackResume() {

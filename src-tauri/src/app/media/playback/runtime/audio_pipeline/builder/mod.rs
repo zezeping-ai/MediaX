@@ -29,16 +29,18 @@ pub(crate) fn build_audio_pipeline(
         .decoder()
         .audio()
         .map_err(|err| format!("audio decoder create failed: {err}"))?;
-    let channel_layout = fallback_channel_layout(&decoder);
-    let (resampler, output_sample_format) =
-        create_compatible_resampler(&decoder, channel_layout)
-            .map_err(|err| format!("audio resampler create failed: {err}"))?;
     let output = AudioOutput::new(app, audio_controls.clone())?;
+    let channel_layout = fallback_channel_layout(&decoder);
+    let output_sample_rate = output.preferred_sample_rate().unwrap_or(decoder.rate());
+    let (resampler, output_sample_format) =
+        create_compatible_resampler(&decoder, channel_layout, output_sample_rate)
+            .map_err(|err| format!("audio resampler create failed: {err}"))?;
     Ok(Some(AudioPipeline {
         stream_index,
         decoder,
         time_base: input_stream.time_base(),
         resampler,
+        output_sample_rate,
         output_sample_format,
         time_stretch: super::time_stretch::AudioTimeStretch::new(output_sample_format),
         output,
@@ -49,6 +51,7 @@ pub(crate) fn build_audio_pipeline(
         output_staging_channels: 0,
         output_staging_samples: Vec::new(),
         output_staging_start: 0,
+        output_media_cursor_seconds: None,
         recent_output_tail_channels: 0,
         recent_output_tail_samples: Vec::new(),
         discontinuity_crossfade_tail_channels: 0,

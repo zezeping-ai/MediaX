@@ -5,11 +5,14 @@ use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::render::video_frame::{
     adaptive_upload_size_for_renderer, can_bypass_scaler_for_renderer, ensure_scaler,
     preferred_scaled_format_for_renderer, preferred_scaling_flags_for_renderer,
-    transfer_hw_frame_if_needed, ScalerSpec,
+    transfer_or_prepare_decoder_frame_for_scale, ScalerSpec,
 };
 use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::runtime::progress::{
     resolve_buffered_position_seconds, update_playback_progress,
+};
+use crate::app::media::playback::runtime::sync_clock::{
+    build_audio_sync_faces, PlaybackClockInput,
 };
 use crate::app::media::playback::runtime::write_latest_stream_position;
 use crate::app::media::state::MediaState;
@@ -65,14 +68,14 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
         wait_for_render_capacity(ctx)?;
         let queue_wait_cost = queue_wait_start.elapsed();
         let Some((render_source_frame, hw_transfer_cost, scale_cost)) =
-            scale_frame_for_render(ctx, &decoded)
+            scale_frame_for_render(ctx, &mut decoded)
         else {
             continue;
         };
         let estimated_pts = update_playback_position(ctx, hinted_seconds, hinted_valid);
         write_latest_stream_position(
             &ctx.app.state::<MediaState>(),
-            *ctx.current_position_seconds,
+            *ctx.progress_position_seconds,
         )?;
         ctx.renderer.update_clock(
             render_clock_anchor_seconds(ctx),
@@ -139,14 +142,14 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
             let buffered_position_seconds = resolve_buffered_position_seconds(
                 ctx.input_ctx,
                 ctx.duration_seconds,
-                *ctx.current_position_seconds,
+                *ctx.progress_position_seconds,
                 ctx.is_network_source,
                 ctx.is_realtime_source,
             );
             update_playback_progress(
                 ctx.app,
                 ctx.stream_generation,
-                *ctx.current_position_seconds,
+                *ctx.progress_position_seconds,
                 ctx.duration_seconds,
                 buffered_position_seconds,
                 false,
@@ -196,10 +199,10 @@ fn wait_for_render_capacity(ctx: &DrainFramesContext<'_>) -> Result<(), String> 
 
 fn scale_frame_for_render(
     ctx: &mut DrainFramesContext<'_>,
-    decoded: &frame::Video,
+    decoded: &mut frame::Video,
 ) -> Option<(frame::Video, Duration, Duration)> {
     let hw_transfer_cost_start = Instant::now();
-    let frame_for_scale = match transfer_hw_frame_if_needed(decoded) {
+    let hw_cpu_frame = match transfer_or_prepare_decoder_frame_for_scale(decoded) {
         Ok(frame) => frame,
         Err(err) => {
             ctx.frame_pipeline.on_hw_transfer_failed(ctx.app, &err);
@@ -219,28 +222,34 @@ fn scale_frame_for_render(
     } else {
         ctx.output_height
     };
+    let src: &frame::Video = hw_cpu_frame.as_ref().unwrap_or(decoded);
     let (target_width, target_height) = adaptive_upload_size_for_renderer(
-        frame_for_scale.width(),
-        frame_for_scale.height(),
+        src.width(),
+        src.height(),
         render_target_width,
         render_target_height,
         ctx.playback_clock.source_fps(),
     );
-    if can_bypass_scaler_for_renderer(&frame_for_scale, target_width, target_height) {
-        return Some((frame_for_scale, hw_transfer_cost, scale_cost_start.elapsed()));
+    if can_bypass_scaler_for_renderer(src, target_width, target_height) {
+        let out = if let Some(frame) = hw_cpu_frame {
+            frame
+        } else {
+            std::mem::replace(decoded, frame::Video::empty())
+        };
+        return Some((out, hw_transfer_cost, scale_cost_start.elapsed()));
     }
     if let Err(err) = ensure_scaler(
         ctx.scaler,
         ScalerSpec {
-            src_format: frame_for_scale.format(),
-            src_width: frame_for_scale.width(),
-            src_height: frame_for_scale.height(),
-            dst_format: preferred_scaled_format_for_renderer(&frame_for_scale),
+            src_format: src.format(),
+            src_width: src.width(),
+            src_height: src.height(),
+            dst_format: preferred_scaled_format_for_renderer(src),
             dst_width: target_width,
             dst_height: target_height,
             flags: preferred_scaling_flags_for_renderer(
-                frame_for_scale.width(),
-                frame_for_scale.height(),
+                src.width(),
+                src.height(),
                 target_width,
                 target_height,
             ),
@@ -251,7 +260,7 @@ fn scale_frame_for_render(
     }
     let mut scaled_frame = frame::Video::empty();
     if let Some(scaler) = ctx.scaler.as_mut() {
-        if let Err(err) = scaler.run(&frame_for_scale, &mut scaled_frame) {
+        if let Err(err) = scaler.run(src, &mut scaled_frame) {
             ctx.frame_pipeline
                 .on_scale_failed(ctx.app, &format!("scale frame failed: {err}"));
             return None;
@@ -265,13 +274,25 @@ fn update_playback_position(
     hinted_seconds: Option<f64>,
     hinted_valid: Option<f64>,
 ) -> f64 {
-    let audio_now_seconds = ctx.audio_clock.map(|clock| clock.now_seconds());
-    let position_seconds = ctx.playback_clock.tick(
-        hinted_seconds,
-        audio_now_seconds,
-        ctx.audio_queue_depth_sources,
-        ctx.audio_allowed_lead_seconds,
+    let audio_clock_now = (!ctx.audio_output_paused)
+        .then(|| ctx.audio_clock.map(|clock| clock.now_seconds()))
+        .flatten();
+    let (estimated_audio_anchor, measured_audio_anchor) = build_audio_sync_faces(
+        ctx.audio_output_paused,
+        audio_clock_now,
+        ctx.observed_audio_clock,
     );
+    let playback_clock_input = PlaybackClockInput {
+        hinted_seconds,
+        estimated_audio_anchor,
+        measured_audio_anchor,
+        critically_low_audio_buffer: ctx
+            .audio_queue_depth_sources
+            .map(|depth| depth == 0)
+            .unwrap_or(false),
+        scheduling_lead_seconds: ctx.audio_allowed_lead_seconds,
+    };
+    let position_seconds = ctx.playback_clock.tick(playback_clock_input);
     let estimated_pts = hinted_valid.unwrap_or_else(|| {
         if let Some(previous_pts) = *ctx.last_video_pts_seconds {
             previous_pts + ctx.playback_clock.frame_duration_seconds()
@@ -305,7 +326,7 @@ fn update_playback_position(
         *ctx.video_timestamp_metrics.last_gap_seconds = None;
     }
     *ctx.last_video_pts_seconds = Some(estimated_pts);
-    *ctx.current_position_seconds = if ctx.duration_seconds > 0.0 {
+    *ctx.progress_position_seconds = if ctx.duration_seconds > 0.0 {
         position_seconds.min(ctx.duration_seconds)
     } else {
         position_seconds
@@ -317,15 +338,27 @@ fn render_clock_anchor_seconds(ctx: &DrainFramesContext<'_>) -> f64 {
     // Keep decode/progress advancement separate from the render presentation clock.
     // With audio present, rebasing the renderer to the decode thread's newest position can
     // collapse queued future frames into "already due", which hurts smoothness on heavier GOPs.
-    ctx.audio_clock
-        .map(|clock| {
-            let renderer_audio_lead_seconds = if ctx.is_realtime_source {
-                0.0
-            } else {
-                (ctx.audio_allowed_lead_seconds * 0.5).min(0.006)
-            };
-            clock.now_seconds() + renderer_audio_lead_seconds
-        })
-        .filter(|value| value.is_finite() && *value >= 0.0)
-        .unwrap_or_else(|| (*ctx.current_position_seconds).max(0.0))
+    let audio_clock_now = (!ctx.audio_output_paused)
+        .then(|| ctx.audio_clock.map(|clock| clock.now_seconds()))
+        .flatten();
+    let (estimated_audio_anchor, measured_audio_anchor) = build_audio_sync_faces(
+        ctx.audio_output_paused,
+        audio_clock_now,
+        ctx.observed_audio_clock,
+    );
+    let base_seconds = PlaybackClockInput {
+        estimated_audio_anchor,
+        measured_audio_anchor,
+        ..PlaybackClockInput::default()
+    }
+    .primary_audio_anchor()
+    .map(|sample| sample.seconds)
+    .filter(|value| value.is_finite() && *value >= 0.0)
+    .unwrap_or_else(|| (*ctx.progress_position_seconds).max(0.0));
+    let renderer_audio_lead_seconds = if ctx.is_realtime_source {
+        0.0
+    } else {
+        (ctx.audio_allowed_lead_seconds * 0.5).min(0.006)
+    };
+    (base_seconds + renderer_audio_lead_seconds).max(0.0)
 }

@@ -28,9 +28,10 @@ pub fn normalize_playback_rate(playback_rate: f64) -> MediaResult<PlaybackRate> 
             "playback_rate must be a finite number",
         ));
     }
-    Ok(PlaybackRate::from_f64(
-        playback_rate.clamp(f64::from(MIN_PLAYBACK_RATE), f64::from(MAX_PLAYBACK_RATE)),
-    ))
+    Ok(PlaybackRate::from_f64(playback_rate.clamp(
+        f64::from(MIN_PLAYBACK_RATE),
+        f64::from(MAX_PLAYBACK_RATE),
+    )))
 }
 
 pub fn normalize_preview_edge(edge: u32) -> u32 {

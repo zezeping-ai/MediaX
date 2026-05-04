@@ -129,7 +129,10 @@ impl QueuedDurationTracker {
         };
         let front_block = state.blocks.front().copied()?;
         let extra_latency_seconds = extra_latency_seconds.max(0.0);
-        if let Some(active) = state.active_block.filter(|active| active.id == front_block.id) {
+        if let Some(active) = state
+            .active_block
+            .filter(|active| active.id == front_block.id)
+        {
             let media_start_seconds = active
                 .media_start_seconds
                 .filter(|value| value.is_finite() && *value >= 0.0)?;
@@ -270,7 +273,8 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         if !self.playback_started {
-            self.queued_duration.mark_block_started(self.queued_block_id);
+            self.queued_duration
+                .mark_block_started(self.queued_block_id);
             self.playback_started = true;
         }
         let processed = self.next_processed_sample()?;

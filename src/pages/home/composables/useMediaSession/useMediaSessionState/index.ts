@@ -29,6 +29,14 @@ export function useMediaSessionState() {
   const playbackErrorMessage = ref("");
   const networkReadBytesPerSecond = ref<number | null>(null);
   const networkSustainRatio = ref<number | null>(null);
+  const progressClockSeconds = ref<number | null>(null);
+  const displayVideoPtsSeconds = ref<number | null>(null);
+  const effectiveDisplayVideoPtsSeconds = ref<number | null>(null);
+  const syncVideoPtsSeconds = ref<number | null>(null);
+  const presentedVideoPtsSeconds = ref<number | null>(null);
+  const submittedVideoPtsSeconds = ref<number | null>(null);
+  const currentAudioClockSeconds = ref<number | null>(null);
+  const syncVideoMinusAudioSeconds = ref<number | null>(null);
   const lastTelemetryAtMs = ref(0);
   const telemetryStaleTimeoutId = ref<number | null>(null);
 
@@ -46,6 +54,14 @@ export function useMediaSessionState() {
     metadataLyrics.value = [];
     networkReadBytesPerSecond.value = null;
     networkSustainRatio.value = null;
+    progressClockSeconds.value = null;
+    displayVideoPtsSeconds.value = null;
+    effectiveDisplayVideoPtsSeconds.value = null;
+    syncVideoPtsSeconds.value = null;
+    presentedVideoPtsSeconds.value = null;
+    submittedVideoPtsSeconds.value = null;
+    currentAudioClockSeconds.value = null;
+    syncVideoMinusAudioSeconds.value = null;
     lastTelemetryAtMs.value = 0;
     if (telemetryStaleTimeoutId.value !== null) {
       window.clearTimeout(telemetryStaleTimeoutId.value);
@@ -106,6 +122,14 @@ export function useMediaSessionState() {
     currentSource,
     networkReadBytesPerSecond,
     networkSustainRatio,
+    progressClockSeconds,
+    displayVideoPtsSeconds,
+    effectiveDisplayVideoPtsSeconds,
+    syncVideoPtsSeconds,
+    presentedVideoPtsSeconds,
+    submittedVideoPtsSeconds,
+    currentAudioClockSeconds,
+    syncVideoMinusAudioSeconds,
     lastTelemetryAtMs,
     telemetryStaleTimeoutId,
   });
@@ -149,6 +173,14 @@ export function useMediaSessionState() {
     metadataVideoWidth,
     networkReadBytesPerSecond,
     networkSustainRatio,
+    progressClockSeconds,
+    displayVideoPtsSeconds,
+    effectiveDisplayVideoPtsSeconds,
+    syncVideoPtsSeconds,
+    presentedVideoPtsSeconds,
+    submittedVideoPtsSeconds,
+    currentAudioClockSeconds,
+    syncVideoMinusAudioSeconds,
     playbackErrorMessage,
     snapshot,
   };

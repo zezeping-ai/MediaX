@@ -2,6 +2,7 @@ use tauri::{AppHandle, Emitter};
 
 pub const FRONTEND_SHELL_EVENT: &str = "media://menu-action";
 
+#[cfg(not(desktop))]
 pub fn emit_open_local_request(app: &AppHandle) {
     let _ = app.emit(FRONTEND_SHELL_EVENT, "open_local");
 }

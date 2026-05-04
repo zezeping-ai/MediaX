@@ -4,13 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::metadata::dictionary_value_lossy;
 
-const LYRIC_METADATA_KEYS: &[&str] = &[
-    "lyrics",
-    "syncedlyrics",
-    "lrc",
-    "LYRICS",
-    "SYNCEDLYRICS",
-];
+const LYRIC_METADATA_KEYS: &[&str] = &["lyrics", "syncedlyrics", "lrc", "LYRICS", "SYNCEDLYRICS"];
 
 pub(super) fn load_source_lyrics(
     source: &str,
@@ -19,8 +13,8 @@ pub(super) fn load_source_lyrics(
 ) -> Result<Vec<MediaLyricLine>, String> {
     let mut lyrics = load_sidecar_lrc(source)?;
     if lyrics.is_empty() {
-        if let Some(stream) =
-            audio_stream_index.and_then(|index| input_ctx.streams().find(|value| value.index() == index))
+        if let Some(stream) = audio_stream_index
+            .and_then(|index| input_ctx.streams().find(|value| value.index() == index))
         {
             lyrics = extract_lyrics_from_metadata(&stream.metadata());
         }

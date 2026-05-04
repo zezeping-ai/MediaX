@@ -6,6 +6,9 @@ use crate::app::media::state::MediaState;
 use serde::Deserialize;
 use tauri::{AppHandle, State};
 
+#[cfg(desktop)]
+use crate::app::shell::open_request::schedule_native_open_local_dialog;
+
 #[derive(Deserialize)]
 pub struct PlaybackOpenSourceArgs {
     #[serde(alias = "path")]
@@ -54,4 +57,18 @@ pub fn playback_stop_session(
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, MediaCommandError> {
     command_result(coordinator::stop(app, state, request_id))
+}
+
+/// Returns true when the desktop native picker was scheduled (frontend must not call open+play again).
+#[tauri::command]
+pub fn playback_pick_local_file(app: AppHandle) -> Result<bool, MediaCommandError> {
+    #[cfg(desktop)]
+    {
+        schedule_native_open_local_dialog(&app);
+        Ok(true)
+    }
+    #[cfg(not(desktop))]
+    {
+        Ok(false)
+    }
 }

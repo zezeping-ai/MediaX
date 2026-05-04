@@ -1,4 +1,7 @@
-use super::{DecodedVideoFrame, QueuedFrame, Renderer, VideoFrame, VideoScaleMode};
+use super::{
+    DecodedVideoFrame, QueuedFrame, Renderer, VideoFrame, VideoPlaybackHeads, VideoScaleMode,
+};
+use super::playback_head::build_playback_heads;
 use ffmpeg_next::frame;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
@@ -461,8 +464,7 @@ impl RendererState {
         })
     }
 
-    pub fn effective_display_pts_seconds(&self) -> Option<f64> {
-        let presented_pts = self.last_presented_pts_seconds();
+    pub fn playback_heads(&self) -> VideoPlaybackHeads {
         let (queued_head_pts, present_lead_seconds) = self
             .inner
             .queued_frames
@@ -471,35 +473,15 @@ impl RendererState {
             .map(|queue| {
                 let head = queue.front().map(QueuedFrame::pts_seconds).filter(|v| v.is_finite());
                 let present_lead = present_lead_seconds_for_queue(&queue);
-                (head, present_lead)
+                (head, Some(present_lead))
             })
-            .unwrap_or((None, 0.004));
-        let now_media_seconds = current_clock_seconds(&self.inner);
-        let next_due_pts = queued_head_pts.filter(|pts| {
-            pts.is_finite() && *pts <= now_media_seconds + present_lead_seconds
-        });
-        match (presented_pts, queued_head_pts, next_due_pts) {
-            // Telemetry often samples just before the main-thread present task publishes the
-            // next frame. When a queued frame is already due, prefer that head frame as the
-            // user-visible estimate instead of reporting the last completed present one frame
-            // behind.
-            (_, _, Some(next_due_pts)) => Some(next_due_pts.max(0.0)),
-            (Some(presented_pts), Some(queued_head_pts), None) => {
-                let queued_gap_seconds = queued_head_pts - presented_pts;
-                if (0.060..=0.100).contains(&queued_gap_seconds) {
-                    // When the queued head sits roughly 1.5-2.5 frame intervals ahead of the
-                    // last completed present, telemetry is usually straddling an in-flight
-                    // display step. Split that gap so sync diagnostics do not over-report a
-                    // full extra frame of lag.
-                    Some((presented_pts + queued_gap_seconds * 0.5).max(0.0))
-                } else {
-                    Some(presented_pts.max(0.0))
-                }
-            }
-            (Some(presented_pts), None, None) => Some(presented_pts.max(0.0)),
-            (None, Some(queued_head_pts), None) => Some(queued_head_pts.max(0.0)),
-            (None, None, None) => None,
-        }
+            .unwrap_or((None, None));
+        build_playback_heads(
+            self.last_presented_pts_seconds(),
+            queued_head_pts,
+            present_lead_seconds,
+            current_clock_seconds(&self.inner),
+        )
     }
 
     pub fn submit_frame(&self, frame: VideoFrame) {

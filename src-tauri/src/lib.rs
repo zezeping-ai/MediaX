@@ -65,6 +65,7 @@ pub fn run() {
             library::media_set_library_roots,
             library::media_rescan_library,
             playback_session_commands::playback_open_source,
+            playback_session_commands::playback_pick_local_file,
             playback_session_commands::playback_resume,
             playback_session_commands::playback_pause,
             playback_session_commands::playback_stop_session,

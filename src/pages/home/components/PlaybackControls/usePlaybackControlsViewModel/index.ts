@@ -21,6 +21,7 @@ export function usePlaybackControlsViewModel(
   const { currentTime, commitSeek, previewSeekWhilePaused, cancelPreviewSeek } =
     usePlaybackTimelineState({
       playback: () => props.playback,
+      progressPosition: () => props.progressPositionSecondsOverride,
       onSeek: (seconds) => emit("seek", seconds),
       onSeekPreview: (seconds) => emit("seek-preview", seconds),
     });

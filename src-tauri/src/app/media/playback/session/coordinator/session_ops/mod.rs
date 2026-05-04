@@ -4,8 +4,6 @@ use super::helpers::{
     activate_playback_and_resume_position, finalize_active_cache_recording, set_pending_seek,
     sync_pause_resume_position,
 };
-use crate::app::media::playback::runtime::emit_debug;
-use crate::app::media::playback::session::service::supports_timeline_seek;
 use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::dto::{
@@ -13,13 +11,15 @@ use crate::app::media::playback::dto::{
 };
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::render::viewport_sync;
+use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::runtime::{
     start_decode_stream, stop_decode_stream_non_blocking, write_latest_stream_position,
 };
 use crate::app::media::playback::session::constraints;
+use crate::app::media::playback::session::service::supports_timeline_seek;
 use crate::app::media::state;
-use crate::app::media::state::MediaState;
 use crate::app::media::state::emit_snapshot_with_request_id;
+use crate::app::media::state::MediaState;
 use tauri::{AppHandle, Manager, State};
 
 use self::restart::restart_active_playback;
@@ -77,7 +77,11 @@ pub fn play(
         }
     }
     if let Some(source) = current_path {
-        let has_active_stream = state.runtime.stream.has_active_stream().map_err(MediaError::from)?;
+        let has_active_stream = state
+            .runtime
+            .stream
+            .has_active_stream()
+            .map_err(MediaError::from)?;
         if !resume_prefetch_stream || !has_active_stream {
             start_decode_stream(&app, &state, source)?;
         } else {
@@ -109,7 +113,11 @@ pub fn pause(
             .runtime
             .pause_prefetch_active
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        emit_debug(&app, "pause_prefetch", "keep network stream alive for paused buffering");
+        emit_debug(
+            &app,
+            "pause_prefetch",
+            "keep network stream alive for paused buffering",
+        );
     } else {
         state
             .runtime
@@ -183,9 +191,7 @@ pub fn seek(
             next_state.position_seconds,
         )
     };
-    let supports_seek = media_path
-        .as_deref()
-        .is_some_and(supports_timeline_seek);
+    let supports_seek = media_path.as_deref().is_some_and(supports_timeline_seek);
     if !supports_seek {
         if let Some(source) = media_path.as_deref() {
             emit_debug(
@@ -245,7 +251,8 @@ pub fn set_hw_decode_mode(
     let playing_path = {
         let mut playback = state::playback(&state)?;
         if playback.hw_decode_mode() == mode {
-            return emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from);
+            return emit_snapshot_with_request_id(&app, &state, request_id)
+                .map_err(MediaError::from);
         }
         playback.set_hw_decode_mode(mode);
         playback.update_hw_decode_status(false, None, None);

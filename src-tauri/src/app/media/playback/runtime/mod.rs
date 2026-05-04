@@ -10,6 +10,7 @@ mod progress;
 mod runtime_factory;
 mod seek_control;
 mod session;
+mod sync_clock;
 mod stream_control;
 mod video_pipeline;
 

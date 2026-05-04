@@ -1,4 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { normalizeLocalPlaybackPath } from "@/modules/local-file-path";
+import { playbackPickLocalFile } from "@/modules/media-player";
 import type { MediaSnapshot, PlaybackChannelRouting, PlaybackQualityMode } from "@/modules/media-types";
 
 const DEV_SEEK_LOG = import.meta.env.DEV;
@@ -72,7 +74,7 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     return true;
   }
 
-  async function openLocalFileByDialog() {
+  async function pickLocalPathViaPluginDialog(): Promise<string | null> {
     const selected = await open({
       title: "选择本地媒体文件",
       multiple: false,
@@ -88,10 +90,16 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
         },
       ],
     });
-    if (!selected || Array.isArray(selected)) {
+    const path = coerceDialogFilePath(selected);
+    return path ? normalizeLocalPlaybackPath(path) : null;
+  }
+
+  async function openLocalFileByDialog() {
+    const usedNativePicker = await playbackPickLocalFile();
+    if (usedNativePicker) {
       return null;
     }
-    return selected;
+    return pickLocalPathViaPluginDialog();
   }
 
   async function openSource(source: string) {
@@ -194,6 +202,31 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     stop,
     syncPosition,
   };
+}
+
+function coerceDialogFilePath(selected: unknown): string | null {
+  if (selected == null) {
+    return null;
+  }
+  if (typeof selected === "string") {
+    return selected;
+  }
+  if (Array.isArray(selected)) {
+    const first = selected[0];
+    if (typeof first === "string") {
+      return first;
+    }
+    if (first && typeof first === "object" && "path" in first) {
+      const p = (first as { path?: unknown }).path;
+      return typeof p === "string" ? p : null;
+    }
+    return null;
+  }
+  if (typeof selected === "object" && "path" in selected) {
+    const p = (selected as { path?: unknown }).path;
+    return typeof p === "string" ? p : null;
+  }
+  return null;
 }
 
 function logSeekDecision(

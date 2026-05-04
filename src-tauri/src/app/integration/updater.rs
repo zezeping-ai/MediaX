@@ -32,11 +32,7 @@ pub async fn check_and_install_update(app: AppHandle) {
     let update = match updater.check().await {
         Ok(update) => update,
         Err(err) => {
-            append_update_log(
-                &app,
-                "updater",
-                format!("check failed: {err}; {context}"),
-            );
+            append_update_log(&app, "updater", format!("check failed: {err}; {context}"));
             show_error_dialog(
                 &app,
                 "检查更新失败",
@@ -91,11 +87,7 @@ pub async fn check_and_install_update(app: AppHandle) {
         .await;
 
     if let Err(err) = result {
-        append_update_log(
-            &app,
-            "updater",
-            format!("install failed: {err}; {context}"),
-        );
+        append_update_log(&app, "updater", format!("install failed: {err}; {context}"));
         show_error_dialog(&app, "更新失败", &format!("下载或安装更新失败：{err}"));
         return;
     }
@@ -103,7 +95,10 @@ pub async fn check_and_install_update(app: AppHandle) {
     append_update_log(
         &app,
         "updater",
-        format!("install finished successfully: new_version={}, {context}", update.version),
+        format!(
+            "install finished successfully: new_version={}, {context}",
+            update.version
+        ),
     );
     show_info_dialog(&app, "更新完成", "更新已安装，应用将立即重启。");
     app.restart();

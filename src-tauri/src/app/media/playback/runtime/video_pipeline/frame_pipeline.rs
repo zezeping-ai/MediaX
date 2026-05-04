@@ -1,8 +1,6 @@
 use super::percentile_from_sorted;
 use crate::app::media::playback::render::renderer::{DecodedVideoFrame, VideoFrame};
-use crate::app::media::playback::render::video_frame::{
-    detect_color_profile, ColorProfile,
-};
+use crate::app::media::playback::render::video_frame::{detect_color_profile, ColorProfile};
 use crate::app::media::playback::runtime::{emit_debug, METRICS_EMIT_INTERVAL_MS};
 use ffmpeg_next::frame;
 use std::time::{Duration, Instant};
