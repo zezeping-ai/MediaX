@@ -1,17 +1,18 @@
 use super::emit_debug;
+use super::progress_emit::write_position_and_maybe_emit_progress;
+use super::sleep_with_stop_flag;
 use super::{drain_video_frames, refresh_tail_audio_rate, DecodeRuntime};
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::audio::effective_playback_rate;
-use crate::app::media::playback::runtime::audio_pipeline::drain_audio_frames;
-use crate::app::media::playback::runtime::progress::{
-    resolve_buffered_position_seconds, update_playback_progress,
+use crate::app::media::playback::runtime::audio_pipeline::{
+    drain_audio_frames, AudioDrainParams, AudioDrainStateRefs,
 };
-use crate::app::media::playback::runtime::write_latest_stream_position;
-use crate::app::media::state::{MediaState, TimingControls};
+use crate::app::media::playback::runtime::progress::update_playback_progress;
+use crate::app::media::state::TimingControls;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 pub(crate) fn finish_decode_runtime(
     app: &AppHandle,
@@ -88,6 +89,19 @@ fn flush_audio_decoder(
     let seeking_low_latency_refill = runtime.loop_state.in_seek_refill();
     let in_seek_settle = runtime.loop_state.in_seek_settle();
     let audio_sync_warmup_factor = runtime.loop_state.audio_sync_warmup_factor();
+    let params = AudioDrainParams {
+        applied_playback_rate: runtime.loop_state.last_applied_audio_rate,
+        has_video_stream,
+        is_realtime_source: runtime.is_realtime_source,
+        is_network_source: runtime.is_network_source,
+        building_rate_switch_cover,
+        seeking_low_latency_refill,
+        in_seek_settle,
+        audio_sync_warmup_factor,
+        decoder_relief_mode: false,
+        force_low_latency_output,
+        video_frame_duration_seconds,
+    };
     let Some(audio_state) = runtime.audio_pipeline.as_mut() else {
         return Ok(());
     };
@@ -98,23 +112,15 @@ fn flush_audio_decoder(
     drain_audio_frames(
         app,
         audio_state,
-        stop_flag,
-        runtime.loop_state.last_applied_audio_rate,
-        &mut runtime.loop_state.audio_clock,
-        &mut runtime.loop_state.observed_audio_clock,
-        &mut runtime.loop_state.audio_queue_depth_sources,
-        &mut runtime.loop_state.audio_queued_seconds,
-        &mut runtime.loop_state.active_seek_target_seconds,
-        has_video_stream,
-        runtime.is_realtime_source,
-        runtime.is_network_source,
-        building_rate_switch_cover,
-        seeking_low_latency_refill,
-        in_seek_settle,
-        audio_sync_warmup_factor,
-        false,
-        force_low_latency_output,
-        video_frame_duration_seconds,
+        AudioDrainStateRefs {
+            stop_flag,
+            audio_clock: &mut runtime.loop_state.audio_clock,
+            observed_audio_clock: &mut runtime.loop_state.observed_audio_clock,
+            audio_queue_depth_sources: &mut runtime.loop_state.audio_queue_depth_sources,
+            audio_queued_seconds: &mut runtime.loop_state.audio_queued_seconds,
+            active_seek_target_seconds: &mut runtime.loop_state.active_seek_target_seconds,
+        },
+        params,
     )?;
     if seeking_low_latency_refill && audio_state.stats.seek_refill_logged {
         runtime.loop_state.clear_seek_refill();
@@ -158,7 +164,6 @@ fn complete_eof_tail(
 ) -> Result<(), String> {
     let mut tail_position_seconds = runtime.loop_state.progress_position_seconds.max(0.0);
     let mut last_tail_tick = Instant::now();
-    let mut last_tail_progress_emit = Instant::now() - Duration::from_millis(250);
     loop {
         if stop_flag.load(Ordering::Relaxed) {
             emit_debug(app, "stop", "stop flag observed during eof tail; exiting");
@@ -178,27 +183,16 @@ fn complete_eof_tail(
             tail_position_seconds =
                 (tail_position_seconds + elapsed.as_secs_f64() * rate).min(duration_seconds);
         }
-        runtime.loop_state.progress_position_seconds = tail_position_seconds;
         renderer.update_clock(tail_position_seconds, rate);
-        write_latest_stream_position(&app.state::<MediaState>(), tail_position_seconds)?;
-        if last_tail_progress_emit.elapsed() >= Duration::from_millis(200) {
-            let buffered_position_seconds = resolve_buffered_position_seconds(
-                &runtime.video_ctx.input_ctx,
-                duration_seconds,
-                tail_position_seconds,
-                runtime.is_network_source,
-                runtime.is_realtime_source,
-            );
-            update_playback_progress(
-                app,
-                stream_generation,
-                tail_position_seconds,
-                duration_seconds,
-                buffered_position_seconds,
-                false,
-            )?;
-            last_tail_progress_emit = Instant::now();
-        }
+        write_position_and_maybe_emit_progress(
+            app,
+            runtime,
+            stream_generation,
+            tail_position_seconds,
+            false,
+            Duration::from_millis(200),
+            true,
+        )?;
         let audio_done = runtime
             .audio_pipeline
             .as_ref()
@@ -209,7 +203,7 @@ fn complete_eof_tail(
         if audio_done && duration_done {
             break;
         }
-        std::thread::sleep(Duration::from_millis(20));
+        sleep_with_stop_flag(stop_flag, Duration::from_millis(20));
     }
     Ok(())
 }

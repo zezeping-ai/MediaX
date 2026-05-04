@@ -2,12 +2,27 @@ use super::audio_pipeline::AudioPipeline;
 use super::session::DecodeLoopState;
 use crate::app::media::playback::decode_context::VideoDecodeContext;
 use ffmpeg_next::software::scaling::context::Context as ScalingContext;
+use ffmpeg_next::Packet;
+use std::time::Instant;
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct RuntimeAdaptiveProfile {
+    pub is_high_res_video: bool,
+    pub nominal_fps: f64,
+    pub extra_audio_stream_count: usize,
+}
 
 pub(super) struct DecodeRuntime {
     pub video_ctx: VideoDecodeContext,
     pub scaler: Option<ScalingContext>,
     pub audio_pipeline: Option<AudioPipeline>,
     pub loop_state: DecodeLoopState,
+    /// Holds one muxed packet when draining audio ahead—next loop iteration consumes it before
+    /// `read()`, keeping demux order while preventing long video-only stalls on the PCM path.
+    pub demux_packet_stash: Option<Packet>,
+    pub adaptive_audio_protection_until: Option<Instant>,
+    pub adaptive_last_underrun_count: u64,
+    pub adaptive_profile: RuntimeAdaptiveProfile,
     pub should_tail_eof: bool,
     pub is_network_source: bool,
     pub is_realtime_source: bool,

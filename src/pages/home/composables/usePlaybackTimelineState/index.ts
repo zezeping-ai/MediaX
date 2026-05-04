@@ -18,6 +18,10 @@ export function usePlaybackTimelineState({
 }: UsePlaybackTimelineStateArgs) {
   const anchorPosition = ref(0);
   const scrubbing = ref(false);
+  const pendingSeekTarget = ref<number | null>(null);
+  const pendingSeekStartedAt = ref(0);
+  const SEEK_COMMIT_SETTLE_TIMEOUT_MS = 1600;
+  const SEEK_COMMIT_SETTLE_TOLERANCE_SECONDS = 0.45;
 
   const currentTime = computed(() => anchorPosition.value);
 
@@ -43,11 +47,14 @@ export function usePlaybackTimelineState({
     emitPausedSeekPreview.cancel();
     scrubbing.value = false;
     anchorPosition.value = normalized;
+    pendingSeekTarget.value = normalized;
+    pendingSeekStartedAt.value = Date.now();
     onSeek(normalized);
   }
 
   function cancelPreviewSeek() {
     scrubbing.value = false;
+    pendingSeekTarget.value = null;
     emitPausedSeekPreview.cancel();
   }
 
@@ -77,6 +84,16 @@ export function usePlaybackTimelineState({
       }
 
       const backendPos = nextState.progressPositionSeconds ?? nextState.positionSeconds;
+      const pendingTarget = pendingSeekTarget.value;
+      if (pendingTarget != null) {
+        const settled = Math.abs(backendPos - pendingTarget) <= SEEK_COMMIT_SETTLE_TOLERANCE_SECONDS;
+        const timedOut = Date.now() - pendingSeekStartedAt.value >= SEEK_COMMIT_SETTLE_TIMEOUT_MS;
+        if (!settled && !timedOut) {
+          emitPausedSeekPreview.cancel();
+          return;
+        }
+        pendingSeekTarget.value = null;
+      }
       const drift = backendPos - anchorPosition.value;
       const backendJumped = Math.abs(drift) >= 0.5;
       const backendAdvanced = drift > 0.05;

@@ -27,6 +27,32 @@ const VIDEO_STEADY_OUTPUT_BLOCK_MIN_SECONDS: f64 = 0.028;
 const VIDEO_STEADY_OUTPUT_BLOCK_MAX_SECONDS: f64 = 0.040;
 const AUDIO_ONLY_STEADY_OUTPUT_BLOCK_SECONDS: f64 = 0.024;
 const MIN_PARTIAL_FLUSH_FRAMES: usize = 1024;
+const AUDIO_LOW_QUEUE_LOG_INTERVAL_PACKETS: u64 = 60;
+const AUDIO_LOW_QUEUE_THRESHOLD_SECONDS: f64 = 0.050;
+
+#[derive(Clone, Copy)]
+pub(crate) struct AudioDrainParams {
+    pub applied_playback_rate: PlaybackRate,
+    pub has_video_stream: bool,
+    pub is_realtime_source: bool,
+    pub is_network_source: bool,
+    pub building_rate_switch_cover: bool,
+    pub seeking_low_latency_refill: bool,
+    pub in_seek_settle: bool,
+    pub audio_sync_warmup_factor: f64,
+    pub decoder_relief_mode: bool,
+    pub force_low_latency_output: bool,
+    pub video_frame_duration_seconds: Option<f64>,
+}
+
+pub(crate) struct AudioDrainStateRefs<'a> {
+    pub stop_flag: &'a Arc<AtomicBool>,
+    pub audio_clock: &'a mut Option<AudioClock>,
+    pub observed_audio_clock: &'a mut Option<SyncClockSample>,
+    pub audio_queue_depth_sources: &'a mut Option<usize>,
+    pub audio_queued_seconds: &'a mut Option<f64>,
+    pub active_seek_target_seconds: &'a mut Option<f64>,
+}
 
 fn sample_observed_audio_clock(
     audio_state: &AudioPipeline,
@@ -77,24 +103,30 @@ fn steady_state_output_staging_frames(
 pub(crate) fn drain_audio_frames(
     app: &AppHandle,
     audio_state: &mut AudioPipeline,
-    stop_flag: &Arc<AtomicBool>,
-    applied_playback_rate: PlaybackRate,
-    audio_clock: &mut Option<AudioClock>,
-    observed_audio_clock: &mut Option<SyncClockSample>,
-    audio_queue_depth_sources: &mut Option<usize>,
-    audio_queued_seconds: &mut Option<f64>,
-    active_seek_target_seconds: &mut Option<f64>,
-    has_video_stream: bool,
-    is_realtime_source: bool,
-    is_network_source: bool,
-    building_rate_switch_cover: bool,
-    seeking_low_latency_refill: bool,
-    in_seek_settle: bool,
-    audio_sync_warmup_factor: f64,
-    decoder_relief_mode: bool,
-    force_low_latency_output: bool,
-    video_frame_duration_seconds: Option<f64>,
+    state_refs: AudioDrainStateRefs<'_>,
+    params: AudioDrainParams,
 ) -> Result<(), String> {
+    let AudioDrainStateRefs {
+        stop_flag,
+        audio_clock,
+        observed_audio_clock,
+        audio_queue_depth_sources,
+        audio_queued_seconds,
+        active_seek_target_seconds,
+    } = state_refs;
+    let AudioDrainParams {
+        applied_playback_rate,
+        has_video_stream,
+        is_realtime_source,
+        is_network_source,
+        building_rate_switch_cover,
+        seeking_low_latency_refill,
+        in_seek_settle,
+        audio_sync_warmup_factor,
+        decoder_relief_mode,
+        force_low_latency_output,
+        video_frame_duration_seconds,
+    } = params;
     audio_state.stats.packets = audio_state.stats.packets.saturating_add(1);
     let mut decoded = frame::Audio::empty();
     loop {
@@ -122,7 +154,39 @@ pub(crate) fn drain_audio_frames(
             break;
         }
         if audio_state.decoder.receive_frame(&mut decoded).is_err() {
+            let queue_depth = audio_state.output.queue_depth();
+            let queued_seconds = audio_state.output.queued_duration_seconds();
+            if queue_depth <= 1 || queued_seconds <= AUDIO_LOW_QUEUE_THRESHOLD_SECONDS {
+                if !audio_state.stats.decode_supply_gap_logged {
+                    crate::app::media::playback::runtime::emit_debug(
+                        app,
+                        "audio_decode_supply_gap",
+                        format!(
+                            "receive_frame empty while queue is shallow queue_depth={} queued_ms={:.2} decoder_relief={} low_latency={} seek_refill={} rate_switch_cover={}",
+                            queue_depth,
+                            queued_seconds * 1000.0,
+                            decoder_relief_mode,
+                            force_low_latency_output,
+                            seeking_low_latency_refill,
+                            building_rate_switch_cover,
+                        ),
+                    );
+                    audio_state.stats.decode_supply_gap_logged = true;
+                }
+            }
             break;
+        }
+        if audio_state.stats.decode_supply_gap_logged {
+            crate::app::media::playback::runtime::emit_debug(
+                app,
+                "audio_decode_supply_recovered",
+                format!(
+                    "decode supply recovered queue_depth={} queued_ms={:.2}",
+                    audio_state.output.queue_depth(),
+                    audio_state.output.queued_duration_seconds() * 1000.0,
+                ),
+            );
+            audio_state.stats.decode_supply_gap_logged = false;
         }
         if stop_flag.load(Ordering::Relaxed) {
             return Ok(());
@@ -155,6 +219,17 @@ pub(crate) fn drain_audio_frames(
             if !audio_state.stats.intentional_refill_pending {
                 audio_state.stats.underrun_count =
                     audio_state.stats.underrun_count.saturating_add(1);
+                crate::app::media::playback::runtime::emit_debug(
+                    app,
+                    "audio_output_underrun",
+                    format!(
+                        "underrun detected count={} decoder_relief={} seek_refill={} rate_switch_cover={}",
+                        audio_state.stats.underrun_count,
+                        decoder_relief_mode,
+                        seeking_low_latency_refill,
+                        building_rate_switch_cover,
+                    ),
+                );
             }
         }
         if should_drop_pre_seek_audio_frame(
@@ -311,6 +386,54 @@ pub(crate) fn drain_audio_frames(
         }
         *audio_queue_depth_sources = Some(audio_state.output.queue_depth());
         *audio_queued_seconds = Some(audio_state.output.queued_duration_seconds());
+        let queue_depth = audio_state.output.queue_depth();
+        let queued_seconds = audio_state.output.queued_duration_seconds();
+        if queue_depth <= 1 || queued_seconds <= AUDIO_LOW_QUEUE_THRESHOLD_SECONDS {
+            if !audio_state.stats.low_queue_logged
+                || audio_state
+                    .stats
+                    .low_queue_log_counter
+                    .saturating_add(1)
+                    % AUDIO_LOW_QUEUE_LOG_INTERVAL_PACKETS
+                    == 0
+            {
+                crate::app::media::playback::runtime::emit_debug(
+                    app,
+                    "audio_queue_low",
+                    format!(
+                        "queue shallow queue_depth={} queued_ms={:.2} prefill_target={} decoder_relief={} low_latency={} seek_refill={} seek_settle={} rate_switch_cover={}",
+                        queue_depth,
+                        queued_seconds * 1000.0,
+                        min_prefill_queue_depth,
+                        decoder_relief_mode,
+                        force_low_latency_output,
+                        seeking_low_latency_refill,
+                        in_seek_settle,
+                        building_rate_switch_cover,
+                    ),
+                );
+                audio_state.stats.low_queue_logged = true;
+                audio_state.stats.low_queue_log_counter = 0;
+            } else {
+                audio_state.stats.low_queue_log_counter =
+                    audio_state.stats.low_queue_log_counter.saturating_add(1);
+            }
+        } else {
+            if audio_state.stats.low_queue_logged {
+                crate::app::media::playback::runtime::emit_debug(
+                    app,
+                    "audio_queue_recovered",
+                    format!(
+                        "queue recovered queue_depth={} queued_ms={:.2} prefill_target={}",
+                        queue_depth,
+                        queued_seconds * 1000.0,
+                        min_prefill_queue_depth,
+                    ),
+                );
+            }
+            audio_state.stats.low_queue_logged = false;
+            audio_state.stats.low_queue_log_counter = 0;
+        }
 
         if should_yield_audio_decode(
             audio_state.output.queue_depth(),

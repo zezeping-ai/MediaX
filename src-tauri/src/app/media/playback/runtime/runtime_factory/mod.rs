@@ -7,10 +7,12 @@ mod source_flags;
 use super::audio::{clamp_playback_rate, effective_playback_rate};
 use super::decode_params::{DecodeDependencies, DecodeRequest};
 use super::emit::emit_debug;
+use super::decode_runtime::RuntimeAdaptiveProfile;
 use super::session::DecodeLoopState;
 use super::DecodeRuntime;
 use crate::app::media::playback::decode_context::open_video_decode_context;
 use crate::app::media::state::MediaState;
+use ffmpeg_next::media::Type as MediaType;
 use tauri::Manager;
 
 use self::audio_pipeline::prepare_audio_pipeline;
@@ -21,6 +23,9 @@ use self::metadata::{
 };
 use self::playback_gateway::PlaybackRuntimeGateway;
 use self::source_flags::{is_network_source, is_realtime_source, should_tail_eof_for_source};
+
+const HIGH_RES_VIDEO_WIDTH_THRESHOLD: u32 = 3000;
+const HIGH_RES_VIDEO_HEIGHT_THRESHOLD: u32 = 1600;
 
 pub(super) fn create_decode_runtime(
     dependencies: &DecodeDependencies<'_>,
@@ -81,6 +86,17 @@ pub(super) fn create_decode_runtime(
     );
     prime_audio_poster_frame(dependencies.renderer, &video_ctx);
     emit_debug(dependencies.app, "running", "decode loop running");
+    let adaptive_profile = RuntimeAdaptiveProfile {
+        is_high_res_video: video_ctx.output_width >= HIGH_RES_VIDEO_WIDTH_THRESHOLD
+            || video_ctx.output_height >= HIGH_RES_VIDEO_HEIGHT_THRESHOLD,
+        nominal_fps: video_ctx.fps_value.max(1.0),
+        extra_audio_stream_count: video_ctx
+            .input_ctx
+            .streams()
+            .filter(|stream| stream.parameters().medium() == MediaType::Audio)
+            .count()
+            .saturating_sub(1),
+    };
     let loop_state = DecodeLoopState::new(
         video_ctx.fps_value,
         dependencies.timing_controls.clone(),
@@ -91,6 +107,10 @@ pub(super) fn create_decode_runtime(
         video_ctx,
         scaler: None,
         audio_pipeline,
+        demux_packet_stash: None,
+        adaptive_audio_protection_until: None,
+        adaptive_last_underrun_count: 0,
+        adaptive_profile,
         should_tail_eof,
         is_network_source: source_is_network,
         is_realtime_source,

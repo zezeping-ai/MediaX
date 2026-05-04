@@ -7,4 +7,7 @@ pub(crate) struct AudioStats {
     pub intentional_refill_pending: bool,
     pub seek_refill_logged: bool,
     pub audio_only_backpressure_logged: bool,
+    pub decode_supply_gap_logged: bool,
+    pub low_queue_logged: bool,
+    pub low_queue_log_counter: u64,
 }

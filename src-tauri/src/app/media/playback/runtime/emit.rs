@@ -6,12 +6,14 @@ use crate::app::media::playback::events::{
 };
 use tauri::{AppHandle, Emitter};
 
+const RELEASE_DEBUG_MESSAGE_MAX_CHARS: usize = 200;
+
 pub(crate) fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) {
     if !should_persist_debug_stage(stage) {
         return;
     }
     let at_ms = unix_epoch_ms_now();
-    let message = message.into();
+    let message = normalize_debug_message_for_build(stage, message.into());
     append_playback_debug_log(app, at_ms, stage, &message);
 }
 
@@ -37,24 +39,40 @@ pub(crate) fn emit_audio_meter_payloads(app: &AppHandle, payload: MediaAudioMete
 }
 
 fn should_persist_debug_stage(stage: &str) -> bool {
+    if cfg!(debug_assertions) {
+        // Dev build: keep full-fidelity debug logs for troubleshooting.
+        return true;
+    }
+    should_persist_release_debug_stage(stage)
+}
+
+fn should_persist_release_debug_stage(stage: &str) -> bool {
     matches!(
         stage,
-        "audio_pipeline_ready"
-            | "audio_head_selection"
-            | "av_sync"
-            | "cache_recording_error"
+        "audio_output_underrun"
+            | "audio_queue_low"
+            | "audio_queue_recovered"
+            | "audio_decode_supply_gap"
+            | "audio_decode_supply_recovered"
             | "decode_error"
             | "decode_error_detail"
-            | "decoder_ready"
-            | "pause_prefetch"
-            | "renderer_starved"
-            | "renderer_efficiency"
-            | "renderer_present_slow"
-            | "rate_request"
-            | "running"
             | "seek"
             | "stop"
-            | "timeline_split"
-            | "video"
     ) || stage.contains("error")
+}
+
+fn normalize_debug_message_for_build(stage: &str, message: String) -> String {
+    if cfg!(debug_assertions) || stage.contains("error") {
+        return message;
+    }
+    truncate_chars(message, RELEASE_DEBUG_MESSAGE_MAX_CHARS)
+}
+
+fn truncate_chars(input: String, max_chars: usize) -> String {
+    let mut chars = input.chars();
+    let truncated: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_none() {
+        return truncated;
+    }
+    format!("{truncated}...")
 }
