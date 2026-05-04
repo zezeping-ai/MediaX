@@ -61,6 +61,16 @@ const effectiveMediaKind = computed(() => {
   }
   return "video";
 });
+const playbackStatus = computed(() => props.playback?.status ?? "idle");
+const isTerminalPlaybackState = computed(() =>
+  playbackStatus.value === "idle" || playbackStatus.value === "stopped",
+);
+const showPlaybackSurface = computed(() =>
+  Boolean(props.source) && !isTerminalPlaybackState.value,
+);
+const showEmptySourceActions = computed(() =>
+  isTerminalPlaybackState.value && !props.pendingSource,
+);
 
 const WINDOW_DRAG_BLOCK_SELECTORS = [
   "button",
@@ -110,17 +120,25 @@ async function handleViewportMouseDown(event: MouseEvent) {
     @dblclick.capture="handleViewportDoubleClick"
     @mousedown.capture="handleViewportMouseDown"
   >
-    <div v-if="source" class="h-full w-full" />
-    <div v-else class="p-5">
-      <a-empty description="请从 File 菜单打开本地文件或 URL">
-        <template #default>
-          <a-space>
-            <a-button type="primary" @click="emit('quick-open-local')">打开本地文件</a-button>
-            <a-button @click="emit('quick-open-url')">打开 URL</a-button>
-          </a-space>
-        </template>
-      </a-empty>
-    </div>
+    <Transition
+      mode="out-in"
+      enter-active-class="transition-opacity duration-200 ease-out"
+      leave-active-class="transition-opacity duration-180 ease-in"
+      enter-from-class="opacity-0"
+      leave-to-class="opacity-0"
+    >
+      <div v-if="showPlaybackSurface" key="playback-surface" class="h-full w-full" />
+      <div v-else-if="showEmptySourceActions" key="empty-actions" class="p-5">
+        <a-empty description="请从 File 菜单打开本地文件或 URL">
+          <template #default>
+            <a-space>
+              <a-button type="primary" @click="emit('quick-open-local')">打开本地文件</a-button>
+              <a-button @click="emit('quick-open-url')">打开 URL</a-button>
+            </a-space>
+          </template>
+        </a-empty>
+      </div>
+    </Transition>
     <AudioLyricsOverlay
       :media-kind="effectiveMediaKind"
       :playback="playback"

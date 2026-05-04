@@ -7,7 +7,13 @@ import { usePlayerOverlayControls } from "./usePlayerOverlayControls";
 
 export function useHomePlaybackController() {
   const mediaCenter = useMediaCenter();
-  const hasSource = computed(() => Boolean(mediaCenter.currentSource.value));
+  const hasSource = computed(() => {
+    const status = mediaCenter.playback.value?.status ?? "idle";
+    if (status === "idle" || status === "stopped") {
+      return false;
+    }
+    return Boolean(mediaCenter.currentSource.value || mediaCenter.pendingSource.value);
+  });
   const overlayControls = usePlayerOverlayControls({
     hasSource,
     isBusy: mediaCenter.isBusy,

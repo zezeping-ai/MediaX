@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useResizeObserver } from "@vueuse/core";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { ECharts, EChartsCoreOption } from "echarts/core";
 
 const props = defineProps<{
@@ -14,6 +14,7 @@ const chartEl = ref<HTMLDivElement | null>(null);
 let chart: ECharts | null = null;
 let echartsModule: (typeof import("echarts/core")) | null = null;
 let chartsRegistered = false;
+let rafHandle: number | null = null;
 
 const CATEGORY_COUNT = 24;
 const DB_MARKS = [0, -6, -12, -20, -40, -54] as const;
@@ -25,16 +26,8 @@ const FREQ_LABELS = new Map([
   [20, "8k"],
   [23, "16k"],
 ]);
-
-const categories = computed(() => Array.from({ length: CATEGORY_COUNT }, (_, index) => index));
-const barData = computed(() =>
-  Array.from({ length: CATEGORY_COUNT }, (_, index) => clamp01(props.bars[index] ?? 0)),
-);
-const holdData = computed(() =>
-  Array.from({ length: CATEGORY_COUNT }, (_, index) => clamp01(props.holdBars[index] ?? 0)),
-);
-const peakHoldValue = computed(() => clamp01(props.peakHold));
-const dbAxisValues = computed(() => DB_MARKS.map(normalizedFromDbfs));
+const CATEGORIES = Array.from({ length: CATEGORY_COUNT }, (_, index) => index);
+const DB_AXIS_VALUES = DB_MARKS.map(normalizedFromDbfs);
 
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
@@ -50,7 +43,7 @@ function axisDbLabel(value: number) {
 }
 
 function buildOption(): EChartsCoreOption {
-  const peakLine = peakHoldValue.value;
+  const peakLine = clamp01(props.peakHold);
   const isCompact = Boolean(props.compact);
   return {
     animation: false,
@@ -64,7 +57,7 @@ function buildOption(): EChartsCoreOption {
     },
     xAxis: {
       type: "category",
-      data: categories.value,
+      data: CATEGORIES,
       boundaryGap: true,
       axisLine: {
         show: false,
@@ -121,7 +114,7 @@ function buildOption(): EChartsCoreOption {
     series: [
       {
         type: "bar",
-        data: barData.value,
+        data: buildBarData(props.bars),
         barMaxWidth: isCompact ? 9 : 10,
         barMinHeight: isCompact ? 5 : 6,
         itemStyle: {
@@ -151,7 +144,7 @@ function buildOption(): EChartsCoreOption {
       },
       {
         type: "scatter",
-        data: holdData.value.map((value, index) => [index, value]),
+        data: buildHoldData(props.holdBars),
         symbol: "rect",
         symbolSize: isCompact ? [10, 2] : [11, 2],
         itemStyle: {
@@ -165,7 +158,7 @@ function buildOption(): EChartsCoreOption {
       },
       {
         type: "scatter",
-        data: dbAxisValues.value.map((value) => [0, value]),
+        data: DB_AXIS_VALUES.map((value) => [0, value]),
         symbolSize: 0,
         silent: true,
         tooltip: {
@@ -214,9 +207,42 @@ async function ensureChart() {
   chart.setOption(buildOption(), true);
 }
 
-watch([barData, holdData, peakHoldValue], () => {
-  void ensureChart();
-}, { deep: true });
+function scheduleChartDataUpdate() {
+  if (rafHandle !== null) {
+    return;
+  }
+  rafHandle = window.requestAnimationFrame(() => {
+    rafHandle = null;
+    if (!chart) {
+      return;
+    }
+    chart.setOption({
+      series: [
+        {
+          data: buildBarData(props.bars),
+          markLine: {
+            data: [{ yAxis: clamp01(props.peakHold) }],
+          },
+        },
+        {
+          data: buildHoldData(props.holdBars),
+        },
+      ],
+    });
+  });
+}
+
+watch(
+  () => [props.compact, props.bars, props.holdBars, props.peakHold],
+  () => {
+    if (!chart) {
+      void ensureChart();
+      return;
+    }
+    scheduleChartDataUpdate();
+  },
+  { deep: true },
+);
 
 useResizeObserver(chartEl, () => {
   chart?.resize();
@@ -228,11 +254,23 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (rafHandle !== null) {
+    window.cancelAnimationFrame(rafHandle);
+    rafHandle = null;
+  }
   chart?.dispose();
   chart = null;
 });
+
+function buildBarData(values: number[]) {
+  return Array.from({ length: CATEGORY_COUNT }, (_, index) => clamp01(values[index] ?? 0));
+}
+
+function buildHoldData(values: number[]) {
+  return Array.from({ length: CATEGORY_COUNT }, (_, index) => [index, clamp01(values[index] ?? 0)]);
+}
 </script>
 
 <template>
-  <div ref="chartEl" :class="props.compact ? 'h-[6.75rem] w-full' : 'h-[9.5rem] w-full'" />
+  <div ref="chartEl" :class="props.compact ? 'h-32 w-full' : 'h-44 w-full'" />
 </template>

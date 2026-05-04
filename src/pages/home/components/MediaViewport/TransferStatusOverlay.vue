@@ -130,7 +130,7 @@ function resolveDownlinkHint(value: number | null) {
   >
     <div
       v-if="compactSpeedRows.length"
-      class="rounded-xl border border-white/12 bg-slate-950/30 px-2.5 py-2 text-[12px] leading-4 text-white/90 shadow-[0_10px_30px_rgba(0,0,0,0.25)] backdrop-blur-md"
+      class="rounded-xl bg-slate-950/30 px-2.5 py-2 text-[12px] leading-4 text-white/90 shadow-[0_10px_30px_rgba(0,0,0,0.25)] backdrop-blur-md"
     >
       <div class="flex flex-wrap items-center gap-2">
         <div

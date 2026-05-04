@@ -19,6 +19,19 @@ function formatOpenedAt(timestamp: number) {
   }
   return new Date(timestamp).toLocaleString();
 }
+
+function decodeUrlForDisplay(url: string) {
+  try {
+    const decoded = decodeURI(url);
+    return decoded === url ? "" : decoded;
+  } catch {
+    return "";
+  }
+}
+
+function toInputValue(url: string) {
+  return decodeUrlForDisplay(url) || url;
+}
 </script>
 
 <template>
@@ -44,21 +57,21 @@ function formatOpenedAt(timestamp: number) {
         v-else
         size="small"
         :data-source="playlist"
-        class="max-h-[20rem] overflow-y-auto"
+        class="max-h-80 overflow-y-auto"
       >
       <template #renderItem="{ item }">
-        <a-list-item class="overflow-hidden px-3 py-2.5 transition-colors hover:bg-white/[0.03]">
+        <a-list-item class="overflow-hidden px-3 py-2.5 transition-colors hover:bg-white/3">
           <div class="min-w-0 w-full space-y-1.5 overflow-hidden">
             <button
               class="block min-w-0 w-full cursor-pointer bg-transparent p-0 text-left"
               type="button"
               :title="item.url"
-              @click="emit('select', item.url)"
+              @click="emit('select', toInputValue(item.url))"
             >
               <span
                 class="block min-w-0 w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm text-[rgba(255,255,255,0.88)]"
               >
-                {{ item.url }}
+                {{ decodeUrlForDisplay(item.url) || item.url }}
               </span>
             </button>
             <div class="flex items-center justify-between gap-3">

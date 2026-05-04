@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import UrlHistoryList from "./UrlHistoryList.vue";
 import type { UrlPlaylistItem } from "./types";
 
@@ -23,6 +24,8 @@ const emit = defineEmits<{
 function setOpen(value: boolean) {
   emit("update:open", value);
 }
+
+const canConfirm = computed(() => props.inputValue.trim().length > 0 && !props.busy);
 </script>
 
 <template>
@@ -43,9 +46,6 @@ function setOpen(value: boolean) {
               支持 http(s)、rtsp、rtmp、mms
             </div>
           </div>
-          <a-button @click="emit('cancel')">
-            取消
-          </a-button>
         </div>
         <a-input-group compact class="flex">
           <a-input
@@ -54,9 +54,9 @@ function setOpen(value: boolean) {
             placeholder="输入媒体 URL 或流地址"
             allow-clear
             @update:value="(value: string) => emit('update:inputValue', value)"
-            @press-enter="emit('confirm')"
+            @press-enter="canConfirm && emit('confirm')"
           />
-          <a-button type="primary" :loading="props.busy" @click="emit('confirm')">
+          <a-button type="primary" :loading="props.busy" :disabled="!canConfirm" @click="emit('confirm')">
             打开
           </a-button>
         </a-input-group>
