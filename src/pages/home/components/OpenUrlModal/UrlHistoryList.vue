@@ -19,6 +19,18 @@ function formatOpenedAt(timestamp: number) {
   }
   return new Date(timestamp).toLocaleString();
 }
+
+function formatDisplayUrl(rawUrl: string) {
+  const value = rawUrl.trim();
+  if (!value) {
+    return rawUrl;
+  }
+  try {
+    return decodeURI(value);
+  } catch {
+    return rawUrl;
+  }
+}
 </script>
 
 <template>
@@ -52,13 +64,13 @@ function formatOpenedAt(timestamp: number) {
             <button
               class="block min-w-0 w-full cursor-pointer bg-transparent p-0 text-left"
               type="button"
-              :title="item.url"
+              :title="formatDisplayUrl(item.url)"
               @click="emit('select', item.url)"
             >
               <span
                 class="block min-w-0 w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm text-[rgba(255,255,255,0.88)]"
               >
-                {{ item.url }}
+                {{ formatDisplayUrl(item.url) }}
               </span>
             </button>
             <div class="flex items-center justify-between gap-3">

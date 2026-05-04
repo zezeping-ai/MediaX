@@ -33,10 +33,14 @@ export function getPlaybackSnapshot() {
 }
 
 export function playbackOpenSource(source: string) {
-  return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
+  return invokeMediaCommandValidated<MediaSnapshot>(
     "playback_open_source",
     isMediaSnapshot,
-    { source },
+    {
+      args: {
+        source,
+      },
+    },
   );
 }
 

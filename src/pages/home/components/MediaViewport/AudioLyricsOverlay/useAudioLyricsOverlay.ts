@@ -34,7 +34,7 @@ type UseAudioLyricsOverlayOptions = {
 };
 
 const SPECTRUM_BAR_COUNT = 24;
-const MIN_BAR_LEVEL = 0.04;
+const MIN_BAR_LEVEL = 0.06;
 const HOLD_DECAY_STEP = 0.035;
 const HOLD_TICK_MS = 70;
 const OVERLAY_ACTIVITY_TICK_MS = 100;
@@ -308,7 +308,9 @@ function normalizeSpectrumInto(target: number[], values?: number[] | null) {
   const input = Array.isArray(values) ? values : [];
   for (let index = 0; index < SPECTRUM_BAR_COUNT; index += 1) {
     const raw = input[index] ?? 0;
-    target[index] = Math.max(MIN_BAR_LEVEL, Math.min(1, raw));
+    // Slightly lift low-level energy so spectrum bars appear earlier on quiet passages.
+    const lifted = Math.pow(Math.max(0, Math.min(1, raw)), 0.72);
+    target[index] = Math.max(MIN_BAR_LEVEL, Math.min(1, lifted));
   }
 }
 

@@ -4,15 +4,43 @@ use crate::app::media::playback::events::{
     MediaTelemetryPayload, MEDIA_PLAYBACK_AUDIO_METER_EVENT, MEDIA_PLAYBACK_METADATA_EVENT,
     MEDIA_PLAYBACK_TELEMETRY_EVENT,
 };
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 
 const RELEASE_DEBUG_MESSAGE_MAX_CHARS: usize = 200;
+static DEBUG_THROTTLE_LAST_AT_MS: OnceLock<Mutex<HashMap<&'static str, u64>>> = OnceLock::new();
 
 pub(crate) fn emit_debug(app: &AppHandle, stage: &'static str, message: impl Into<String>) {
     if !should_persist_debug_stage(stage) {
         return;
     }
     let at_ms = unix_epoch_ms_now();
+    let message = normalize_debug_message_for_build(stage, message.into());
+    append_playback_debug_log(app, at_ms, stage, &message);
+}
+
+pub(crate) fn emit_debug_throttled(
+    app: &AppHandle,
+    stage: &'static str,
+    message: impl Into<String>,
+    min_interval_ms: u64,
+) {
+    if !should_persist_debug_stage(stage) {
+        return;
+    }
+    let at_ms = unix_epoch_ms_now();
+    if min_interval_ms > 0 {
+        let map = DEBUG_THROTTLE_LAST_AT_MS.get_or_init(|| Mutex::new(HashMap::new()));
+        if let Ok(mut map) = map.lock() {
+            if let Some(last) = map.get(stage).copied() {
+                if at_ms.saturating_sub(last) < min_interval_ms {
+                    return;
+                }
+            }
+            map.insert(stage, at_ms);
+        }
+    }
     let message = normalize_debug_message_for_build(stage, message.into());
     append_playback_debug_log(app, at_ms, stage, &message);
 }

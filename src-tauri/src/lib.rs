@@ -89,6 +89,7 @@ pub fn run() {
             app::windows::commands::window_set_main_video_scale_mode,
             app::windows::commands::window_toggle_main_fullscreen,
             app::windows::commands::window_start_main_dragging,
+            app::windows::commands::window_mark_main_ready,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

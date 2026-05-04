@@ -12,7 +12,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:open": [boolean];
   "update:inputValue": [string];
-  confirm: [];
+  confirm: [string];
   cancel: [];
   clear: [];
   remove: [string];
@@ -22,6 +22,21 @@ const emit = defineEmits<{
 
 function setOpen(value: boolean) {
   emit("update:open", value);
+}
+
+function updateInputValue(value: string | undefined | null) {
+  emit("update:inputValue", typeof value === "string" ? value : "");
+}
+
+function canConfirmInput(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function emitConfirmIfValid(value: unknown) {
+  if (!canConfirmInput(value)) {
+    return;
+  }
+  emit("confirm", value.trim());
 }
 </script>
 
@@ -43,9 +58,6 @@ function setOpen(value: boolean) {
               支持 http(s)、rtsp、rtmp、mms
             </div>
           </div>
-          <a-button @click="emit('cancel')">
-            取消
-          </a-button>
         </div>
         <a-input-group compact class="flex">
           <a-input
@@ -53,10 +65,15 @@ function setOpen(value: boolean) {
             class="flex-1"
             placeholder="输入媒体 URL 或流地址"
             allow-clear
-            @update:value="(value: string) => emit('update:inputValue', value)"
-            @press-enter="emit('confirm')"
+            @update:value="updateInputValue"
+            @press-enter="emitConfirmIfValid(props.inputValue)"
           />
-          <a-button type="primary" :loading="props.busy" @click="emit('confirm')">
+          <a-button
+            type="primary"
+            :loading="props.busy"
+            :disabled="!canConfirmInput(props.inputValue)"
+            @click="emitConfirmIfValid(props.inputValue)"
+          >
             打开
           </a-button>
         </a-input-group>

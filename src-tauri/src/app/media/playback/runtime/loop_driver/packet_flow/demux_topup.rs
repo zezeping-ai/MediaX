@@ -65,7 +65,7 @@ pub(super) fn top_up_demux_audio_after_video(
                         timing_controls,
                         runtime,
                         stream_generation,
-                        &packet,
+                        packet,
                     )?;
                 }
             }

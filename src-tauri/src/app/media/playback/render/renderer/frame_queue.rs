@@ -42,6 +42,23 @@ fn frame_interval_seconds_for_queue(queue: &VecDeque<QueuedFrame>) -> Option<f64
     frame_interval.is_finite().then_some(frame_interval)
 }
 
+fn should_preserve_single_poster_frame(
+    queue: &VecDeque<QueuedFrame>,
+    now_media_seconds: f64,
+) -> bool {
+    if queue.len() != 1 {
+        return false;
+    }
+    let Some(frame) = queue.front() else {
+        return false;
+    };
+    let pts_seconds = frame.pts_seconds();
+    // Audio cover/poster frames are commonly injected with pts=0. After resume/seek to a later
+    // position they look stale by timeline math, but dropping them leaves audio-only playback
+    // without any visual frame.
+    pts_seconds.is_finite() && pts_seconds <= 0.001 && now_media_seconds >= 0.5
+}
+
 pub(super) fn pick_frame_for_present(
     inner: &RendererInner,
     now_media_seconds: f64,
@@ -67,6 +84,9 @@ pub(super) fn pick_frame_for_present(
     let mut dropped_stale_count = 0usize;
     let mut first_dropped_pts = None;
     while let Some(frame) = queue.front() {
+        if should_preserve_single_poster_frame(&queue, now_media_seconds) {
+            break;
+        }
         let pts_seconds = frame.pts_seconds();
         if !pts_seconds.is_finite() || pts_seconds < stale_deadline {
             dropped_stale = true;

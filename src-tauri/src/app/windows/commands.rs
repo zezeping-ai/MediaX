@@ -88,3 +88,19 @@ pub fn window_start_main_dragging(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|err| format!("start dragging failed: {err}"))?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn window_mark_main_ready(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| "main window not found".to_string())?;
+    let is_visible = window
+        .is_visible()
+        .map_err(|err| format!("read window visibility failed: {err}"))?;
+    if !is_visible {
+        window
+            .show()
+            .map_err(|err| format!("show main window failed: {err}"))?;
+    }
+    Ok(())
+}

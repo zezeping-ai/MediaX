@@ -20,10 +20,11 @@ use tauri::AppHandle;
 /// EAGAIN on video `send_packet` needs repeated drain/receive; shallow drains + low retry counts
 /// falsely trip `hw_decode_fallback` (especially when audio prefill caps drains to 1 frame).
 pub(super) const VIDEO_SEND_PACKET_RETRY_LIMIT: usize = 48;
+pub(super) const VIDEO_SEND_PACKET_SPIN_LIMIT: usize = 4;
 /// Minimum decoded frames pushed per drain pass while relieving decoder backpressure (HW stacks
 /// often buffer more than one picture before accepting further packets).
 pub(super) const VIDEO_DECODER_RELIEVE_MIN_FRAMES_PER_PASS: usize = 16;
-pub(super) const AUDIO_SEND_PACKET_RETRY_LIMIT: usize = 3;
+pub(super) const AUDIO_SEND_PACKET_SPIN_LIMIT: usize = 2;
 pub(super) const VIDEO_QUEUE_BOOST_WINDOW_MS: u64 = 320;
 /// Bounded demux burst after each video packet when PCM queue is shallow (avoids long video-only stretches).
 pub(super) const DEMUX_AUDIO_TOP_UP_MIN_READS: usize = 12;
@@ -58,7 +59,7 @@ pub(super) fn handle_packet(
             timing_controls,
             runtime,
             stream_generation,
-            &packet,
+            packet,
         )?;
         return Ok(());
     }
@@ -70,7 +71,7 @@ pub(super) fn handle_packet(
         timing_controls,
         runtime,
         stream_generation,
-        &packet,
+        packet,
     )
 }
 

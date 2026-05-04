@@ -63,7 +63,8 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
     }),
     requestOpenUrlInput: urlInputController.requestOpenUrlInput,
     cancelOpenUrlInput: urlInputController.cancelOpenUrlInput,
-    confirmOpenUrlInput: () => runStartupAction(urlInputController.confirmOpenUrlInput),
+    confirmOpenUrlInput: (url?: string) =>
+      runStartupAction(() => urlInputController.confirmOpenUrlInput(url)),
     removeUrlFromPlaylist: urlInputController.removeUrlFromPlaylist,
     clearUrlPlaylist: urlInputController.clearUrlPlaylist,
     play: () => runBlockingAction(playbackRunner.play),

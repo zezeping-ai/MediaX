@@ -25,6 +25,7 @@ import App from "@/App.vue";
 import { router } from "@/router";
 import "@/styles/tailwind.css";
 import "@/styles/global.scss";
+import { invoke } from "@tauri-apps/api/core";
 
 const app = createApp(App);
 
@@ -68,3 +69,7 @@ app.use(router);
 });
 
 app.mount("#app");
+
+// Keep startup smooth on transparent windows: show native window only after
+// the frontend root has mounted and first paint can happen.
+void invoke("window_mark_main_ready").catch(() => {});

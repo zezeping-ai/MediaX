@@ -104,11 +104,12 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
   }));
 
   const urlDialogEvents = {
-    onConfirm: viewModel.confirmOpenUrlInput,
+    onConfirm: (url: string) => viewModel.confirmOpenUrlInput(url),
     onCancel: viewModel.cancelOpenUrlInput,
     onClear: viewModel.clearUrlPlaylist,
     onRemove: viewModel.removeUrlFromPlaylist,
     onSelect: (url: string) => {
+      viewModel.urlInputValue.value = "";
       viewModel.urlInputValue.value = url;
     },
     onPlay: viewModel.handlePlayFromUrlPlaylist,

@@ -1,4 +1,9 @@
-use super::{is_decoder_backpressure, DecodeRuntime, StopFlag, TimingControlsHandle};
+mod backpressure_profile;
+mod backpressure_state;
+
+use super::{
+    is_decoder_backpressure, DecodeRuntime, StopFlag, TimingControlsHandle,
+};
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::audio_pipeline::{
     drain_audio_frames, AudioDrainParams, AudioDrainStateRefs,
@@ -7,8 +12,14 @@ use ffmpeg_next::Packet;
 use std::time::Duration;
 use tauri::AppHandle;
 
-use super::super::emit_debug;
+use crate::app::media::playback::runtime::emit::emit_debug_throttled;
 use super::super::progress_emit::write_position_and_maybe_emit_progress;
+use super::super::sleep_with_stop_flag;
+use backpressure_profile::{audio_backpressure_profile, AudioBackpressureProfile, BackpressureClass};
+use backpressure_state::{
+    defer_ms_for_high_water, mark_audio_high_water_defer_window, record_audio_backpressure_and_check_frequent,
+    record_audio_backpressure_summary, should_defer_audio_packet_for_high_water,
+};
 
 pub(super) fn handle_audio_packet(
     app: &AppHandle,
@@ -17,7 +28,7 @@ pub(super) fn handle_audio_packet(
     timing_controls: &TimingControlsHandle,
     runtime: &mut DecodeRuntime,
     stream_generation: u32,
-    packet: &Packet,
+    packet: Packet,
 ) -> Result<(), String> {
     let has_video_stream = runtime.has_video_stream();
     let video_frame_duration_seconds =
@@ -47,11 +58,17 @@ pub(super) fn handle_audio_packet(
     if packet.stream() != audio_state.stream_index {
         return Ok(());
     }
+    let early_profile = audio_backpressure_profile(audio_state, base_params);
+    if should_defer_audio_packet_for_high_water(&early_profile) {
+        sleep_with_stop_flag(stop_flag, Duration::from_millis(1));
+        runtime.demux_packet_stash = Some(packet);
+        return Ok(());
+    }
 
-    send_audio_packet_with_backpressure_recovery(
+    match send_audio_packet_with_backpressure_recovery(
         app,
         audio_state,
-        packet,
+        &packet,
         AudioDrainStateRefs {
             stop_flag,
             audio_clock: &mut runtime.loop_state.audio_clock,
@@ -61,7 +78,13 @@ pub(super) fn handle_audio_packet(
             active_seek_target_seconds: &mut runtime.loop_state.active_seek_target_seconds,
         },
         base_params,
-    )?;
+    )? {
+        AudioSendPacketOutcome::Sent => {}
+        AudioSendPacketOutcome::DeferToOuterLoop => {
+            runtime.demux_packet_stash = Some(packet);
+            return Ok(());
+        }
+    }
 
     drain_audio_frames(
         app,
@@ -92,7 +115,7 @@ fn send_audio_packet_with_backpressure_recovery(
     packet: &Packet,
     state_refs: AudioDrainStateRefs<'_>,
     params: AudioDrainParams,
-) -> Result<(), String> {
+) -> Result<AudioSendPacketOutcome, String> {
     let AudioDrainStateRefs {
         stop_flag,
         audio_clock,
@@ -102,22 +125,33 @@ fn send_audio_packet_with_backpressure_recovery(
         active_seek_target_seconds,
     } = state_refs;
     let mut attempts = 0usize;
+    let backpressure_profile = audio_backpressure_profile(audio_state, params);
+    let mut effective_spin_limit = backpressure_profile.spin_limit;
     loop {
         match audio_state.decoder.send_packet(packet) {
-            Ok(()) => return Ok(()),
-            Err(err)
-                if is_decoder_backpressure(&err)
-                    && attempts < super::AUDIO_SEND_PACKET_RETRY_LIMIT =>
-            {
+            Ok(()) => return Ok(AudioSendPacketOutcome::Sent),
+            Err(err) if is_decoder_backpressure(&err) && attempts < effective_spin_limit => {
+                if attempts == 0
+                    && backpressure_profile.class == BackpressureClass::NormalWater
+                    && record_audio_backpressure_and_check_frequent()
+                {
+                    effective_spin_limit = effective_spin_limit.saturating_sub(1).max(1);
+                }
                 attempts = attempts.saturating_add(1);
                 if attempts == 1 {
-                    emit_debug(
+                    record_audio_backpressure_summary(app, &backpressure_profile);
+                    log_audio_decoder_backpressure(
                         app,
-                        "audio_decoder_backpressure",
-                        format!(
-                            "audio send_packet would block; draining decoded audio before retry #{attempts}"
-                        ),
+                        &backpressure_profile,
+                        effective_spin_limit,
+                        params.applied_playback_rate.as_f32(),
                     );
+                }
+                if backpressure_profile.high_water {
+                    mark_audio_high_water_defer_window(defer_ms_for_high_water(&backpressure_profile));
+                    std::thread::yield_now();
+                    sleep_with_stop_flag(stop_flag, Duration::from_millis(1));
+                    return Ok(AudioSendPacketOutcome::DeferToOuterLoop);
                 }
                 drain_audio_frames(
                     app,
@@ -135,17 +169,57 @@ fn send_audio_packet_with_backpressure_recovery(
                         ..params
                     },
                 )?;
+                std::thread::yield_now();
+                if attempts >= 2 {
+                    sleep_with_stop_flag(
+                        stop_flag,
+                        Duration::from_millis((attempts as u64).min(3)),
+                    );
+                }
+            }
+            Err(err) if is_decoder_backpressure(&err) && attempts >= effective_spin_limit => {
+                return Ok(AudioSendPacketOutcome::DeferToOuterLoop);
             }
             Err(err) => {
-                emit_debug(
+                emit_debug_throttled(
                     app,
                     "decode_error_detail",
                     format!("audio_send_packet_failed err={err}"),
+                    0,
                 );
                 return Err(format!("send audio packet failed: {err}"));
             }
         }
     }
+}
+
+enum AudioSendPacketOutcome {
+    Sent,
+    DeferToOuterLoop,
+}
+
+fn log_audio_decoder_backpressure(
+    app: &AppHandle,
+    profile: &AudioBackpressureProfile,
+    effective_spin_limit: usize,
+    playback_rate: f32,
+) {
+    emit_debug_throttled(
+        app,
+        "audio_decoder_backpressure",
+        format!(
+            "audio send_packet would block; class={} source_kind={} depth={} prefill={} queued={:.3}s floor={:.3}s spin_limit={} rate={:.2}x",
+            profile.class.as_str(),
+            profile.source_kind.as_str(),
+            profile.queue_depth,
+            profile.prefill_target,
+            profile.queued_seconds,
+            profile.refill_floor_seconds,
+            effective_spin_limit,
+            playback_rate,
+        ),
+        800,
+    );
 }
 
 fn update_audio_only_progress(
@@ -177,4 +251,3 @@ fn update_audio_only_progress(
     )?;
     Ok(())
 }
-

@@ -18,7 +18,7 @@ export function useMediaUrlInputController(options: UseMediaUrlInputControllerOp
   const urlDialogVisible = ref(false);
   const urlPlaylist = useStorage<UrlPlaylistItem[]>(URL_PLAYLIST_STORAGE_KEY, [], localStorage);
 
-  async function submitUrl(url: string) {
+async function submitUrl(url: string | null | undefined) {
     const normalized = normalizePlayableUrl(url);
     if (!normalized) {
       throw new Error("请输入有效的媒体直链，支持 http(s)、rtsp、rtmp、mms");
@@ -38,8 +38,8 @@ export function useMediaUrlInputController(options: UseMediaUrlInputControllerOp
     urlDialogVisible.value = false;
   }
 
-  async function confirmOpenUrlInput() {
-    const normalized = await submitUrl(urlInputValue.value);
+  async function confirmOpenUrlInput(inputValue?: string | null) {
+    const normalized = await submitUrl(inputValue ?? urlInputValue.value);
     urlInputValue.value = normalized;
     urlDialogVisible.value = false;
   }
@@ -108,8 +108,8 @@ function sanitizedUrlPlaylist(items: UrlPlaylistItem[]) {
   return sortedUrlPlaylist(Array.from(dedupedByUrl.values())).slice(0, MAX_URL_PLAYLIST_SIZE);
 }
 
-function normalizePlayableUrl(raw: string) {
-  const value = raw.trim();
+function normalizePlayableUrl(raw: string | null | undefined) {
+  const value = typeof raw === "string" ? raw.trim() : "";
   if (!value) {
     return "";
   }

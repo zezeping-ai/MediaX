@@ -105,7 +105,12 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
   async function openSource(source: string) {
     await withPendingSource(source, async () => {
       await runSnapshotCommand(() => options.commands.openSource(source));
-      await runSnapshotCommand(options.commands.play);
+      const playSnapshot = await runSnapshotCommand(options.commands.play);
+      // Occasionally the first resume after source switch can race with runtime teardown/startup.
+      // If snapshot still isn't playing, issue one immediate replay as a safety net.
+      if (playSnapshot.playback?.status !== "playing") {
+        await runSnapshotCommand(options.commands.play);
+      }
       await finalizeSourceOpen();
     });
   }

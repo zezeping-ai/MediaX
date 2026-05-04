@@ -272,5 +272,5 @@ function buildHoldData(values: number[]) {
 </script>
 
 <template>
-  <div ref="chartEl" :class="props.compact ? 'h-[6.75rem] w-full' : 'h-[9.5rem] w-full'" />
+  <div ref="chartEl" :class="props.compact ? 'h-[8rem] w-full' : 'h-[11rem] w-full'" />
 </template>
