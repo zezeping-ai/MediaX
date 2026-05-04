@@ -23,6 +23,9 @@ fn take_decode_stream_handles(
 /// multiple demux loops running concurrently (e.g. switching quality / hw decode).
 pub fn stop_decode_stream_blocking(state: &State<'_, MediaState>) -> Result<(), String> {
     let handles = take_decode_stream_handles(state)?;
+    if handles.0.is_none() && handles.1.is_none() {
+        return Ok(());
+    }
     StreamRuntimeState::request_stop(&handles);
     StreamRuntimeState::join(handles);
     Ok(())
@@ -35,6 +38,9 @@ pub fn stop_decode_stream_blocking(state: &State<'_, MediaState>) -> Result<(), 
 /// a background thread to keep pause/stop responsive.
 pub fn stop_decode_stream_non_blocking(state: &State<'_, MediaState>) -> Result<(), String> {
     let handles = take_decode_stream_handles(state)?;
+    if handles.0.is_none() && handles.1.is_none() {
+        return Ok(());
+    }
     StreamRuntimeState::request_stop(&handles);
     if let Some(handle) = handles.1 {
         thread::spawn(move || {

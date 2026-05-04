@@ -142,6 +142,7 @@ pub fn playback_set_quality(
     mode: PlaybackQualityMode,
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, MediaCommandError> {
+    emit_debug(&app, "quality_request", format!("requested quality_mode={mode:?}"));
     command_result(coordinator::set_quality_mode(app, state, mode, request_id))
 }
 
