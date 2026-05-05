@@ -32,7 +32,6 @@ const {
   <main class="h-screen w-screen overflow-hidden bg-transparent">
     <section
       class="relative h-full w-full"
-      @mousemove="shellEvents.onPointerMove"
       @pointermove="shellEvents.onPointerMove"
       @pointerdown="shellEvents.onPointerActivate"
       @touchstart.passive="shellEvents.onPointerActivate"
@@ -78,6 +77,7 @@ const {
         @set-channel-routing="playbackControlsEvents.onSetChannelRouting"
         @toggle-cache="playbackControlsEvents.onToggleCache"
         @toggle-lock="playbackControlsEvents.onToggleLock"
+        @export-audio="playbackControlsEvents.onExportAudio"
       />
       <StatusAlerts v-bind="statusAlertProps" />
       <OpenUrlModal

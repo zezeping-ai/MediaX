@@ -421,13 +421,29 @@ fn update_audio_only_progress(
         runtime.loop_state.current_position_seconds,
     )?;
     if runtime.loop_state.last_progress_emit.elapsed() >= Duration::from_millis(200) {
-        let buffered_position_seconds = resolve_buffered_position_seconds(
+        let base_buffered_position_seconds = resolve_buffered_position_seconds(
             &runtime.video_ctx.input_ctx,
             duration_seconds,
             runtime.loop_state.current_position_seconds,
             runtime.is_network_source,
             runtime.is_realtime_source,
         );
+        let audio_queue_ahead_seconds = runtime
+            .audio_pipeline
+            .as_ref()
+            .map(|audio| audio.output.queued_duration_seconds())
+            .or(runtime.loop_state.audio_queued_seconds)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let queue_buffered_position_seconds =
+            runtime.loop_state.current_position_seconds + audio_queue_ahead_seconds;
+        let buffered_position_seconds = if duration_seconds > 0.0 {
+            base_buffered_position_seconds
+                .max(queue_buffered_position_seconds)
+                .min(duration_seconds)
+        } else {
+            base_buffered_position_seconds.max(queue_buffered_position_seconds)
+        };
         update_playback_progress(
             app,
             stream_generation,

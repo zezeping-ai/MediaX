@@ -25,6 +25,7 @@ export {
 } from "./playbackCommands";
 export {
   playbackGetCacheRecordingStatus,
+  playbackExportCurrentAudio,
   playbackStartCacheRecording,
   playbackStopCacheRecording,
 } from "./cacheRecordingCommands";

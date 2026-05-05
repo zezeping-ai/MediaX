@@ -100,6 +100,14 @@ fn drive_pause_prefetch(
         return Ok(false);
     }
     enter_pause_prefetch(renderer, runtime);
+    if !runtime.is_realtime_source {
+        // For seekable/non-realtime network files (e.g. mp3 over http), continuous demux
+        // during pause can run to EOF and force restart+seek on resume. Keep stream alive
+        // without advancing demux cursor so resume can continue instantly.
+        emit_pause_prefetch_progress(app, runtime, stream_generation)?;
+        std::thread::sleep(Duration::from_millis(video_pipeline::DECODE_LEAD_SLEEP_MS));
+        return Ok(true);
+    }
     let mut packet = Packet::empty();
     match packet.read(&mut runtime.video_ctx.input_ctx) {
         Ok(_) => {
@@ -145,7 +153,9 @@ fn enter_pause_prefetch(renderer: &RendererState, runtime: &mut DecodeRuntime) {
         return;
     }
     if let Some(audio) = runtime.audio_pipeline.as_ref() {
-        audio.output.pause_and_clear_queue();
+        // Keep queued PCM during pause-prefetch so resume can start immediately
+        // instead of waiting for output queue refill from the paused position.
+        audio.output.pause();
     }
     renderer.reset_timeline(runtime.loop_state.current_position_seconds.max(0.0), 1.0);
     runtime.loop_state.pause_prefetch_mode = true;
@@ -178,13 +188,29 @@ fn emit_pause_prefetch_progress(
         .latest_position_seconds()
         .map_err(|err| err.to_string())?;
     runtime.loop_state.current_position_seconds = position_seconds.max(0.0);
-    let buffered_position_seconds = resolve_buffered_position_seconds(
+    let base_buffered_position_seconds = resolve_buffered_position_seconds(
         &runtime.video_ctx.input_ctx,
         runtime.video_ctx.duration_seconds,
         runtime.loop_state.current_position_seconds,
         runtime.is_network_source,
         runtime.is_realtime_source,
     );
+    let audio_queue_ahead_seconds = runtime
+        .audio_pipeline
+        .as_ref()
+        .map(|audio| audio.output.queued_duration_seconds())
+        .or(runtime.loop_state.audio_queued_seconds)
+        .unwrap_or(0.0)
+        .max(0.0);
+    let queue_buffered_position_seconds =
+        runtime.loop_state.current_position_seconds + audio_queue_ahead_seconds;
+    let buffered_position_seconds = if runtime.video_ctx.duration_seconds > 0.0 {
+        base_buffered_position_seconds
+            .max(queue_buffered_position_seconds)
+            .min(runtime.video_ctx.duration_seconds)
+    } else {
+        base_buffered_position_seconds.max(queue_buffered_position_seconds)
+    };
     let should_log_progress = runtime
         .loop_state
         .pause_prefetch_logged_buffered_seconds

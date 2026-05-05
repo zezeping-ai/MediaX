@@ -3,6 +3,7 @@ import type {
   PlaybackQualityMode,
   PreviewFrame,
 } from "@/modules/media-types";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { createPlaybackCommandRunner } from "./createPlaybackCommandRunner";
 import type { useCacheRecordingController } from "./useCacheRecordingController";
 import type { useMediaUrlInputController } from "./useMediaUrlInputController";
@@ -21,6 +22,7 @@ type CreateMediaCenterActionsOptions = {
     maxWidth?: number,
     maxHeight?: number,
   ) => Promise<PreviewFrame | null>;
+  onNoticeMessage: (message: string) => void;
 };
 
 export function createMediaCenterActions(options: CreateMediaCenterActionsOptions) {
@@ -30,6 +32,7 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
     requestPreviewFrame,
     urlInputController,
     withBusyState,
+    onNoticeMessage,
   } = options;
 
   return {
@@ -71,6 +74,18 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
     setChannelRouting: (routing: PlaybackChannelRouting) =>
       playbackRunner.runWithoutBusyLock(() => playbackRunner.setChannelRouting(routing)),
     setQuality: (mode: PlaybackQualityMode) => withBusyState(() => playbackRunner.setQuality(mode)),
+    exportCurrentAudio: () => withBusyState(async () => {
+      const selected = await open({
+        title: "选择音频导出目录",
+        directory: true,
+        multiple: false,
+      });
+      if (!selected || Array.isArray(selected)) {
+        return;
+      }
+      const outputPath = await playbackRunner.exportCurrentAudio(String(selected));
+      onNoticeMessage(`音频已导出：${outputPath}`);
+    }),
     toggleCacheRecording: () => withBusyState(cacheRecordingController.toggleCacheRecording),
     requestPreviewFrame: (positionSeconds: number, maxWidth?: number, maxHeight?: number) =>
       requestPreviewFrame(positionSeconds, maxWidth, maxHeight),

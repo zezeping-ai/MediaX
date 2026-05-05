@@ -17,16 +17,36 @@ export function usePlaybackQualityController(options: UsePlaybackQualityControll
   const adaptiveQualitySupported = computed(() =>
     Boolean(options.playback.value?.adaptive_quality_supported),
   );
-  const playbackQualityOptions = computed(() =>
-    buildPlaybackQualityOptions(
+  const qualitySwitchEnabled = computed(() => {
+    const playback = options.playback.value;
+    if (!playback || playback.media_kind !== "video") {
+      return false;
+    }
+    const hasVideoDimensions =
+      typeof options.metadataVideoHeight.value === "number"
+      && Number.isFinite(options.metadataVideoHeight.value)
+      && options.metadataVideoHeight.value > 0;
+    // Wait until video traits are stable to avoid quality selector flicker
+    // when opening audio sources whose initial snapshot still reports `video`.
+    return hasVideoDimensions || adaptiveQualitySupported.value;
+  });
+  const playbackQualityOptions = computed(() => {
+    if (!qualitySwitchEnabled.value) {
+      return [{ key: "source", label: "原画" }];
+    }
+    return buildPlaybackQualityOptions(
       sourceVideoHeightBaseline.value,
       QUALITY_DOWNGRADE_LEVELS,
       adaptiveQualitySupported.value,
       selectedQuality.value,
-    ),
-  );
+    );
+  });
 
   async function changeQuality(nextQuality: string) {
+    if (!qualitySwitchEnabled.value) {
+      selectedQuality.value = "source";
+      return;
+    }
     const nextMode = nextQuality as PlaybackQualityMode;
     selectedQuality.value = nextQuality;
     await options.setQuality(nextMode);
@@ -67,6 +87,7 @@ export function usePlaybackQualityController(options: UsePlaybackQualityControll
     adaptiveQualitySupported,
     changeQuality,
     playbackQualityOptions,
+    qualitySwitchEnabled,
     selectedQuality,
     sourceVideoHeightBaseline,
   };

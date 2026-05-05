@@ -69,9 +69,12 @@ pub fn discontinuity_smoothing_profile(
 
 pub fn output_staging_frames(
     playback_rate: PlaybackRate,
-    _has_video_stream: bool,
-    _is_network_source: bool,
+    has_video_stream: bool,
+    is_network_source: bool,
 ) -> usize {
+    if !has_video_stream && is_network_source {
+        return OUTPUT_STAGING_FRAMES_AUDIO_ONLY_NETWORK;
+    }
     let playback_rate = playback_rate.as_f32();
     if playback_rate >= 1.25 {
         OUTPUT_STAGING_FRAMES_FAST
@@ -278,7 +281,7 @@ mod tests {
         assert_eq!(audio_queue_depth_limit(PlaybackRate::new(0.75), true, false, false), 30);
         assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.25), true, true, true), 10);
         assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, false), 8);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, true), 16);
+        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, true), 32);
     }
 
     #[test]
@@ -355,7 +358,7 @@ mod tests {
     fn audio_prefill_tracks_media_type_and_rate() {
         assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), true, false, false), 5);
         assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, false), 3);
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, true), 6);
+        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, true), 12);
         assert_eq!(audio_queue_prefill_target(PlaybackRate::new(0.5), false, false, false), 5);
         assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), true, true, true), 3);
     }
@@ -363,7 +366,7 @@ mod tests {
     #[test]
     fn rate_switch_cover_seconds_track_source_type() {
         assert!((audio_rate_switch_cover_seconds(false, false, false) - 0.32).abs() < 1e-6);
-        assert!((audio_rate_switch_cover_seconds(false, false, true) - 1.20).abs() < 1e-6);
+        assert!((audio_rate_switch_cover_seconds(false, false, true) - 0.45).abs() < 1e-6);
         assert!((audio_rate_switch_cover_seconds(true, false, false) - 0.30).abs() < 1e-6);
         assert!((audio_rate_switch_cover_seconds(true, true, true) - 0.12).abs() < 1e-6);
     }
@@ -371,7 +374,7 @@ mod tests {
     #[test]
     fn rate_switch_min_apply_seconds_track_source_type() {
         assert!((audio_rate_switch_min_apply_seconds(false, false, false) - 0.24).abs() < 1e-6);
-        assert!((audio_rate_switch_min_apply_seconds(false, false, true) - 1.20).abs() < 1e-6);
+        assert!((audio_rate_switch_min_apply_seconds(false, false, true) - 0.32).abs() < 1e-6);
         assert!((audio_rate_switch_min_apply_seconds(true, false, false) - 0.16).abs() < 1e-6);
         assert!((audio_rate_switch_min_apply_seconds(true, true, true) - 0.08).abs() < 1e-6);
     }

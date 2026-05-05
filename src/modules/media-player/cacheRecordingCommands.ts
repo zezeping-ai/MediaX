@@ -14,3 +14,9 @@ export function playbackStartCacheRecording(outputDir?: string) {
 export function playbackStopCacheRecording() {
   return invokeMediaCommand<CacheRecordingStatus>("playback_stop_cache_recording");
 }
+
+export function playbackExportCurrentAudio(outputDir: string) {
+  return invokeMediaCommand<string>("playback_export_current_audio", {
+    outputDir,
+  });
+}

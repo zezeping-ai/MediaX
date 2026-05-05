@@ -51,6 +51,7 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     locked: viewModel.controlsLocked.value,
     cacheRecording: viewModel.cacheRecording.value,
     cacheOutputPath: viewModel.cacheOutputPath.value,
+    showAudioExport: viewModel.playback.value?.media_kind === "video",
     durationSecondsOverride: viewModel.effectiveDurationSeconds.value,
     bufferedPositionSecondsOverride: viewModel.playback.value?.buffered_position_seconds ?? 0,
     qualityOptions: viewModel.playbackQualityOptions.value,
@@ -80,6 +81,7 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     onSetChannelRouting: (value: string) => void viewModel.setChannelRouting(value as never),
     onToggleCache: viewModel.toggleCacheRecording,
     onToggleLock: viewModel.toggleLock,
+    onExportAudio: viewModel.exportCurrentAudio,
   };
 
   const statusAlertProps = computed(() => ({

@@ -52,8 +52,10 @@ pub fn play(
         .runtime
         .pause_prefetch_active
         .swap(false, std::sync::atomic::Ordering::Relaxed);
+    let has_active_stream = state.runtime.stream.has_active_stream().map_err(MediaError::from)?;
+    let should_restart_stream = !resume_prefetch_stream || !has_active_stream;
     if let Some(source) = current_path.as_deref() {
-        if supports_timeline_seek(source) {
+        if should_restart_stream && supports_timeline_seek(source) {
             set_pending_seek(&state, resume_position_seconds)?;
         } else if resume_position_seconds > f64::EPSILON {
             emit_debug(
@@ -66,8 +68,7 @@ pub fn play(
         }
     }
     if let Some(source) = current_path {
-        let has_active_stream = state.runtime.stream.has_active_stream().map_err(MediaError::from)?;
-        if !resume_prefetch_stream || !has_active_stream {
+        if should_restart_stream {
             start_decode_stream(&app, &state, source)?;
         } else {
             emit_debug(

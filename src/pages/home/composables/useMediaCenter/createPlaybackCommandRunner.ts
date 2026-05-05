@@ -20,6 +20,7 @@ type CreatePlaybackCommandRunnerOptions = {
     setRightChannelMuted: (muted: boolean) => Promise<MediaSnapshot>;
     setChannelRouting: (routing: PlaybackChannelRouting) => Promise<MediaSnapshot>;
     setQuality: (mode: PlaybackQualityMode) => Promise<MediaSnapshot>;
+    exportCurrentAudio: (outputDir: string) => Promise<string>;
     syncPosition: (positionSeconds: number, durationSeconds: number) => Promise<MediaSnapshot>;
   };
   playback: { value: { status?: string } | null };
@@ -218,6 +219,10 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     await run(() => options.commands.syncPosition(positionSeconds, durationSeconds));
   }
 
+  async function exportCurrentAudio(outputDir: string) {
+    return options.commands.exportCurrentAudio(outputDir);
+  }
+
   async function runWithoutBusyLock(action: () => Promise<void>) {
     try {
       await action();
@@ -246,6 +251,7 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     setVolume,
     stop,
     syncPosition,
+    exportCurrentAudio,
   };
 }
 

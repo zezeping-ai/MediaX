@@ -18,6 +18,7 @@ export interface PlaybackControlsProps {
   locked: boolean;
   cacheRecording: boolean;
   cacheOutputPath: string;
+  showAudioExport: boolean;
   durationSecondsOverride: number;
   bufferedPositionSecondsOverride?: number;
   qualityOptions: PlaybackQualityOption[];
@@ -44,4 +45,5 @@ export interface PlaybackControlsEmit {
   (event: "set-channel-routing", value: PlaybackState["channel_routing"]): void;
   (event: "toggle-cache"): void;
   (event: "toggle-lock"): void;
+  (event: "export-audio"): void;
 }

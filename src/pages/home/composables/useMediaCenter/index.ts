@@ -131,6 +131,9 @@ export function useMediaCenter() {
     cacheRecordingController,
     urlInputController,
     requestPreviewFrame,
+    onNoticeMessage: (message) => {
+      recordingNoticeMessage.value = message;
+    },
   });
 
   return {

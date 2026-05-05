@@ -51,6 +51,7 @@ export function usePlaybackControlsBindings(options: PlaybackControlsBindingsOpt
   const sideActionProps = computed(() => ({
     cacheRecording: props.cacheRecording,
     locked: props.locked,
+    showAudioExport: props.showAudioExport,
     cacheIcon: unref(viewModel.cacheIcon),
     lockIcon: unref(viewModel.lockIcon),
   }));
@@ -77,6 +78,7 @@ export function usePlaybackControlsBindings(options: PlaybackControlsBindingsOpt
   const sideActionEvents = {
     onToggleCache: () => emit("toggle-cache"),
     onToggleLock: () => emit("toggle-lock"),
+    onExportAudio: () => emit("export-audio"),
   };
 
   return {

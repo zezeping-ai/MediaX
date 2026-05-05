@@ -47,8 +47,9 @@ pub(super) fn has_active_stream(state: &StreamRuntimeState) -> Result<bool, Medi
         .thread
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("stream thread"))?
-        .is_some();
-    Ok(has_stop_flag || has_thread)
+        .as_ref()
+        .is_some_and(|handle| !handle.is_finished());
+    Ok(has_stop_flag && has_thread)
 }
 
 pub(super) fn request_stop(handles: &DecodeStreamHandles) {

@@ -26,3 +26,11 @@ pub fn playback_stop_cache_recording(
 ) -> Result<CacheRecordingStatus, MediaCommandError> {
     command_result(coordinator::stop_cache_recording(state))
 }
+
+#[tauri::command]
+pub fn playback_export_current_audio(
+    state: State<'_, MediaState>,
+    output_dir: String,
+) -> Result<String, MediaCommandError> {
+    command_result(coordinator::export_current_audio_track(state, output_dir))
+}

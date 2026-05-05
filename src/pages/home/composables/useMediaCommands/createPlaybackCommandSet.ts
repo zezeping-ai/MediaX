@@ -2,6 +2,7 @@ import {
   DEFAULT_PREVIEW_FRAME_MAX_HEIGHT,
   DEFAULT_PREVIEW_FRAME_MAX_WIDTH,
   playbackConfigureDecoderMode,
+  playbackExportCurrentAudio,
   playbackOpenSource,
   playbackPause,
   playbackPreviewFrame,
@@ -42,6 +43,7 @@ export interface PlaybackCommandSet {
   setRightChannelMuted: (muted: boolean) => Promise<MediaSnapshot>;
   setChannelRouting: (routing: PlaybackChannelRouting) => Promise<MediaSnapshot>;
   setQuality: (mode: PlaybackQualityMode) => Promise<MediaSnapshot>;
+  exportCurrentAudio: (outputDir: string) => Promise<string>;
   configureDecoderMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>;
   syncPosition: (positionSeconds: number, durationSeconds: number) => Promise<MediaSnapshot>;
   requestPreviewFrame: (
@@ -67,6 +69,7 @@ export function createPlaybackCommandSet(): PlaybackCommandSet {
     setRightChannelMuted: (muted) => playbackSetRightChannelMuted(muted),
     setChannelRouting: (routing) => playbackSetChannelRouting(routing),
     setQuality: (mode) => playbackSetQuality(mode),
+    exportCurrentAudio: (outputDir) => playbackExportCurrentAudio(outputDir),
     configureDecoderMode: (mode) => playbackConfigureDecoderMode(mode),
     syncPosition: (positionSeconds, durationSeconds) =>
       playbackSyncPosition(positionSeconds, durationSeconds),

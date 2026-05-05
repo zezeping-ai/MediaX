@@ -166,31 +166,33 @@ function updateRightChannelVolume(value: number | [number, number]) {
           </template>
         </a-dropdown>
 
-        <span class="h-5 w-px bg-white/10" aria-hidden="true" />
+        <template v-if="qualityOptions.length > 1">
+          <span class="h-5 w-px bg-white/10" aria-hidden="true" />
 
-        <a-dropdown
-          :open="qualityDropdownOpen"
-          :trigger="['click']"
-          placement="top"
-          @update:open="$emit('toggle-quality-open', $event)"
-        >
-          <a-button
-            size="small"
-            :class="TINY_PILL_BTN"
-            :disabled="disabled || qualityOptions.length <= 1"
-            title="切换清晰度"
+          <a-dropdown
+            :open="qualityDropdownOpen"
+            :trigger="['click']"
+            placement="top"
+            @update:open="$emit('toggle-quality-open', $event)"
           >
-            <span class="tabular-nums">{{ qualityLabel }}</span>
-            <Icon icon="mdi:chevron-up" width="14" height="14" class="shrink-0 opacity-75" aria-hidden="true" />
-          </a-button>
-          <template #overlay>
-            <a-menu :selected-keys="[selectedQuality]" @click="$emit('change-quality', $event.key)">
-              <a-menu-item v-for="option in qualityOptions" :key="option.key">
-                {{ option.label }}
-              </a-menu-item>
-            </a-menu>
-          </template>
-        </a-dropdown>
+            <a-button
+              size="small"
+              :class="TINY_PILL_BTN"
+              :disabled="disabled"
+              title="切换清晰度"
+            >
+              <span class="tabular-nums">{{ qualityLabel }}</span>
+              <Icon icon="mdi:chevron-up" width="14" height="14" class="shrink-0 opacity-75" aria-hidden="true" />
+            </a-button>
+            <template #overlay>
+              <a-menu :selected-keys="[selectedQuality]" @click="$emit('change-quality', $event.key)">
+                <a-menu-item v-for="option in qualityOptions" :key="option.key">
+                  {{ option.label }}
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+        </template>
 
         <span class="h-5 w-px bg-white/10" aria-hidden="true" />
 

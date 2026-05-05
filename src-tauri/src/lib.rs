@@ -84,6 +84,7 @@ pub fn run() {
             playback_cache_commands::playback_get_cache_recording_status,
             playback_cache_commands::playback_start_cache_recording,
             playback_cache_commands::playback_stop_cache_recording,
+            playback_cache_commands::playback_export_current_audio,
             app::windows::window_set_main_always_on_top,
             app::windows::window_set_main_video_scale_mode,
             app::windows::window_toggle_main_fullscreen,

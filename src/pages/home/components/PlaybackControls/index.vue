@@ -52,10 +52,7 @@ const {
         @commit="timelineEvents.onCommit"
       />
 
-      <div
-        class="mt-1 grid grid-cols-[40px_minmax(0,1fr)_40px_40px] items-center gap-2 max-[720px]:grid-cols-[34px_minmax(0,1fr)_34px_34px]"
-      >
-        <div aria-hidden="true" />
+      <div class="relative mt-1">
         <PlaybackCenterControls
           v-bind="centerControlProps"
           @play="centerControlEvents.onPlay"
@@ -76,10 +73,21 @@ const {
           @set-channel-routing="centerControlEvents.onSetChannelRouting"
         />
 
+        <div class="absolute right-0 top-1/2 hidden -translate-y-1/2 min-[860px]:block">
+          <PlaybackSideActions
+            v-bind="sideActionProps"
+            @toggle-cache="sideActionEvents.onToggleCache"
+            @toggle-lock="sideActionEvents.onToggleLock"
+            @export-audio="sideActionEvents.onExportAudio"
+          />
+        </div>
+      </div>
+      <div class="mt-2 flex justify-center min-[860px]:hidden">
         <PlaybackSideActions
           v-bind="sideActionProps"
           @toggle-cache="sideActionEvents.onToggleCache"
           @toggle-lock="sideActionEvents.onToggleLock"
+          @export-audio="sideActionEvents.onExportAudio"
         />
       </div>
     </div>

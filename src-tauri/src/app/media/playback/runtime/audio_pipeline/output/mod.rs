@@ -57,9 +57,7 @@ impl AudioOutput {
         self.player.play();
     }
 
-    pub fn pause_and_clear_queue(&self) {
-        self.player.clear();
-        self.queued_duration.clear();
+    pub fn pause(&self) {
         self.player.pause();
     }
 
