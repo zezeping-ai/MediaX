@@ -1,5 +1,10 @@
 import { computed } from "vue";
 import type { useHomePageViewModel } from "./useHomePageViewModel";
+import type {
+  MediaViewportEventMap,
+  PlaybackControlsEventMap,
+  UrlDialogEventMap,
+} from "./homePageBindings.types";
 
 type HomePageViewModel = ReturnType<typeof useHomePageViewModel>;
 
@@ -37,10 +42,10 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     cacheWriteSpeedBytesPerSecond: viewModel.cacheWriteSpeedBytesPerSecond.value,
   }));
 
-  const mediaViewportEvents = {
-    onEnded: viewModel.handleVideoEnded,
-    onQuickOpenLocal: viewModel.openLocalFileByDialog,
-    onQuickOpenUrl: viewModel.requestOpenUrlInput,
+  const mediaViewportEvents: MediaViewportEventMap = {
+    ended: viewModel.handleVideoEnded,
+    "quick-open-local": viewModel.openLocalFileByDialog,
+    "quick-open-url": viewModel.requestOpenUrlInput,
   };
 
   const playbackControlsProps = computed(() => ({
@@ -60,28 +65,28 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     requestPreviewFrame: viewModel.requestPreviewFrame,
   }));
 
-  const playbackControlsEvents = {
-    onMouseEnter: viewModel.onControlsMouseEnter,
-    onMouseLeave: viewModel.onControlsMouseLeave,
-    onMouseMove: viewModel.markMouseActive,
-    onPlay: viewModel.handlePlay,
-    onPause: (position: number) => viewModel.handlePause(position),
-    onStop: viewModel.handleStop,
-    onSeek: viewModel.seek,
-    onSeekPreview: viewModel.seekPreview,
-    onChangeRate: (value: number) => void viewModel.changePlaybackRate(value),
-    onChangeVolume: (value: number) => void viewModel.changeVolume(value),
-    onChangeQuality: (value: string) => void viewModel.changeQuality(value),
-    onOverlayInteractionChange: viewModel.setControlsOverlayInteracting,
-    onToggleMute: () => void viewModel.toggleMute(),
-    onSetLeftChannelVolume: (value: number) => void viewModel.setLeftChannelVolume(value),
-    onSetRightChannelVolume: (value: number) => void viewModel.setRightChannelVolume(value),
-    onSetLeftChannelMuted: (value: boolean) => void viewModel.setLeftChannelMuted(value),
-    onSetRightChannelMuted: (value: boolean) => void viewModel.setRightChannelMuted(value),
-    onSetChannelRouting: (value: string) => void viewModel.setChannelRouting(value as never),
-    onToggleCache: viewModel.toggleCacheRecording,
-    onToggleLock: viewModel.toggleLock,
-    onExportAudio: viewModel.exportCurrentAudio,
+  const playbackControlsEvents: PlaybackControlsEventMap = {
+    mouseenter: viewModel.onControlsMouseEnter,
+    mouseleave: viewModel.onControlsMouseLeave,
+    mousemove: viewModel.markMouseActive,
+    play: viewModel.handlePlay,
+    pause: (position: number) => viewModel.handlePause(position),
+    stop: viewModel.handleStop,
+    seek: viewModel.seek,
+    "seek-preview": viewModel.seekPreview,
+    "change-rate": (value: number) => void viewModel.changePlaybackRate(value),
+    "change-volume": (value: number) => void viewModel.changeVolume(value),
+    "change-quality": (value: string) => void viewModel.changeQuality(value),
+    "overlay-interaction-change": viewModel.setControlsOverlayInteracting,
+    "toggle-mute": () => void viewModel.toggleMute(),
+    "set-left-channel-volume": (value: number) => void viewModel.setLeftChannelVolume(value),
+    "set-right-channel-volume": (value: number) => void viewModel.setRightChannelVolume(value),
+    "set-left-channel-muted": (value: boolean) => void viewModel.setLeftChannelMuted(value),
+    "set-right-channel-muted": (value: boolean) => void viewModel.setRightChannelMuted(value),
+    "set-channel-routing": (value: string) => void viewModel.setChannelRouting(value as never),
+    "toggle-cache": viewModel.toggleCacheRecording,
+    "toggle-lock": viewModel.toggleLock,
+    "export-audio": viewModel.exportCurrentAudio,
   };
 
   const statusAlertProps = computed(() => ({
@@ -95,15 +100,15 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     playlist: viewModel.urlPlaylist.value,
   }));
 
-  const urlDialogEvents = {
-    onConfirm: viewModel.confirmOpenUrlInput,
-    onCancel: viewModel.cancelOpenUrlInput,
-    onClear: viewModel.clearUrlPlaylist,
-    onRemove: viewModel.removeUrlFromPlaylist,
-    onSelect: (url: string) => {
+  const urlDialogEvents: UrlDialogEventMap = {
+    confirm: viewModel.confirmOpenUrlInput,
+    cancel: viewModel.cancelOpenUrlInput,
+    clear: viewModel.clearUrlPlaylist,
+    remove: viewModel.removeUrlFromPlaylist,
+    select: (url: string) => {
       viewModel.urlInputValue.value = url;
     },
-    onPlay: viewModel.handlePlayFromUrlPlaylist,
+    play: viewModel.handlePlayFromUrlPlaylist,
   };
 
   return {

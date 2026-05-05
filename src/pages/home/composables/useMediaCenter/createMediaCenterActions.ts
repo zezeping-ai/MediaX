@@ -35,6 +35,27 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
     onNoticeMessage,
   } = options;
 
+  async function pickDirectory(title: string): Promise<string | null> {
+    const selected = await open({
+      title,
+      directory: true,
+      multiple: false,
+    });
+    if (!selected || Array.isArray(selected)) {
+      return null;
+    }
+    return String(selected);
+  }
+
+  async function exportCurrentAudio() {
+    const outputDir = await pickDirectory("选择音频导出目录");
+    if (!outputDir) {
+      return;
+    }
+    const outputPath = await playbackRunner.exportCurrentAudio(outputDir);
+    onNoticeMessage(`音频已导出：${outputPath}`);
+  }
+
   return {
     openPath: (path: string) => withBusyState(async () => {
       await playbackRunner.openPath(path);
@@ -74,18 +95,7 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
     setChannelRouting: (routing: PlaybackChannelRouting) =>
       playbackRunner.runWithoutBusyLock(() => playbackRunner.setChannelRouting(routing)),
     setQuality: (mode: PlaybackQualityMode) => withBusyState(() => playbackRunner.setQuality(mode)),
-    exportCurrentAudio: () => withBusyState(async () => {
-      const selected = await open({
-        title: "选择音频导出目录",
-        directory: true,
-        multiple: false,
-      });
-      if (!selected || Array.isArray(selected)) {
-        return;
-      }
-      const outputPath = await playbackRunner.exportCurrentAudio(String(selected));
-      onNoticeMessage(`音频已导出：${outputPath}`);
-    }),
+    exportCurrentAudio: () => withBusyState(exportCurrentAudio),
     toggleCacheRecording: () => withBusyState(cacheRecordingController.toggleCacheRecording),
     requestPreviewFrame: (positionSeconds: number, maxWidth?: number, maxHeight?: number) =>
       requestPreviewFrame(positionSeconds, maxWidth, maxHeight),

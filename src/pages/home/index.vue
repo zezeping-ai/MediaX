@@ -40,9 +40,7 @@ const {
     >
       <MediaViewport
         v-bind="mediaViewportProps"
-        @ended="mediaViewportEvents.onEnded"
-        @quick-open-local="mediaViewportEvents.onQuickOpenLocal"
-        @quick-open-url="mediaViewportEvents.onQuickOpenUrl"
+        v-on="mediaViewportEvents"
       />
       <div
         v-if="dropActive"
@@ -57,27 +55,7 @@ const {
         class="absolute bottom-0 left-1/2 z-30 w-[min(760px,calc(100vw-32px))] -translate-x-1/2 opacity-100 transition-[opacity,transform] duration-300 ease-out will-change-transform"
         :class="!controlsVisible ? 'pointer-events-none translate-y-[120%] opacity-0' : ''"
         v-bind="playbackControlsProps"
-        @mouseenter="playbackControlsEvents.onMouseEnter"
-        @mouseleave="playbackControlsEvents.onMouseLeave"
-        @mousemove="playbackControlsEvents.onMouseMove"
-        @play="playbackControlsEvents.onPlay"
-        @pause="playbackControlsEvents.onPause"
-        @stop="playbackControlsEvents.onStop"
-        @seek="playbackControlsEvents.onSeek"
-        @seek-preview="playbackControlsEvents.onSeekPreview"
-        @change-rate="playbackControlsEvents.onChangeRate"
-        @change-volume="playbackControlsEvents.onChangeVolume"
-        @change-quality="playbackControlsEvents.onChangeQuality"
-        @overlay-interaction-change="playbackControlsEvents.onOverlayInteractionChange"
-        @toggle-mute="playbackControlsEvents.onToggleMute"
-        @set-left-channel-volume="playbackControlsEvents.onSetLeftChannelVolume"
-        @set-right-channel-volume="playbackControlsEvents.onSetRightChannelVolume"
-        @set-left-channel-muted="playbackControlsEvents.onSetLeftChannelMuted"
-        @set-right-channel-muted="playbackControlsEvents.onSetRightChannelMuted"
-        @set-channel-routing="playbackControlsEvents.onSetChannelRouting"
-        @toggle-cache="playbackControlsEvents.onToggleCache"
-        @toggle-lock="playbackControlsEvents.onToggleLock"
-        @export-audio="playbackControlsEvents.onExportAudio"
+        v-on="playbackControlsEvents"
       />
       <StatusAlerts v-bind="statusAlertProps" />
       <OpenUrlModal
@@ -85,12 +63,7 @@ const {
         v-model:open="urlDialogVisible"
         v-model:input-value="urlDialogInputValue"
         v-bind="urlDialogProps"
-        @confirm="urlDialogEvents.onConfirm"
-        @cancel="urlDialogEvents.onCancel"
-        @clear="urlDialogEvents.onClear"
-        @remove="urlDialogEvents.onRemove"
-        @select="urlDialogEvents.onSelect"
-        @play="urlDialogEvents.onPlay"
+        v-on="urlDialogEvents"
       />
     </section>
   </main>

@@ -2,23 +2,15 @@
 import { computed, defineAsyncComponent } from "vue";
 import type { PreviewFrame } from "@/modules/media-types";
 import { formatSeconds } from "./playbackControlsUtils";
+import type { TimelineEmitContract, TimelineViewProps } from "./bindings.contract";
 
 const TimelineHoverPreview = defineAsyncComponent({
   loader: () => import("./TimelineHoverPreview.vue"),
   delay: 120,
 });
 
-const props = defineProps<{
-  currentTime: number;
-  bufferedTime: number;
-  duration: number;
-  decodeBadgeClass: string;
-  decodeBadgeLabel: string;
-  decodeBadgeTitle: string;
-  sliderMax: number;
-  timelineDisabled: boolean;
-  timelineTitle: string;
-  sourceKey: string;
+const props = defineProps<TimelineViewProps & {
+  // keep local generic visible for template autocomplete
   requestPreviewFrame?: (
     positionSeconds: number,
     maxWidth?: number,
@@ -26,10 +18,7 @@ const props = defineProps<{
   ) => Promise<PreviewFrame | null>;
 }>();
 
-defineEmits<{
-  preview: [number | [number, number]];
-  commit: [number | [number, number]];
-}>();
+defineEmits<TimelineEmitContract>();
 
 const previewDuration = computed(() => Math.max(props.duration, props.sliderMax));
 const playedPercent = computed(() => {

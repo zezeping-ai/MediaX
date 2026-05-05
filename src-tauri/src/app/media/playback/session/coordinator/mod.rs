@@ -2,6 +2,7 @@
 //!
 //! Heavy policy lives in [`crate::app::media::playback::render::viewport_sync`] and [`crate::app::media::playback::runtime`].
 
+mod audio_export_ops;
 mod cache_ops;
 mod helpers;
 mod preview_ops;
@@ -15,9 +16,9 @@ use crate::app::media::state::snapshot_from_state;
 use tauri::State;
 
 pub use cache_ops::{
-    export_current_audio_track, get_cache_recording_status, start_cache_recording,
-    stop_cache_recording,
+    get_cache_recording_status, start_cache_recording, stop_cache_recording,
 };
+pub use audio_export_ops::export_current_audio_track;
 pub use preview_ops::preview_frame;
 pub use session_ops::{open, pause, play, seek, set_hw_decode_mode, set_quality_mode, stop};
 pub use timing_ops::{

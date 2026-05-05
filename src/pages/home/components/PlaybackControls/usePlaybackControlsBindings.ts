@@ -1,18 +1,16 @@
 import { computed, unref } from "vue";
-import type {
-  PlaybackControlsEmit,
-  PlaybackControlsProps,
-  PlaybackControlsViewModel,
-} from "./usePlaybackControlsViewModel";
 import type { PlaybackState } from "@/modules/media-types";
+import type { TimelineEventMap } from "./playbackControlsBindings.types";
+import type {
+  PlaybackControlsBindingsOptions,
+  PlaybackControlsBindingsResult,
+  CenterControlEventMap,
+  SideActionEventMap,
+} from "./bindings.contract";
 
-type PlaybackControlsBindingsOptions = {
-  props: PlaybackControlsProps;
-  emit: PlaybackControlsEmit;
-  viewModel: PlaybackControlsViewModel;
-};
-
-export function usePlaybackControlsBindings(options: PlaybackControlsBindingsOptions) {
+export function usePlaybackControlsBindings(
+  options: PlaybackControlsBindingsOptions,
+): PlaybackControlsBindingsResult {
   const { props, emit, viewModel } = options;
 
   const timelineProps = computed(() => ({
@@ -56,29 +54,34 @@ export function usePlaybackControlsBindings(options: PlaybackControlsBindingsOpt
     lockIcon: unref(viewModel.lockIcon),
   }));
 
-  const centerControlEvents = {
-    onPlay: () => emit("play"),
-    onPause: () => emit("pause", viewModel.currentTime.value),
-    onStop: () => emit("stop"),
-    onToggleSpeedOpen: viewModel.setSpeedDropdownOpen,
-    onToggleQualityOpen: viewModel.setQualityDropdownOpen,
-    onChangeSpeed: viewModel.handleSpeedChange,
-    onChangeQuality: viewModel.handleQualityChange,
-    onToggleMute: () => emit("toggle-mute"),
-    onOverlayInteractionChange: (value: boolean) => emit("overlay-interaction-change", value),
-    onChangeVolume: viewModel.handleVolumeChange,
-    onCommitVolume: viewModel.handleVolumeCommit,
-    onSetLeftChannelVolume: (value: number) => emit("set-left-channel-volume", value),
-    onSetRightChannelVolume: (value: number) => emit("set-right-channel-volume", value),
-    onSetLeftChannelMuted: (value: boolean) => emit("set-left-channel-muted", value),
-    onSetRightChannelMuted: (value: boolean) => emit("set-right-channel-muted", value),
-    onSetChannelRouting: (value: PlaybackState["channel_routing"]) => emit("set-channel-routing", value),
+  const centerControlEvents: CenterControlEventMap = {
+    play: () => emit("play"),
+    pause: () => emit("pause", viewModel.currentTime.value),
+    stop: () => emit("stop"),
+    "toggle-speed-open": viewModel.setSpeedDropdownOpen,
+    "toggle-quality-open": viewModel.setQualityDropdownOpen,
+    "change-speed": viewModel.handleSpeedChange,
+    "change-quality": viewModel.handleQualityChange,
+    "toggle-mute": () => emit("toggle-mute"),
+    "overlay-interaction-change": (value: boolean) => emit("overlay-interaction-change", value),
+    "change-volume": viewModel.handleVolumeChange,
+    "commit-volume": viewModel.handleVolumeCommit,
+    "set-left-channel-volume": (value: number) => emit("set-left-channel-volume", value),
+    "set-right-channel-volume": (value: number) => emit("set-right-channel-volume", value),
+    "set-left-channel-muted": (value: boolean) => emit("set-left-channel-muted", value),
+    "set-right-channel-muted": (value: boolean) => emit("set-right-channel-muted", value),
+    "set-channel-routing": (value: PlaybackState["channel_routing"]) => emit("set-channel-routing", value),
   };
 
-  const sideActionEvents = {
-    onToggleCache: () => emit("toggle-cache"),
-    onToggleLock: () => emit("toggle-lock"),
-    onExportAudio: () => emit("export-audio"),
+  const sideActionEvents: SideActionEventMap = {
+    "toggle-cache": () => emit("toggle-cache"),
+    "toggle-lock": () => emit("toggle-lock"),
+    "export-audio": () => emit("export-audio"),
+  };
+
+  const timelineEvents: TimelineEventMap = {
+    preview: viewModel.handleProgressPreviewUpdate,
+    commit: viewModel.handleProgressCommit,
   };
 
   return {
@@ -86,10 +89,7 @@ export function usePlaybackControlsBindings(options: PlaybackControlsBindingsOpt
     centerControlProps,
     sideActionEvents,
     sideActionProps,
-    timelineEvents: {
-      onPreview: viewModel.handleProgressPreviewUpdate,
-      onCommit: viewModel.handleProgressCommit,
-    },
+    timelineEvents,
     timelineProps,
   };
 }

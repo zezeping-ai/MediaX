@@ -1,20 +1,11 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
 import { CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST } from "./playbackControls.constants";
+import type { SideActionEmitContract, SideActionViewProps } from "./bindings.contract";
 
-defineProps<{
-  cacheRecording: boolean;
-  locked: boolean;
-  showAudioExport: boolean;
-  cacheIcon: string;
-  lockIcon: string;
-}>();
+defineProps<SideActionViewProps>();
 
-defineEmits<{
-  "toggle-cache": [];
-  "toggle-lock": [];
-  "export-audio": [];
-}>();
+defineEmits<SideActionEmitContract>();
 </script>
 
 <template>

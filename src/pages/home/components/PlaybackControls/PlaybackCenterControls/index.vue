@@ -18,44 +18,18 @@ import {
   formatPercent,
 } from "./channelTrimDisplay";
 import { useChannelTrimPanel } from "./useChannelTrimPanel";
+import type {
+  CenterControlEmitContract,
+  CenterControlViewProps,
+} from "../bindings.contract";
 
-const props = defineProps<{
-  disabled: boolean;
-  isPlaying: boolean;
-  playbackRate: number;
-  selectedQuality: string;
-  qualityLabel: string;
+const props = defineProps<CenterControlViewProps & {
+  // keep local generic visible for template autocomplete
   qualityOptions: PlaybackQualityOption[];
-  muted: boolean;
-  volume: number;
-  volumeIcon: string;
-  leftChannelVolume: number;
-  rightChannelVolume: number;
-  leftChannelMuted: boolean;
-  rightChannelMuted: boolean;
   channelRouting: PlaybackChannelRouting;
-  speedDropdownOpen: boolean;
-  qualityDropdownOpen: boolean;
 }>();
 
-const emit = defineEmits<{
-  play: [];
-  pause: [];
-  stop: [];
-  "toggle-speed-open": [boolean];
-  "toggle-quality-open": [boolean];
-  "change-speed": [string | number];
-  "change-quality": [string | number];
-  "toggle-mute": [];
-  "overlay-interaction-change": [boolean];
-  "change-volume": [number | [number, number]];
-  "commit-volume": [number | [number, number]];
-  "set-left-channel-volume": [number];
-  "set-right-channel-volume": [number];
-  "set-left-channel-muted": [boolean];
-  "set-right-channel-muted": [boolean];
-  "set-channel-routing": [PlaybackChannelRouting];
-}>();
+const emit = defineEmits<CenterControlEmitContract>();
 
 const rootRef = ref<HTMLElement | null>(null);
 const normalizedPlaybackRate = computed(() => normalizePlaybackRate(props.playbackRate));
@@ -253,7 +227,7 @@ function updateRightChannelVolume(value: number | [number, number]) {
           <span class="text-white/28">{{ channelRoutingLabel(channelRouting) }}</span>
         </div>
 
-        <div class="mb-3 rounded-xl border border-white/8 bg-white/[0.03] p-2.5">
+        <div class="mb-3 rounded-xl border border-white/8 bg-white/3 p-2.5">
           <div class="mb-2 flex items-center justify-between text-[11px] text-white/78">
             <div class="flex items-center gap-2">
               <span>Routing</span>
@@ -278,7 +252,7 @@ function updateRightChannelVolume(value: number | [number, number]) {
         </div>
 
         <div class="space-y-3">
-          <div class="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
+          <div class="rounded-xl border border-white/8 bg-white/3 px-3 py-2.5">
             <div class="mb-2 flex items-center justify-between text-[11px] text-white/78">
               <div class="flex items-center gap-2">
                 <span>L</span>
@@ -318,7 +292,7 @@ function updateRightChannelVolume(value: number | [number, number]) {
             </div>
           </div>
 
-          <div class="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
+          <div class="rounded-xl border border-white/8 bg-white/3 px-3 py-2.5">
             <div class="mb-2 flex items-center justify-between text-[11px] text-white/78">
               <div class="flex items-center gap-2">
                 <span>R</span>
