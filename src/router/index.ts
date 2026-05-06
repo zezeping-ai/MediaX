@@ -13,5 +13,20 @@ export const router = createRouter({
       name: "preferences",
       component: () => import("@/pages/preferences/index.vue"),
     },
+    {
+      path: "/tools/video-transcode",
+      name: "video-transcode",
+      component: () => import("@/pages/video-transcode/index.vue"),
+    },
+    {
+      path: "/tools/audio-transcode",
+      name: "audio-transcode",
+      component: () => import("@/pages/audio-transcode/index.vue"),
+    },
+    {
+      path: "/tools/image-compress",
+      name: "image-compress",
+      component: () => import("@/pages/image-compress/index.vue"),
+    },
   ],
 });

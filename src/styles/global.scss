@@ -65,6 +65,15 @@ html[data-theme="dark"] {
   background-color: #2f2f2f;
 }
 
+// Use global scrollbar style in dark mode without white gutter/background from antd table containers.
+html[data-theme="dark"] .ant-table-wrapper,
+html[data-theme="dark"] .ant-table,
+html[data-theme="dark"] .ant-table-container,
+html[data-theme="dark"] .ant-table-content,
+html[data-theme="dark"] .ant-table-body {
+  background: transparent !important;
+}
+
 // Player page: keep root fully transparent so native Rust renderer remains visible.
 html[data-page="home"] {
   background: transparent !important;

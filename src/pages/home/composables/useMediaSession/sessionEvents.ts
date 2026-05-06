@@ -1,7 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   MEDIA_PLAYBACK_AUDIO_METER_EVENT,
-  MEDIA_MENU_EVENT,
   MEDIA_PLAYBACK_ERROR_EVENT,
   MEDIA_PLAYBACK_METADATA_EVENT,
   MEDIA_PLAYBACK_STATE_EVENT,
@@ -15,7 +14,6 @@ import {
 } from "@/modules/media-types";
 
 interface SessionEventBindings {
-  onMenuAction: (action: string) => void;
   onSnapshot: (snapshot: MediaSnapshot) => void;
   onMetadata: (payload: MediaMetadataPayload) => void;
   onError: (payload: MediaErrorPayload) => void;
@@ -28,9 +26,6 @@ export async function registerSessionEvents(bindings: SessionEventBindings) {
     MediaEventEnvelope<MediaSnapshot> | MediaSnapshot
   >(MEDIA_PLAYBACK_STATE_EVENT, (event) => {
     bindings.onSnapshot(resolvePayload(event.payload));
-  });
-  const unlistenMenuEvent = await listen<string>(MEDIA_MENU_EVENT, (event) => {
-    bindings.onMenuAction(event.payload);
   });
   const unlistenPlaybackMetadataEvent = await listen<
     MediaEventEnvelope<MediaMetadataPayload> | MediaMetadataPayload
@@ -55,7 +50,6 @@ export async function registerSessionEvents(bindings: SessionEventBindings) {
 
   return [
     unlistenPlaybackStateEvent,
-    unlistenMenuEvent,
     unlistenPlaybackMetadataEvent,
     unlistenPlaybackErrorEvent,
     unlistenPlaybackTelemetryEvent,

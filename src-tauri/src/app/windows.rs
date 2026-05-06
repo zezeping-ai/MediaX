@@ -2,6 +2,8 @@ use crate::app::media::model::PlaybackStatus;
 use crate::app::media::playback::render::renderer::{RendererState, VideoScaleMode};
 use crate::app::media::playback::session::coordinator;
 use crate::app::media::state::MediaState;
+use std::path::Path;
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use std::sync::{Mutex, OnceLock};
@@ -11,6 +13,9 @@ use tauri::State;
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const PREFERENCES_WINDOW_LABEL: &str = "preferences";
+const VIDEO_TRANSCODE_WINDOW_LABEL: &str = "video_transcode";
+const AUDIO_TRANSCODE_WINDOW_LABEL: &str = "audio_transcode";
+const IMAGE_COMPRESS_WINDOW_LABEL: &str = "image_compress";
 
 #[derive(Clone, Copy)]
 struct WindowRestoreBounds {
@@ -61,9 +66,72 @@ pub fn show_preferences_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+pub fn show_video_transcode_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window(VIDEO_TRANSCODE_WINDOW_LABEL) {
+        window.show()?;
+        window.set_focus()?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        app,
+        VIDEO_TRANSCODE_WINDOW_LABEL,
+        tauri::WebviewUrl::App("/#/tools/video-transcode".into()),
+    )
+    .title("视频转码")
+    .inner_size(980.0, 720.0)
+    .min_inner_size(860.0, 640.0)
+    .resizable(true)
+    .visible(true)
+    .build()?;
+    Ok(())
+}
+
+pub fn show_audio_transcode_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window(AUDIO_TRANSCODE_WINDOW_LABEL) {
+        window.show()?;
+        window.set_focus()?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        app,
+        AUDIO_TRANSCODE_WINDOW_LABEL,
+        tauri::WebviewUrl::App("/#/tools/audio-transcode".into()),
+    )
+    .title("音频转码")
+    .inner_size(980.0, 720.0)
+    .min_inner_size(860.0, 640.0)
+    .resizable(true)
+    .visible(true)
+    .build()?;
+    Ok(())
+}
+
+pub fn show_image_compress_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window(IMAGE_COMPRESS_WINDOW_LABEL) {
+        window.show()?;
+        window.set_focus()?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        app,
+        IMAGE_COMPRESS_WINDOW_LABEL,
+        tauri::WebviewUrl::App("/#/tools/image-compress".into()),
+    )
+    .title("图片压缩")
+    .inner_size(1040.0, 760.0)
+    .min_inner_size(920.0, 680.0)
+    .resizable(true)
+    .visible(true)
+    .build()?;
+    Ok(())
+}
+
 pub fn handle_close_requested(window: &tauri::Window, event: &tauri::WindowEvent) {
     // 点击窗口关闭按钮时：隐藏窗口，不退出应用（托盘仍可恢复）
     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        if window.label() != MAIN_WINDOW_LABEL {
+            return;
+        }
         // If the user closes the main window while playing, pause playback first to avoid
         // the decode thread continuing in background unexpectedly.
         if window.label() == MAIN_WINDOW_LABEL {
@@ -169,4 +237,45 @@ pub fn window_start_main_dragging(app: tauri::AppHandle) -> Result<(), String> {
         .start_dragging()
         .map_err(|err| format!("start dragging failed: {err}"))?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn window_reveal_file(path: String) -> Result<(), String> {
+    let target = Path::new(path.trim());
+    if !target.exists() {
+        return Err("文件不存在".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("-R")
+            .arg(target)
+            .status()
+            .map_err(|err| format!("打开文件位置失败: {err}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg("/select,")
+            .arg(target)
+            .status()
+            .map_err(|err| format!("打开文件位置失败: {err}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let dir = target.parent().unwrap_or(target);
+        Command::new("xdg-open")
+            .arg(dir)
+            .status()
+            .map_err(|err| format!("打开文件位置失败: {err}"))?;
+        return Ok(());
+    }
+
+    #[allow(unreachable_code)]
+    Err("当前平台不支持该操作".to_string())
 }

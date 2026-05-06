@@ -2,12 +2,12 @@ use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::playback::dto::PlaybackMediaKind;
 use crate::app::media::state;
 use crate::app::media::state::MediaState;
+use crate::app::media::transcode::utils::next_available_output_path;
 use ffmpeg_next::codec;
 use ffmpeg_next::format;
 use ffmpeg_next::media::Type;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::PathBuf;
 use tauri::State;
 
 pub fn export_current_audio_track(
@@ -96,45 +96,13 @@ fn next_available_export_path(
     source: &str,
     extension: &str,
 ) -> Result<PathBuf, String> {
-    let base_name = source_basename(source);
-    let mut candidate = Path::new(output_dir).join(format!("{base_name}.{extension}"));
-    if !candidate.exists() {
-        return Ok(candidate);
-    }
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|value| value.as_millis())
-        .unwrap_or(0);
-    candidate = Path::new(output_dir).join(format!("{base_name}-{timestamp}.{extension}"));
-    Ok(candidate)
-}
-
-fn source_basename(source: &str) -> String {
-    let no_query = source
-        .split(['?', '#'])
-        .next()
-        .unwrap_or(source)
-        .trim_end_matches('/');
-    let raw_name = no_query
-        .rsplit('/')
-        .next()
-        .filter(|value| !value.is_empty())
-        .unwrap_or("mediax-audio");
-    let stem = Path::new(raw_name)
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or("mediax-audio");
-    let sanitized = stem
-        .chars()
-        .map(|ch| if r#"\/:*?"<>|"#.contains(ch) { '-' } else { ch })
-        .collect::<String>()
-        .trim()
-        .to_string();
-    if sanitized.is_empty() {
-        "mediax-audio".to_string()
-    } else {
-        format!("{sanitized}-audio")
-    }
+    Ok(next_available_output_path(
+        output_dir,
+        source,
+        "-audio",
+        extension,
+        "mediax-audio",
+    ))
 }
 
 fn audio_extension_for_codec(codec_id: codec::Id) -> &'static str {

@@ -6,6 +6,7 @@ use app::media::{
         cache as playback_cache_commands, preview as playback_preview_commands,
         session as playback_session_commands, timing as playback_timing_commands,
     },
+    transcode::{commands as transcode_commands, TranscodeState},
     MediaState, RendererState,
 };
 use tauri::Manager;
@@ -27,6 +28,7 @@ pub fn run() {
 
     let app = builder
         .manage(MediaState::default())
+        .manage(TranscodeState::default())
         .manage(RendererState::new())
         .setup(|app| {
             initialize_playback_debug_log(app.handle()).map_err(|err| {
@@ -85,10 +87,18 @@ pub fn run() {
             playback_cache_commands::playback_start_cache_recording,
             playback_cache_commands::playback_stop_cache_recording,
             playback_cache_commands::playback_export_current_audio,
+            transcode_commands::transcode_queue_snapshot,
+            transcode_commands::transcode_job_cancel,
+            transcode_commands::transcode_job_remove,
+            transcode_commands::transcode_video_enqueue,
+            transcode_commands::transcode_audio_enqueue,
+            transcode_commands::image_compress_enqueue,
+            transcode_commands::image_compress_estimate,
             app::windows::window_set_main_always_on_top,
             app::windows::window_set_main_video_scale_mode,
             app::windows::window_toggle_main_fullscreen,
             app::windows::window_start_main_dragging,
+            app::windows::window_reveal_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -9,6 +9,37 @@ export const MEDIA_PLAYBACK_ERROR_EVENT = "media://playback/error";
 export const MEDIA_PLAYBACK_TELEMETRY_EVENT = "media://playback/telemetry";
 export const MEDIA_PLAYBACK_AUDIO_METER_EVENT = "media://playback/audio-meter";
 export const MEDIA_MENU_EVENT = "media://menu-action";
+export const MEDIA_TRANSCODE_STATUS_EVENT = "media://transcode/status";
+export const MEDIA_TRANSCODE_PROGRESS_EVENT = "media://transcode/progress";
+export const MEDIA_TRANSCODE_ESTIMATE_EVENT = "media://transcode/estimate";
+
+export type TranscodeJobStatus = "queued" | "running" | "success" | "skipped" | "failed" | "canceled";
+export type TranscodeJobKind = "video" | "audio" | "image_lossless" | "image_lossy";
+
+export interface TranscodeJob {
+  id: number;
+  kind: TranscodeJobKind;
+  source_path: string;
+  output_path: string;
+  status: TranscodeJobStatus;
+  progress_percent: number;
+  started_at_ms: number | null;
+  finished_at_ms: number | null;
+  error_message: string | null;
+  input_size_bytes: number | null;
+  output_size_bytes: number | null;
+  estimated_output_size_bytes: number | null;
+  quality: number | null;
+  format: string | null;
+  resolution: string | null;
+  playback_rate: number | null;
+}
+
+export interface TranscodeQueueSnapshot {
+  jobs: TranscodeJob[];
+  running_jobs: number;
+  queued_jobs: number;
+}
 
 export interface PlaybackState {
   engine: string;

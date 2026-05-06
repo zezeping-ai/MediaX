@@ -9,13 +9,9 @@ export function useMediaSession() {
   let sessionUnlisteners: UnlistenFn[] = [];
   let timerDisposer: { dispose: () => void } | null = null;
 
-  async function mount(
-    onMenuAction: (action: string) => void,
-    getSnapshot: () => Promise<MediaSnapshot>,
-  ) {
+  async function mount(getSnapshot: () => Promise<MediaSnapshot>) {
     state.updateSnapshot(await getSnapshot());
     sessionUnlisteners = await registerSessionEvents({
-      onMenuAction,
       onSnapshot: state.updateSnapshot,
       onMetadata: state.applyMetadataPayload,
       onError: state.applyErrorPayload,

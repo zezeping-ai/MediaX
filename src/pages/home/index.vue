@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useWindowFileDrop } from "./composables/useWindowFileDrop";
 import OpenUrlModal from "./components/OpenUrlModal";
 import PlaybackControls from "./components/PlaybackControls";
@@ -8,6 +10,8 @@ import { useHomePageBindings } from "./useHomePageBindings";
 import { useHomePageViewModel } from "./useHomePageViewModel";
 
 const viewModel = useHomePageViewModel();
+const route = useRoute();
+const router = useRouter();
 const { dropActive } = useWindowFileDrop({
   openPath: viewModel.openPath,
 });
@@ -26,6 +30,24 @@ const {
   urlDialogProps,
   urlDialogVisible,
 } = useHomePageBindings(viewModel);
+
+watch(
+  () => route.query.menuAction,
+  async (menuAction) => {
+    const action = typeof menuAction === "string" ? menuAction : "";
+    if (!action) {
+      return;
+    }
+    if (action === "open_local") {
+      await viewModel.openLocalFileByDialog();
+    } else if (action === "open_url") {
+      viewModel.requestOpenUrlInput();
+    }
+    const { menuAction: _discard, ...nextQuery } = route.query;
+    await router.replace({ query: nextQuery });
+  },
+  { immediate: true },
+);
 </script>
 
 <template>

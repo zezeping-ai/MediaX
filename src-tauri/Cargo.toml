@@ -37,10 +37,11 @@ walkdir = "2"
 wgpu = "29.0.1"
 pollster = "0.4.0"
 rodio = "0.22.2"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp"] }
 base64 = "0.22"
 sysinfo = "0.38.4"
 soundtouch = { version = "0.5.4", features = ["bundled"] }
+webp = "0.3.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ffmpeg-next = { version = "7", default-features = false, features = [

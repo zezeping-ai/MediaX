@@ -1,6 +1,9 @@
 use crate::app::default_player::open_default_player_settings;
 use crate::app::updates::check_and_install_update;
-use crate::app::windows::show_preferences_window;
+use crate::app::windows::{
+    show_audio_transcode_window, show_image_compress_window, show_preferences_window,
+    show_video_transcode_window,
+};
 use tauri::menu::{
     AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
 };
@@ -12,6 +15,9 @@ const MENU_APP_SETTINGS_ID: &str = "mediax.app.settings";
 const MENU_APP_QUIT_ID: &str = "mediax.app.quit";
 const MENU_FILE_OPEN_LOCAL_ID: &str = "mediax.file.open_local";
 const MENU_FILE_OPEN_URL_ID: &str = "mediax.file.open_url";
+const MENU_TOOLS_VIDEO_TRANSCODE_ID: &str = "mediax.tools.video_transcode";
+const MENU_TOOLS_AUDIO_TRANSCODE_ID: &str = "mediax.tools.audio_transcode";
+const MENU_TOOLS_IMAGE_COMPRESS_ID: &str = "mediax.tools.image_compress";
 const MENU_HELP_SET_DEFAULT_PLAYER_ID: &str = "mediax.help.set_default_player";
 const MENU_HELP_CHECK_UPDATE_ID: &str = "mediax.help.check_update";
 
@@ -92,7 +98,7 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         true,
         Some("CmdOrCtrl+Shift+O"),
     )?;
-    let file_submenu = Submenu::with_items(app, "File", true, &[&open_local, &open_url])?;
+    let file_submenu = Submenu::with_items(app, "文件", true, &[&open_local, &open_url])?;
 
     let undo = PredefinedMenuItem::undo(app, None)?;
     let redo = PredefinedMenuItem::redo(app, None)?;
@@ -102,9 +108,37 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     let select_all = PredefinedMenuItem::select_all(app, None)?;
     let edit_submenu = Submenu::with_items(
         app,
-        "Edit",
+        "编辑",
         true,
         &[&undo, &redo, &cut, &copy, &paste, &select_all],
+    )?;
+
+    let video_transcode = MenuItem::with_id(
+        app,
+        MENU_TOOLS_VIDEO_TRANSCODE_ID,
+        "视频转码",
+        true,
+        None::<&str>,
+    )?;
+    let audio_transcode = MenuItem::with_id(
+        app,
+        MENU_TOOLS_AUDIO_TRANSCODE_ID,
+        "音频转码",
+        true,
+        None::<&str>,
+    )?;
+    let image_compress = MenuItem::with_id(
+        app,
+        MENU_TOOLS_IMAGE_COMPRESS_ID,
+        "图片压缩",
+        true,
+        None::<&str>,
+    )?;
+    let tools_submenu = Submenu::with_items(
+        app,
+        "工具",
+        true,
+        &[&video_transcode, &audio_transcode, &image_compress],
     )?;
 
     let set_default_player = MenuItem::with_id(
@@ -125,14 +159,14 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         Submenu::with_id_and_items(
             app,
             HELP_SUBMENU_ID,
-            "Help",
+            "帮助",
             true,
             &[&set_default_player, &check_update],
         )?;
 
     let menu = Menu::with_items(
         app,
-        &[&app_submenu, &file_submenu, &edit_submenu, &help_submenu],
+        &[&app_submenu, &file_submenu, &edit_submenu, &tools_submenu, &help_submenu],
     )?;
     app.set_menu(menu)?;
     Ok(())
@@ -160,6 +194,15 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: MenuEvent) {
         }
         MENU_FILE_OPEN_URL_ID => {
             let _ = app.emit(APP_MENU_EVENT, "open_url");
+        }
+        MENU_TOOLS_VIDEO_TRANSCODE_ID => {
+            let _ = show_video_transcode_window(app);
+        }
+        MENU_TOOLS_AUDIO_TRANSCODE_ID => {
+            let _ = show_audio_transcode_window(app);
+        }
+        MENU_TOOLS_IMAGE_COMPRESS_ID => {
+            let _ = show_image_compress_window(app);
         }
         _ => {}
     }

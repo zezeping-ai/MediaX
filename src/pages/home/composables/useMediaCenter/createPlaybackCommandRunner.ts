@@ -97,7 +97,7 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
       multiple: false,
       filters: [
         {
-          name: "Media",
+          name: "媒体文件",
           extensions: [
             "mp4", "mkv", "mov", "avi", "webm", "flv", "m4v", "wmv", "mpeg", "mpg", "ts", "m2ts",
             "mts", "mxf", "rm", "rmvb", "3gp", "3g2", "ogv", "asf", "vob", "f4v", "divx",
