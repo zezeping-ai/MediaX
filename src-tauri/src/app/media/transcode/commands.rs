@@ -8,6 +8,12 @@ use std::fs;
 use std::path::Path;
 use tauri::{AppHandle, State};
 
+#[derive(Debug, serde::Serialize)]
+pub struct VideoProbeResponse {
+    pub width: u32,
+    pub height: u32,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct VideoTranscodeRequest {
@@ -211,6 +217,13 @@ pub fn transcode_video_enqueue(
     });
     schedule_jobs(&app);
     Ok(state.snapshot())
+}
+
+#[tauri::command]
+pub fn transcode_video_probe(source_path: String) -> Result<VideoProbeResponse, String> {
+    let source_path = validate_path(&source_path, "视频源路径")?;
+    let (width, height) = super::processor::probe_video_dimensions(&source_path)?;
+    Ok(VideoProbeResponse { width, height })
 }
 
 #[tauri::command]

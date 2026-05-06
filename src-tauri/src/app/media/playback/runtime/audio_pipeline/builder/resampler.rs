@@ -2,14 +2,6 @@ use crate::app::media::playback::runtime::audio_pipeline::types::AudioOutputSamp
 use ffmpeg_next::channel_layout::ChannelLayout;
 use ffmpeg_next::software::resampling::context::Context as ResamplingContext;
 
-pub(super) fn fallback_channel_layout(decoder: &ffmpeg_next::decoder::Audio) -> ChannelLayout {
-    if decoder.channel_layout().is_empty() {
-        ChannelLayout::default(decoder.channels().into())
-    } else {
-        decoder.channel_layout()
-    }
-}
-
 pub(super) fn create_compatible_resampler(
     decoder: &ffmpeg_next::decoder::Audio,
     channel_layout: ChannelLayout,

@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { Icon } from "@iconify/vue";
 import { open } from "@tauri-apps/plugin-dialog";
-import { transcodeVideoEnqueue } from "@/modules/transcodeCommands";
+import {
+  revealFileInSystem,
+  transcodeVideoEnqueue,
+  transcodeVideoProbe,
+} from "@/modules/transcodeCommands";
 import { useTranscodeQueue } from "@/pages/transcode/composables/useTranscodeQueue";
 import { useWindowSourceDrop } from "@/pages/transcode/composables/useWindowSourceDrop";
 import { formatBytes } from "@/pages/transcode/utils";
@@ -13,6 +18,59 @@ const resolution = ref("source");
 const playbackRate = ref(1);
 const errorMessage = ref("");
 const queue = useTranscodeQueue();
+const speedOptions = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 5, 10, 20, 30, 50, 100] as const;
+const baseResolutionOptions = [
+  { value: "1080p", label: "1080p" },
+  { value: "720p", label: "720p" },
+  { value: "480p", label: "480p" },
+  { value: "360p", label: "360p" },
+  { value: "240p", label: "240p" },
+  { value: "120p", label: "120p" },
+] as const;
+const resolutionOptions = ref<{ value: string; label: string; height: number }[]>([
+  { value: "source", label: "源分辨率", height: Number.POSITIVE_INFINITY },
+]);
+
+function deriveOutputDirFromSource(path: string) {
+  const normalized = path.trim();
+  if (!normalized) {
+    return "";
+  }
+  const slashIndex = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  if (slashIndex <= 0) {
+    return "";
+  }
+  return normalized.slice(0, slashIndex);
+}
+
+async function syncResolutionOptionsBySource() {
+  if (!sourcePath.value) {
+    resolutionOptions.value = [{ value: "source", label: "源分辨率", height: Number.POSITIVE_INFINITY }];
+    resolution.value = "source";
+    return;
+  }
+  try {
+    const probe = await transcodeVideoProbe(sourcePath.value);
+    const filtered = baseResolutionOptions
+      .filter((option) => Number.parseInt(option.value, 10) <= probe.height)
+      .map((option) => ({
+        value: option.value,
+        label: option.label,
+        height: Number.parseInt(option.value, 10),
+      }));
+    resolutionOptions.value = [
+      { value: "source", label: `源分辨率 (${probe.width}x${probe.height})`, height: probe.height },
+      ...filtered,
+    ];
+    if (!resolutionOptions.value.some((option) => option.value === resolution.value)) {
+      resolution.value = "source";
+    }
+  } catch {
+    // Keep UX robust: if probe fails we still allow source transcoding.
+    resolutionOptions.value = [{ value: "source", label: "源分辨率", height: Number.POSITIVE_INFINITY }];
+    resolution.value = "source";
+  }
+}
 
 const jobs = computed(() => queue.jobs.value.filter((job) => job.kind === "video"));
 const statusTextMap = {
@@ -79,9 +137,23 @@ async function submit() {
   }
 }
 
+async function revealOutputPath(path: string) {
+  errorMessage.value = "";
+  try {
+    await revealFileInSystem(path);
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error);
+  }
+}
+
 onMounted(async () => {
   await queue.refreshSnapshot();
   await queue.registerEvents();
+});
+
+watch(sourcePath, () => {
+  outputDir.value = deriveOutputDirFromSource(sourcePath.value);
+  void syncResolutionOptionsBySource();
 });
 </script>
 
@@ -100,17 +172,17 @@ onMounted(async () => {
           <a-form layout="vertical">
             <div class="grid grid-cols-12 gap-x-3 gap-y-2">
               <a-form-item class="col-span-12" label="视频源">
-                <a-space class="w-full" :wrap="true">
-                  <a-input :value="sourcePath" readonly placeholder="请选择视频源" class="w-[520px]" />
+                <div class="flex w-full items-center gap-2">
+                  <a-input :value="sourcePath" readonly placeholder="请选择视频源" class="min-w-0 flex-1" />
                   <a-button type="primary" @click="pickSource">选择</a-button>
-                </a-space>
+                </div>
               </a-form-item>
 
               <a-form-item class="col-span-12" label="输出目录">
-                <a-space class="w-full" :wrap="true">
-                  <a-input :value="outputDir" readonly placeholder="请选择输出目录" class="w-[520px]" />
+                <div class="flex w-full items-center gap-2">
+                  <a-input :value="outputDir" readonly placeholder="默认与输入源同目录" class="min-w-0 flex-1" />
                   <a-button type="primary" @click="pickOutputDir">选择</a-button>
-                </a-space>
+                </div>
               </a-form-item>
 
               <a-form-item class="col-span-6" label="转码格式">
@@ -132,14 +204,23 @@ onMounted(async () => {
 
               <a-form-item class="col-span-3" label="分辨率">
                 <a-select v-model:value="resolution" class="w-full">
-                  <a-select-option value="source">源分辨率</a-select-option>
-                  <a-select-option value="1080p">1080p（预留）</a-select-option>
-                  <a-select-option value="720p">720p（预留）</a-select-option>
+                  <a-select-option
+                    v-for="option in resolutionOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </a-select-option>
                 </a-select>
+                <div class="mt-1 text-[11px] text-white/45">分辨率选项自动过滤</div>
               </a-form-item>
 
               <a-form-item class="col-span-3" label="倍速">
-                <a-input-number v-model:value="playbackRate" :min="0.5" :max="4" :step="0.1" class="w-full" />
+                <a-select v-model:value="playbackRate" class="w-full">
+                  <a-select-option v-for="value in speedOptions" :key="String(value)" :value="value">
+                    {{ value }}x
+                  </a-select-option>
+                </a-select>
               </a-form-item>
 
               <div class="col-span-12 flex items-center justify-between">
@@ -178,9 +259,36 @@ onMounted(async () => {
                 输入 {{ formatBytes(job.input_size_bytes) }} · 输出 {{ formatBytes(job.output_size_bytes) }}
               </div>
             </div>
-            <a-progress :percent="Number(job.progress_percent.toFixed(1))" size="small" />
+            <a-progress
+              v-if="job.status === 'running' || job.status === 'queued'"
+              :percent="Number(job.progress_percent.toFixed(1))"
+              size="small"
+              :show-info="false"
+              status="normal"
+            />
+            <a-progress
+              v-else
+              :percent="100"
+              size="small"
+              :show-info="true"
+              :status="job.status === 'failed' ? 'exception' : job.status === 'success' ? 'success' : 'normal'"
+            />
             <div class="mt-2 flex items-center justify-between gap-3">
-              <div class="truncate text-xs text-white/60" :title="job.output_path">{{ job.output_path }}</div>
+              <div class="min-w-0 text-xs text-white/60">
+                <div class="flex items-center gap-1">
+                  <span class="truncate" :title="job.output_path">{{ job.output_path }}</span>
+                  <a-tooltip title="打开所在位置">
+                    <a-button
+                      type="text"
+                      size="small"
+                      class="h-[20px] min-w-[20px] p-0 text-white/70 hover:text-white!"
+                      @click="revealOutputPath(job.output_path)"
+                    >
+                      <Icon icon="mdi:folder-open-outline" />
+                    </a-button>
+                  </a-tooltip>
+                </div>
+              </div>
               <a-space>
                 <a-button size="small" @click="queue.cancelJob(job.id)">取消</a-button>
                 <a-button size="small" danger @click="queue.removeJob(job.id)">移除</a-button>

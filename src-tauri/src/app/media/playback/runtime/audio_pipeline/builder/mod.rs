@@ -2,13 +2,14 @@ mod resampler;
 
 use super::output::AudioOutput;
 use super::types::AudioPipeline;
+use crate::app::media::playback::audio_shared::fallback_channel_layout;
 use crate::app::media::state::AudioControls;
 use ffmpeg_next::codec;
 use ffmpeg_next::format;
 use std::sync::Arc;
 use tauri::AppHandle;
 
-use self::resampler::{create_compatible_resampler, fallback_channel_layout};
+use self::resampler::create_compatible_resampler;
 
 pub(crate) fn build_audio_pipeline(
     app: &AppHandle,

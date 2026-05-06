@@ -91,6 +91,7 @@ pub fn run() {
             transcode_commands::transcode_job_cancel,
             transcode_commands::transcode_job_remove,
             transcode_commands::transcode_video_enqueue,
+            transcode_commands::transcode_video_probe,
             transcode_commands::transcode_audio_enqueue,
             transcode_commands::image_compress_enqueue,
             transcode_commands::image_compress_estimate,

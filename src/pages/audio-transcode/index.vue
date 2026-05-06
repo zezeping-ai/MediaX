@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { Icon } from "@iconify/vue";
 import { open } from "@tauri-apps/plugin-dialog";
-import { transcodeAudioEnqueue } from "@/modules/transcodeCommands";
+import { revealFileInSystem, transcodeAudioEnqueue } from "@/modules/transcodeCommands";
 import { useTranscodeQueue } from "@/pages/transcode/composables/useTranscodeQueue";
 import { useWindowSourceDrop } from "@/pages/transcode/composables/useWindowSourceDrop";
 import { formatBytes } from "@/pages/transcode/utils";
@@ -12,6 +13,18 @@ const format = ref("m4a/aac");
 const playbackRate = ref(1);
 const errorMessage = ref("");
 const queue = useTranscodeQueue();
+
+function deriveOutputDirFromSource(path: string) {
+  const normalized = path.trim();
+  if (!normalized) {
+    return "";
+  }
+  const slashIndex = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  if (slashIndex <= 0) {
+    return "";
+  }
+  return normalized.slice(0, slashIndex);
+}
 
 const jobs = computed(() => queue.jobs.value.filter((job) => job.kind === "audio"));
 const statusTextMap = {
@@ -71,9 +84,22 @@ async function submit() {
   }
 }
 
+async function revealOutputPath(path: string) {
+  errorMessage.value = "";
+  try {
+    await revealFileInSystem(path);
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : String(error);
+  }
+}
+
 onMounted(async () => {
   await queue.refreshSnapshot();
   await queue.registerEvents();
+});
+
+watch(sourcePath, () => {
+  outputDir.value = deriveOutputDirFromSource(sourcePath.value);
 });
 </script>
 
@@ -99,7 +125,7 @@ onMounted(async () => {
           <div class="min-w-[280px] flex-1">
             <div class="mb-1 text-xs text-white/70">输出目录</div>
             <a-space>
-              <a-input :value="outputDir" readonly placeholder="请选择输出目录" class="w-[360px]" />
+              <a-input :value="outputDir" readonly placeholder="默认与输入源同目录" class="w-[360px]" />
               <a-button type="primary" @click="pickOutputDir">选择</a-button>
             </a-space>
           </div>
@@ -136,9 +162,36 @@ onMounted(async () => {
                 输入 {{ formatBytes(job.input_size_bytes) }} · 输出 {{ formatBytes(job.output_size_bytes) }}
               </div>
             </div>
-            <a-progress :percent="Number(job.progress_percent.toFixed(1))" size="small" status="active" />
+            <a-progress
+              v-if="job.status === 'running' || job.status === 'queued'"
+              :percent="Number(job.progress_percent.toFixed(1))"
+              size="small"
+              :show-info="false"
+              status="normal"
+            />
+            <a-progress
+              v-else
+              :percent="100"
+              size="small"
+              :show-info="true"
+              :status="job.status === 'failed' ? 'exception' : job.status === 'success' ? 'success' : 'normal'"
+            />
             <div class="mt-2 flex items-center justify-between gap-3">
-              <div class="truncate text-xs text-white/60" :title="job.output_path">{{ job.output_path }}</div>
+              <div class="min-w-0 text-xs text-white/60">
+                <div class="flex items-center gap-1">
+                  <span class="truncate" :title="job.output_path">{{ job.output_path }}</span>
+                  <a-tooltip title="打开所在位置">
+                    <a-button
+                      type="text"
+                      size="small"
+                      class="h-[20px] min-w-[20px] p-0 text-white/70 hover:text-white!"
+                      @click="revealOutputPath(job.output_path)"
+                    >
+                      <Icon icon="mdi:folder-open-outline" />
+                    </a-button>
+                  </a-tooltip>
+                </div>
+              </div>
               <a-space>
                 <a-button size="small" @click="queue.cancelJob(job.id)">取消</a-button>
                 <a-button size="small" danger @click="queue.removeJob(job.id)">移除</a-button>

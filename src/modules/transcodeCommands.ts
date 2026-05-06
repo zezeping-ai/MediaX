@@ -9,6 +9,11 @@ export interface VideoTranscodePayload {
   playback_rate: number;
 }
 
+export interface VideoProbeResult {
+  width: number;
+  height: number;
+}
+
 export interface AudioTranscodePayload {
   source_path: string;
   output_dir: string;
@@ -42,6 +47,10 @@ export function transcodeQueueSnapshot() {
 
 export function transcodeVideoEnqueue(payload: VideoTranscodePayload) {
   return invokeMediaCommand<TranscodeQueueSnapshot>("transcode_video_enqueue", { payload });
+}
+
+export function transcodeVideoProbe(sourcePath: string) {
+  return invokeMediaCommand<VideoProbeResult>("transcode_video_probe", { sourcePath });
 }
 
 export function transcodeAudioEnqueue(payload: AudioTranscodePayload) {
