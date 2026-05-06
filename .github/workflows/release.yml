@@ -11,29 +11,48 @@ env:
 permissions:
   contents: write
 
+# -----------------------------------------------------------------------------
+# FFmpeg / 安装包形态（便于与 macOS/Linux 对照维护）
+#
+# Release 安装在用户机器上均已携带解码能力：不需要用户单独安装 FFmpeg。
+#
+# +-----------+------------------------------+--------------------------------------------+
+# | 平台       | Cargo / Tauri args           | CI 获取 FFmpeg                               |
+# +-----------+------------------------------+--------------------------------------------+
+# | macOS     | --features bundled-ffmpeg    | ffmpeg-next/build，构建期源码编译并链入       |
+# | Ubuntu    | --features bundled-ffmpeg    | 同上                                          |
+# | Windows   | matrix.args 留空             | 「Setup vcpkg」+静态 triplet ffmpeg；crate 侧 |
+# |           |                              | ffmpeg-next/static（见 Cargo.toml）        |
+# +-----------+------------------------------+--------------------------------------------+
+#
+# Windows 未启用 bundled-ffmpeg：用 vcpkg 对齐 MSVC 与 FFmpeg 端口版本；对用户仍等价——安装包不要求
+# 另行安装 FFmpeg，解码能力在构建时已链入二进制。
+# -----------------------------------------------------------------------------
+
 jobs:
   publish-tauri:
     name: Release ${{ matrix.os_name }}-${{ matrix.arch }}
     strategy:
       fail-fast: true
       matrix:
+        # 各行 args 含义见文件头「FFmpeg / 安装包形态」表格
         include:
           - os_name: macos
             arch: arm64
             platform: macos-15
-            args: ""
+            args: "--features bundled-ffmpeg"
           - os_name: macos
             arch: x64
             platform: macos-15-intel
-            args: ""
+            args: "--features bundled-ffmpeg"
           - os_name: ubuntu
             arch: x64
             platform: ubuntu-24.04
-            args: ""
+            args: "--features bundled-ffmpeg"
           - os_name: ubuntu
             arch: arm64
             platform: ubuntu-24.04-arm
-            args: ""
+            args: "--features bundled-ffmpeg"
           - os_name: windows
             arch: x64
             platform: windows-2025
@@ -96,13 +115,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            ffmpeg \
-            libavcodec-dev \
-            libavfilter-dev \
-            libavformat-dev \
-            libavutil-dev \
-            libswresample-dev \
-            libswscale-dev \
+            build-essential \
+            git \
+            pkg-config \
+            nasm \
+            cmake \
+            libclang-dev \
+            clang \
             libasound2-dev \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
@@ -110,14 +129,14 @@ jobs:
             xdg-utils \
             patchelf
 
-      - name: Install macOS dependencies
+      - name: Install macOS build tools (FFmpeg from source)
         if: matrix.os_name == 'macos'
         run: |
           brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
-          brew list ffmpeg@7 >/dev/null 2>&1 || brew install ffmpeg@7
-          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg@7)/lib/pkgconfig:$(brew --prefix)/lib/pkgconfig" >> "$GITHUB_ENV"
-          echo "CPATH=$(brew --prefix ffmpeg@7)/include" >> "$GITHUB_ENV"
-          echo "LIBRARY_PATH=$(brew --prefix ffmpeg@7)/lib" >> "$GITHUB_ENV"
+          # x86_64 FFmpeg needs nasm; arm64 can use system toolchain
+          if [ "${{ matrix.arch }}" = "x64" ]; then
+            brew list nasm >/dev/null 2>&1 || brew install nasm
+          fi
 
       - name: Setup vcpkg
         if: matrix.os_name == 'windows'

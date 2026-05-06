@@ -7,6 +7,13 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# `bundled-ffmpeg`: compile static FFmpeg during build (no system FFmpeg at runtime).
+# Release：macOS/Ubuntu 传 `--features bundled-ffmpeg`；Windows 用 vcpkg + ffmpeg-next/static。
+# 各平台 CI 与用户侧观感对照见仓库根 `.github/workflows/release.yml` 文件头注释表。
+[features]
+default = []
+bundled-ffmpeg = ["ffmpeg-next/build"]
+
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
