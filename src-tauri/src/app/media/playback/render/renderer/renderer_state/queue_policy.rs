@@ -40,12 +40,7 @@ pub(super) fn emit_queue_capacity_debug(
     lag_ms: f64,
     remaining_queue_depth: usize,
 ) {
-    let Some(app_handle) = inner
-        .app_handle
-        .lock()
-        .ok()
-        .and_then(|value| value.clone())
-    else {
+    let Some(app_handle) = inner.app_handle.lock().ok().and_then(|value| value.clone()) else {
         return;
     };
     emit_debug(

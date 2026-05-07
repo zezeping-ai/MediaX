@@ -8,8 +8,8 @@ use crate::app::media::playback::runtime::{emit_debug, write_latest_stream_posit
 use crate::app::media::playback::session::constraints;
 use crate::app::media::playback::session::service::supports_timeline_seek;
 use crate::app::media::state;
-use crate::app::media::state::MediaState;
 use crate::app::media::state::emit_snapshot_with_request_id;
+use crate::app::media::state::MediaState;
 use tauri::{AppHandle, Manager, State};
 
 pub fn seek(

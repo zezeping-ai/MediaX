@@ -233,7 +233,9 @@ fn extract_output_samples_into(
             pcm.extend(
                 data[..clamped_bytes]
                     .chunks_exact(bytes_per_sample)
-                    .map(|chunk| i16::from_ne_bytes([chunk[0], chunk[1]]) as f32 / (i16::MAX as f32)),
+                    .map(|chunk| {
+                        i16::from_ne_bytes([chunk[0], chunk[1]]) as f32 / (i16::MAX as f32)
+                    }),
             );
         }
     }
@@ -242,7 +244,9 @@ fn extract_output_samples_into(
 
 #[cfg(test)]
 mod tests {
-    use super::{should_bypass_time_stretch, synthesize_warmup_fallback_pcm, AudioTimeStretchProcessor};
+    use super::{
+        should_bypass_time_stretch, synthesize_warmup_fallback_pcm, AudioTimeStretchProcessor,
+    };
 
     #[test]
     fn bypasses_neutral_rate() {

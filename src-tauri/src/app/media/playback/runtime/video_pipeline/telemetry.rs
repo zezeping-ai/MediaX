@@ -1,7 +1,7 @@
 use super::DrainFramesContext;
 use crate::app::media::playback::events::{
-    MediaDecodeQuantileStats, MediaFrameTypeStats, MediaTelemetryPayload,
-    MediaVideoStageCostStats, MediaVideoTimestampStats,
+    MediaDecodeQuantileStats, MediaFrameTypeStats, MediaTelemetryPayload, MediaVideoStageCostStats,
+    MediaVideoTimestampStats,
 };
 use crate::app::media::playback::runtime::{emit_telemetry_payloads, METRICS_EMIT_INTERVAL_MS};
 use ffmpeg_next::ffi;
@@ -38,27 +38,29 @@ pub(super) fn emit_video_telemetry(
             p95_ms: value.p95_ms,
             p99_ms: value.p99_ms,
         });
-    let video_stage_costs = stage_perf_snapshot.as_ref().map(|value| MediaVideoStageCostStats {
-        sample_count: value.sample_count,
-        receive_avg_ms: value.receive_avg_ms,
-        receive_max_ms: value.receive_max_ms,
-        queue_wait_avg_ms: value.queue_wait_avg_ms,
-        queue_wait_max_ms: value.queue_wait_max_ms,
-        hw_transfer_avg_ms: value.hw_transfer_avg_ms,
-        hw_transfer_max_ms: value.hw_transfer_max_ms,
-        scale_avg_ms: value.scale_avg_ms,
-        scale_max_ms: value.scale_max_ms,
-        color_profile_avg_ms: value.color_profile_avg_ms,
-        color_profile_max_ms: value.color_profile_max_ms,
-        frame_extract_avg_ms: value.frame_extract_avg_ms,
-        frame_extract_max_ms: value.frame_extract_max_ms,
-        upload_prep_avg_ms: value.upload_prep_avg_ms,
-        upload_prep_max_ms: value.upload_prep_max_ms,
-        submit_avg_ms: value.submit_avg_ms,
-        submit_max_ms: value.submit_max_ms,
-        total_avg_ms: value.total_avg_ms,
-        total_max_ms: value.total_max_ms,
-    });
+    let video_stage_costs = stage_perf_snapshot
+        .as_ref()
+        .map(|value| MediaVideoStageCostStats {
+            sample_count: value.sample_count,
+            receive_avg_ms: value.receive_avg_ms,
+            receive_max_ms: value.receive_max_ms,
+            queue_wait_avg_ms: value.queue_wait_avg_ms,
+            queue_wait_max_ms: value.queue_wait_max_ms,
+            hw_transfer_avg_ms: value.hw_transfer_avg_ms,
+            hw_transfer_max_ms: value.hw_transfer_max_ms,
+            scale_avg_ms: value.scale_avg_ms,
+            scale_max_ms: value.scale_max_ms,
+            color_profile_avg_ms: value.color_profile_avg_ms,
+            color_profile_max_ms: value.color_profile_max_ms,
+            frame_extract_avg_ms: value.frame_extract_avg_ms,
+            frame_extract_max_ms: value.frame_extract_max_ms,
+            upload_prep_avg_ms: value.upload_prep_avg_ms,
+            upload_prep_max_ms: value.upload_prep_max_ms,
+            submit_avg_ms: value.submit_avg_ms,
+            submit_max_ms: value.submit_max_ms,
+            total_avg_ms: value.total_avg_ms,
+            total_max_ms: value.total_max_ms,
+        });
     let integrity_snapshot = ctx.frame_pipeline.integrity_snapshot();
     let total_frame_drops = integrity_snapshot
         .dropped_hw_transfer

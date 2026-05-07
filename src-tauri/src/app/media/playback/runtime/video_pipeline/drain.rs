@@ -79,9 +79,9 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
             ctx.playback_clock.playback_rate(),
         );
         let upload_prep_start = Instant::now();
-        let Some((render_frame, color_profile_cost, frame_extract_cost)) =
-            ctx.frame_pipeline
-                .frame_to_renderer(ctx.app, render_source_frame, estimated_pts, None)
+        let Some((render_frame, color_profile_cost, frame_extract_cost)) = ctx
+            .frame_pipeline
+            .frame_to_renderer(ctx.app, render_source_frame, estimated_pts, None)
         else {
             continue;
         };
@@ -127,13 +127,7 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
             telemetry_frame.set_width(render_frame_width);
             telemetry_frame.set_height(render_frame_height);
             telemetry_frame.set_format(render_frame_format);
-            emit_video_telemetry(
-                ctx,
-                pict_type,
-                render_fps,
-                estimated_pts,
-                &telemetry_frame,
-            );
+            emit_video_telemetry(ctx, pict_type, render_fps, estimated_pts, &telemetry_frame);
         }
         if ctx.last_progress_emit.elapsed() >= Duration::from_millis(200) {
             let buffered_position_seconds = resolve_buffered_position_seconds(
@@ -209,7 +203,11 @@ fn scale_frame_for_render(
     let hw_transfer_cost = hw_transfer_cost_start.elapsed();
     let scale_cost_start = Instant::now();
     if can_bypass_scaler_for_renderer(&frame_for_scale, ctx.output_width, ctx.output_height) {
-        return Some((frame_for_scale, hw_transfer_cost, scale_cost_start.elapsed()));
+        return Some((
+            frame_for_scale,
+            hw_transfer_cost,
+            scale_cost_start.elapsed(),
+        ));
     }
     if let Err(err) = ensure_scaler(
         ctx.scaler,

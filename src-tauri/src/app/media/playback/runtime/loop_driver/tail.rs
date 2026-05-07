@@ -1,7 +1,7 @@
 use super::emit_debug;
 use super::{drain_video_frames, refresh_tail_audio_rate, DecodeRuntime};
-use crate::app::media::playback::runtime::audio::effective_playback_rate;
 use crate::app::media::playback::render::renderer::RendererState;
+use crate::app::media::playback::runtime::audio::effective_playback_rate;
 use crate::app::media::playback::runtime::audio_pipeline::drain_audio_frames;
 use crate::app::media::playback::runtime::progress::{
     resolve_buffered_position_seconds, update_playback_progress,

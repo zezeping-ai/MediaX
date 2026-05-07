@@ -2,9 +2,9 @@ mod sync;
 
 use super::types::AudioPipeline;
 use crate::app::media::playback::rate::{
-    PlaybackRate, audio_queue_prefill_target, audio_queue_seconds_limit, output_staging_frames,
+    audio_queue_prefill_target, audio_queue_seconds_limit, output_staging_frames,
     rate_switch_cover_output_staging_frames, seek_refill_output_staging_frames,
-    seek_settle_output_staging_frames,
+    seek_settle_output_staging_frames, PlaybackRate,
 };
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
 use crate::app::media::playback::runtime::audio::effective_playback_rate;
@@ -50,17 +50,17 @@ pub(crate) fn drain_audio_frames(
         );
         if !decoder_relief_mode
             && should_yield_audio_decode(
-            audio_state.output.queue_depth(),
-            audio_state.output.queued_duration_seconds(),
-            min_prefill_queue_depth,
-            playback_rate,
-            has_video_stream,
-            is_realtime_source,
-            is_network_source,
-            building_rate_switch_cover,
-            seeking_low_latency_refill,
-            force_low_latency_output,
-        )
+                audio_state.output.queue_depth(),
+                audio_state.output.queued_duration_seconds(),
+                min_prefill_queue_depth,
+                playback_rate,
+                has_video_stream,
+                is_realtime_source,
+                is_network_source,
+                building_rate_switch_cover,
+                seeking_low_latency_refill,
+                force_low_latency_output,
+            )
         {
             break;
         }
@@ -83,9 +83,11 @@ pub(crate) fn drain_audio_frames(
         }
 
         let mut pcm = std::mem::take(&mut audio_state.scratch_pcm);
-        audio_state
-            .time_stretch
-            .process_frame_into(&mut converted, playback_rate.as_f32(), &mut pcm)?;
+        audio_state.time_stretch.process_frame_into(
+            &mut converted,
+            playback_rate.as_f32(),
+            &mut pcm,
+        )?;
         if pcm.is_empty() {
             audio_state.scratch_pcm = pcm;
             continue;
@@ -150,7 +152,11 @@ pub(crate) fn drain_audio_frames(
                 .append_pcm_f32_owned(converted.rate(), converted.channels(), block);
         }
         sync_audio_clock_to_output_head(
-            timestamp_to_seconds(converted.timestamp(), converted.pts(), audio_state.time_base),
+            timestamp_to_seconds(
+                converted.timestamp(),
+                converted.pts(),
+                audio_state.time_base,
+            ),
             output_samples,
             converted.channels() as usize,
             converted.rate(),

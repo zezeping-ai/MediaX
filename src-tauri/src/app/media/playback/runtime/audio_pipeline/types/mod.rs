@@ -103,8 +103,9 @@ impl AudioPipeline {
                 *sample *= gain;
             }
         }
-        self.discontinuity_fade_in_frames_remaining =
-            self.discontinuity_fade_in_frames_remaining.saturating_sub(fade_frames);
+        self.discontinuity_fade_in_frames_remaining = self
+            .discontinuity_fade_in_frames_remaining
+            .saturating_sub(fade_frames);
     }
 
     pub fn stage_output_pcm_owned(
@@ -127,7 +128,12 @@ impl AudioPipeline {
         }
         let samples_per_block = staging_frames.max(1).saturating_mul(usize::from(channels));
         if self.available_staging_samples() == 0 {
-            return self.stage_output_pcm_direct(pcm, channels, samples_per_block, force_flush_partial);
+            return self.stage_output_pcm_direct(
+                pcm,
+                channels,
+                samples_per_block,
+                force_flush_partial,
+            );
         }
 
         self.output_staging_samples.extend_from_slice(&pcm);
@@ -215,7 +221,8 @@ impl AudioPipeline {
         let start = pcm.len().saturating_sub(tail_samples);
         self.recent_output_tail_channels = channels;
         self.recent_output_tail_samples.clear();
-        self.recent_output_tail_samples.extend_from_slice(&pcm[start..]);
+        self.recent_output_tail_samples
+            .extend_from_slice(&pcm[start..]);
     }
 
     fn available_staging_samples(&self) -> usize {

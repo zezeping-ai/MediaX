@@ -8,12 +8,7 @@ const PLAYBACK_DEBUG_LOG_FILE_NAME: &str = "playback-debug.log";
 const PLAYBACK_DEBUG_LOG_ROTATED_FILE_NAME: &str = "playback-debug.1.log";
 const PLAYBACK_DEBUG_LOG_MAX_BYTES: u64 = 1024 * 1024;
 
-pub(crate) fn append_playback_debug_log(
-    app: &AppHandle,
-    at_ms: u64,
-    stage: &str,
-    message: &str,
-) {
+pub(crate) fn append_playback_debug_log(app: &AppHandle, at_ms: u64, stage: &str, message: &str) {
     let Ok(log_path) = playback_debug_log_path(app) else {
         return;
     };
@@ -27,11 +22,7 @@ pub(crate) fn append_playback_debug_log(
         return;
     }
     rotate_playback_debug_log_if_needed(&log_path, &rotated_log_path);
-    let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    else {
+    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) else {
         return;
     };
     let _ = writeln!(file, "[{at_ms}] {stage}: {message}");

@@ -3,6 +3,10 @@ mod lyrics;
 mod metadata;
 mod stream_info;
 
+use self::metadata::{build_source_metadata, SourceMetadata};
+use self::stream_info::{
+    find_video_stream, find_video_stream_time_base, resolve_duration_seconds, stream_fps_value,
+};
 use super::hw_decode::configure_hw_decode;
 use super::output_size::compute_output_size;
 use super::types::{HwDecodeStatus, VideoDecodeContext};
@@ -12,12 +16,6 @@ use ffmpeg_next::codec;
 use ffmpeg_next::format;
 use ffmpeg_next::format::stream::Disposition;
 use ffmpeg_next::media::Type;
-use self::metadata::{build_source_metadata, SourceMetadata};
-pub(crate) use self::metadata::load_deferred_audio_cover_frame;
-pub(crate) use self::cover_art::cover_frame_from_image_bytes;
-use self::stream_info::{
-    find_video_stream, find_video_stream_time_base, resolve_duration_seconds, stream_fps_value,
-};
 
 pub(crate) fn open_video_decode_context(
     source: &str,
@@ -48,11 +46,15 @@ pub(crate) fn open_video_decode_context(
         })
         .map(|stream| stream.index());
 
-    if primary_video_stream_index.is_none() && audio_stream_index.is_none() && cover_stream_index.is_none() {
+    if primary_video_stream_index.is_none()
+        && audio_stream_index.is_none()
+        && cover_stream_index.is_none()
+    {
         return Err("no playable audio or video stream found".to_string());
     }
 
-    let source_metadata = build_source_metadata(source, &input_ctx, audio_stream_index, cover_stream_index)?;
+    let source_metadata =
+        build_source_metadata(source, &input_ctx, audio_stream_index, cover_stream_index)?;
 
     if !force_audio_only {
         if let Some(video_stream_index) = primary_video_stream_index {
@@ -76,8 +78,11 @@ pub(crate) fn open_video_decode_context(
         HwDecodeStatus {
             active: false,
             backend: None,
-            error: force_audio_only
-                .then(|| software_fallback_reason.unwrap_or("audio-only fallback requested").to_string()),
+            error: force_audio_only.then(|| {
+                software_fallback_reason
+                    .unwrap_or("audio-only fallback requested")
+                    .to_string()
+            }),
             decision: if force_audio_only {
                 format!(
                     "forced audio-only fallback: {}",
@@ -140,8 +145,12 @@ fn open_primary_video_context(
                     HwDecodeStatus {
                         active: false,
                         backend: None,
-                        error: Some(format!("video decoder create failed; audio-only fallback: {err}")),
-                        decision: format!("audio-only fallback after video decoder create failed: {err}"),
+                        error: Some(format!(
+                            "video decoder create failed; audio-only fallback: {err}"
+                        )),
+                        decision: format!(
+                            "audio-only fallback after video decoder create failed: {err}"
+                        ),
                     },
                 );
             }
@@ -182,12 +191,9 @@ fn open_auto_fallback_video_context(
         HardwareDecodeMode::Off,
         Some(&fallback_reason),
     )?;
-    let decoder = software_context
-        .decoder()
-        .video()
-        .map_err(|decode_err| {
-            format!("video decoder create failed after fallback: {decode_err}")
-        })?;
+    let decoder = software_context.decoder().video().map_err(|decode_err| {
+        format!("video decoder create failed after fallback: {decode_err}")
+    })?;
     let stream_time_base = find_video_stream_time_base(&input_ctx, video_stream_index)?;
     finalize_video_decode_context(
         input_ctx,
@@ -239,7 +245,12 @@ fn finalize_video_decode_context(
     let (output_width, output_height) = decoder
         .as_ref()
         .map(|value| compute_output_size(value.width(), value.height(), quality_mode))
-        .or_else(|| source_metadata.cover_frame.as_ref().map(|frame| (frame.width, frame.height)))
+        .or_else(|| {
+            source_metadata
+                .cover_frame
+                .as_ref()
+                .map(|frame| (frame.width, frame.height))
+        })
         .unwrap_or((0, 0));
     Ok(VideoDecodeContext {
         input_ctx,
@@ -253,7 +264,6 @@ fn finalize_video_decode_context(
         media_kind: source_metadata.media_kind,
         has_cover_art: source_metadata.has_cover_art,
         cover_frame: source_metadata.cover_frame,
-        deferred_cover_bytes: source_metadata.deferred_cover_bytes,
         title: source_metadata.title,
         artist: source_metadata.artist,
         album: source_metadata.album,
@@ -264,4 +274,3 @@ fn finalize_video_decode_context(
         hw_decode_decision: hw_status.decision,
     })
 }
-

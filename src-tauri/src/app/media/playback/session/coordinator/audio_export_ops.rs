@@ -30,7 +30,9 @@ pub fn export_current_audio_track(
     }
     let output_dir = output_dir.trim();
     if output_dir.is_empty() {
-        return Err(MediaError::invalid_input("audio export output_dir is required"));
+        return Err(MediaError::invalid_input(
+            "audio export output_dir is required",
+        ));
     }
     fs::create_dir_all(output_dir).map_err(|err| {
         MediaError::internal(format!(
@@ -54,8 +56,8 @@ fn extract_audio_stream_to_directory(source: &str, output_dir: &str) -> Result<S
     let output_ext = audio_extension_for_codec(audio_codec_id);
     let output_path = next_available_export_path(output_dir, source, output_ext)?;
 
-    let mut output_ctx = format::output(&output_path)
-        .map_err(|err| format!("open export output failed: {err}"))?;
+    let mut output_ctx =
+        format::output(&output_path).map_err(|err| format!("open export output failed: {err}"))?;
     let out_stream_index = {
         let mut out_stream = output_ctx
             .add_stream(codec::encoder::find(codec::Id::None))

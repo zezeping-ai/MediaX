@@ -17,9 +17,6 @@ export function usePlaybackControlsBindings(
     currentTime: viewModel.currentTime.value,
     bufferedTime: viewModel.bufferedPosition.value,
     duration: viewModel.duration.value,
-    decodeBadgeClass: unref(viewModel.decodeBadgeClass),
-    decodeBadgeLabel: unref(viewModel.decodeBadgeLabel),
-    decodeBadgeTitle: unref(viewModel.decodeBadgeTitle),
     sliderMax: viewModel.sliderMax.value,
     timelineDisabled: viewModel.timelineDisabled.value,
     timelineTitle: viewModel.timelineTitle.value,
@@ -52,6 +49,9 @@ export function usePlaybackControlsBindings(
     showAudioExport: props.showAudioExport,
     cacheIcon: unref(viewModel.cacheIcon),
     lockIcon: unref(viewModel.lockIcon),
+    decodeBadgeClass: unref(viewModel.decodeBadgeClass),
+    decodeBadgeLabel: unref(viewModel.decodeBadgeLabel),
+    decodeBadgeTitle: unref(viewModel.decodeBadgeTitle),
   }));
 
   const centerControlEvents: CenterControlEventMap = {

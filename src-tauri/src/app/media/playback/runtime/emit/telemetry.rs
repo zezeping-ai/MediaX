@@ -1,6 +1,7 @@
 use crate::app::media::playback::events::{
     build_media_event, MediaAudioMeterPayload, MediaMetadataPayload, MediaTelemetryPayload,
-    MEDIA_PLAYBACK_AUDIO_METER_EVENT, MEDIA_PLAYBACK_METADATA_EVENT, MEDIA_PLAYBACK_TELEMETRY_EVENT,
+    MEDIA_PLAYBACK_AUDIO_METER_EVENT, MEDIA_PLAYBACK_METADATA_EVENT,
+    MEDIA_PLAYBACK_TELEMETRY_EVENT,
 };
 use tauri::{AppHandle, Emitter};
 

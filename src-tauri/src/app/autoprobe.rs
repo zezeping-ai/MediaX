@@ -1,7 +1,7 @@
 use crate::app::media::playback::debug_log::append_playback_debug_log;
 use crate::app::media::playback::dto::PlaybackChannelRouting;
-use crate::app::media::playback::session::coordinator;
 use crate::app::media::playback::dto::PlaybackStatus;
+use crate::app::media::playback::session::coordinator;
 use crate::app::media::state;
 use crate::app::media::state::MediaState;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -47,7 +47,9 @@ pub fn bootstrap_from_env(app: &tauri::AppHandle) -> Result<(), String> {
             );
             return;
         }
-        if let Err(err) = coordinator::play(app_handle.clone(), app_handle.state::<MediaState>(), None) {
+        if let Err(err) =
+            coordinator::play(app_handle.clone(), app_handle.state::<MediaState>(), None)
+        {
             append_playback_debug_log(
                 &app_handle,
                 now_unix_ms(),
@@ -85,7 +87,11 @@ fn parse_actions_from_env(app: &tauri::AppHandle) -> Vec<AutoprobeAction> {
     };
 
     let mut actions = Vec::new();
-    for segment in raw.split(';').map(str::trim).filter(|segment| !segment.is_empty()) {
+    for segment in raw
+        .split(';')
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+    {
         match parse_action(segment) {
             Ok(action) => actions.push(action),
             Err(err) => append_playback_debug_log(
@@ -112,13 +118,19 @@ fn parse_action(segment: &str) -> Result<AutoprobeAction, String> {
                 .map_err(|err| format!("invalid wait ms: {err}"))?,
         ))),
         "pause" => {
-            if !matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "now" | "yes" | "on") {
+            if !matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "now" | "yes" | "on"
+            ) {
                 return Err("expected true/now to trigger pause".to_string());
             }
             Ok(AutoprobeAction::Pause)
         }
         "resume" | "play" => {
-            if !matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "now" | "yes" | "on") {
+            if !matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "now" | "yes" | "on"
+            ) {
                 return Err("expected true/now to trigger resume".to_string());
             }
             Ok(AutoprobeAction::Resume)
@@ -241,12 +253,16 @@ fn apply_action(app: &tauri::AppHandle, action: &AutoprobeAction) -> Result<(), 
                 .map(|_| ())
                 .map_err(|err| err.to_string())
         }
-        AutoprobeAction::SetVolume(volume) => coordinator::set_volume(app.clone(), state, *volume, None)
-            .map(|_| ())
-            .map_err(|err| err.to_string()),
-        AutoprobeAction::SetMuted(muted) => coordinator::set_muted(app.clone(), state, *muted, None)
-            .map(|_| ())
-            .map_err(|err| err.to_string()),
+        AutoprobeAction::SetVolume(volume) => {
+            coordinator::set_volume(app.clone(), state, *volume, None)
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        }
+        AutoprobeAction::SetMuted(muted) => {
+            coordinator::set_muted(app.clone(), state, *muted, None)
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        }
         AutoprobeAction::SetRouting(routing) => {
             coordinator::set_channel_routing(app.clone(), state, *routing, None)
                 .map(|_| ())
@@ -263,10 +279,7 @@ fn wait_for_playback_ready(app: &tauri::AppHandle, source: &str, reason: &str) {
                 app,
                 now_unix_ms(),
                 "autoprobe_ready",
-                &format!(
-                    "{reason} after {}ms",
-                    start.elapsed().as_millis(),
-                ),
+                &format!("{reason} after {}ms", start.elapsed().as_millis(),),
             );
             return;
         }

@@ -1,8 +1,6 @@
 use super::diagnostics::emit_audio_stream_diagnostics;
 use crate::app::media::playback::decode_context::VideoDecodeContext;
-use crate::app::media::playback::runtime::audio_pipeline::{
-    build_audio_pipeline, AudioPipeline,
-};
+use crate::app::media::playback::runtime::audio_pipeline::{build_audio_pipeline, AudioPipeline};
 use crate::app::media::playback::runtime::emit::emit_debug;
 use crate::app::media::state::AudioControls;
 use ffmpeg_next::media::Type;

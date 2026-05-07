@@ -33,6 +33,23 @@ impl<'a> PlaybackRuntimeGateway<'a> {
         Ok(())
     }
 
+    pub(super) fn sync_media_metadata(&self, video_ctx: &VideoDecodeContext) -> Result<(), String> {
+        let mut playback = self
+            .media_state
+            .session
+            .playback
+            .lock()
+            .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())?;
+        playback.set_media_metadata(
+            video_ctx.title.clone(),
+            video_ctx.artist.clone(),
+            video_ctx.album.clone(),
+            video_ctx.has_cover_art,
+            video_ctx.lyrics.clone(),
+        );
+        Ok(())
+    }
+
     pub(super) fn sync_hw_decode_snapshot(
         &self,
         video_ctx: &VideoDecodeContext,

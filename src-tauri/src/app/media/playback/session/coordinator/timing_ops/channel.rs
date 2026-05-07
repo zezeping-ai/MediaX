@@ -2,8 +2,8 @@ use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::dto::PlaybackChannelRouting;
 use crate::app::media::state;
-use crate::app::media::state::MediaState;
 use crate::app::media::state::emit_snapshot_with_request_id;
+use crate::app::media::state::MediaState;
 use tauri::{AppHandle, State};
 
 pub fn set_left_channel_muted(

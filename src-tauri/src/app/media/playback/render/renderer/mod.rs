@@ -9,12 +9,10 @@ mod renderer_state;
 mod renderer_types;
 mod types;
 
-use types::QueuedFrame;
-pub(crate) use types::DecodedVideoFrame;
-pub use types::{
-    RendererMetricsSnapshot, VideoFrame, VideoFramePlanes, VideoScaleMode,
-};
 pub use renderer_state::RendererState;
+pub(crate) use types::DecodedVideoFrame;
+use types::QueuedFrame;
+pub use types::{RendererMetricsSnapshot, VideoFrame, VideoFramePlanes, VideoScaleMode};
 
 use self::renderer_types::{ColorParams, Renderer};
 

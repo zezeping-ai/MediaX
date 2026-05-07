@@ -14,9 +14,6 @@ export type TimelineViewProps = {
   currentTime: number;
   bufferedTime: number;
   duration: number;
-  decodeBadgeClass: string;
-  decodeBadgeLabel: string;
-  decodeBadgeTitle: string;
   sliderMax: number;
   timelineDisabled: boolean;
   timelineTitle: string;
@@ -49,6 +46,9 @@ export type SideActionViewProps = {
   showAudioExport: boolean;
   cacheIcon: string;
   lockIcon: string;
+  decodeBadgeClass: string;
+  decodeBadgeLabel: string;
+  decodeBadgeTitle: string;
 };
 
 export type CenterControlEventMap = {

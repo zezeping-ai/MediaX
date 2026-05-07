@@ -3,7 +3,7 @@ mod snapshot;
 mod source_capabilities;
 mod state_transitions;
 
-use crate::app::media::model::{MediaLibraryState, MediaSnapshot};
+use crate::app::media::model::{MediaLibraryState, MediaLyricLine, MediaSnapshot};
 use crate::app::media::playback::dto::{
     HardwareDecodeMode, PlaybackChannelRouting, PlaybackMediaKind, PlaybackQualityMode,
     PlaybackState, PlaybackStatus,
@@ -11,9 +11,9 @@ use crate::app::media::playback::dto::{
 use crate::app::media::playback::rate::PlaybackRate;
 
 use self::model::PlaybackSessionModel;
-pub(super) use self::source_capabilities::supports_timeline_seek;
 use self::snapshot::{export_media_snapshot, export_playback_state};
 use self::source_capabilities::supports_adaptive_quality;
+pub(super) use self::source_capabilities::supports_timeline_seek;
 use self::state_transitions::{
     reset_playback_metrics, reset_runtime_decode_state, reset_source_playback_state,
 };
@@ -36,6 +36,7 @@ impl MediaPlaybackService {
         let adaptive_quality_supported = supports_adaptive_quality(&source);
         self.session.source.current_path = Some(source);
         self.session.source.media_kind = PlaybackMediaKind::Video;
+        self.clear_media_metadata();
         reset_playback_metrics(&mut self.session);
         // 仅“打开”媒体时不应假定已播放，状态应等待真实播放事件驱动。
         self.session.transport.status = PlaybackStatus::Paused;
@@ -109,6 +110,22 @@ impl MediaPlaybackService {
         self.state()
     }
 
+    pub fn set_media_metadata(
+        &mut self,
+        title: Option<String>,
+        artist: Option<String>,
+        album: Option<String>,
+        has_cover_art: bool,
+        lyrics: Vec<MediaLyricLine>,
+    ) -> PlaybackState {
+        self.session.source.title = title;
+        self.session.source.artist = artist;
+        self.session.source.album = album;
+        self.session.source.has_cover_art = has_cover_art;
+        self.session.source.lyrics = lyrics;
+        self.state()
+    }
+
     pub fn set_volume(&mut self, volume: f64) -> PlaybackState {
         self.session.audio.volume = volume.clamp(0.0, 1.0);
         self.session.audio.muted = self.session.audio.volume <= 0.0;
@@ -161,5 +178,13 @@ impl MediaPlaybackService {
         self.session.transport.duration_seconds = duration_seconds.max(0.0);
         self.session.transport.buffered_position_seconds = buffered_position_seconds.max(0.0);
         self.state()
+    }
+
+    fn clear_media_metadata(&mut self) {
+        self.session.source.title = None;
+        self.session.source.artist = None;
+        self.session.source.album = None;
+        self.session.source.has_cover_art = false;
+        self.session.source.lyrics.clear();
     }
 }

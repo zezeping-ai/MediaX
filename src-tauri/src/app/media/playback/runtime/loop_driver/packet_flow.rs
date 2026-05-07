@@ -122,12 +122,16 @@ fn send_video_packet_with_backpressure_recovery(
     loop {
         match send_video_packet_once(runtime, packet) {
             Ok(()) => return Ok(()),
-            Err(err) if is_decoder_backpressure(&err) && attempts < VIDEO_SEND_PACKET_RETRY_LIMIT => {
+            Err(err)
+                if is_decoder_backpressure(&err) && attempts < VIDEO_SEND_PACKET_RETRY_LIMIT =>
+            {
                 attempts = attempts.saturating_add(1);
                 emit_debug(
                     app,
                     "video_decoder_backpressure",
-                    format!("send_packet would block; draining decoded frames before retry #{attempts}"),
+                    format!(
+                        "send_packet would block; draining decoded frames before retry #{attempts}"
+                    ),
                 );
                 drain_video_frames(
                     app,
@@ -277,7 +281,9 @@ fn send_audio_packet_with_backpressure_recovery(
     loop {
         match audio_state.decoder.send_packet(packet) {
             Ok(()) => return Ok(()),
-            Err(err) if is_decoder_backpressure(&err) && attempts < AUDIO_SEND_PACKET_RETRY_LIMIT => {
+            Err(err)
+                if is_decoder_backpressure(&err) && attempts < AUDIO_SEND_PACKET_RETRY_LIMIT =>
+            {
                 attempts = attempts.saturating_add(1);
                 emit_debug(
                     app,
@@ -456,4 +462,3 @@ fn update_audio_only_progress(
     }
     Ok(())
 }
-

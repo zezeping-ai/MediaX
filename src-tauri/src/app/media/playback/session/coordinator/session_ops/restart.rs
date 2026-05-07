@@ -1,8 +1,8 @@
 use crate::app::media::error::MediaResult;
+use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::runtime::{
     read_latest_stream_position, start_decode_stream, stop_decode_stream_blocking,
 };
-use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::state;
 use crate::app::media::state::MediaState;
 use tauri::{AppHandle, Manager, State};
@@ -35,7 +35,11 @@ pub(super) fn restart_active_playback(
             emit_debug(&app, "restart_skipped", "restart aborted by newer request");
             return;
         }
-        emit_debug(&app, "restart_join_begin", "stop decode stream (blocking join)");
+        emit_debug(
+            &app,
+            "restart_join_begin",
+            "stop decode stream (blocking join)",
+        );
         if let Err(err) = stop_decode_stream_blocking(&state) {
             if err.contains("join timeout") {
                 emit_debug(
@@ -44,18 +48,30 @@ pub(super) fn restart_active_playback(
                     format!("decode thread join timeout, continue with degraded restart: {err}"),
                 );
             } else {
-                emit_debug(&app, "restart_error", format!("stop decode stream failed: {err}"));
+                emit_debug(
+                    &app,
+                    "restart_error",
+                    format!("stop decode stream failed: {err}"),
+                );
                 return;
             }
         }
         if !state.runtime.stream.is_restart_epoch_current(restart_epoch) {
-            emit_debug(&app, "restart_skipped", "restart aborted after join by newer request");
+            emit_debug(
+                &app,
+                "restart_skipped",
+                "restart aborted after join by newer request",
+            );
             return;
         }
         emit_debug(&app, "restart_join_end", "decode stream stopped");
         emit_debug(&app, "restart_stream_start", "start decode stream");
         if let Err(err) = start_decode_stream(&app, &state, source) {
-            emit_debug(&app, "restart_error", format!("start decode stream failed: {err}"));
+            emit_debug(
+                &app,
+                "restart_error",
+                format!("start decode stream failed: {err}"),
+            );
         }
     });
     Ok(())

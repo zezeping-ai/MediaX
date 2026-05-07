@@ -90,7 +90,7 @@ function updateRightChannelVolume(value: number | [number, number]) {
 <template>
   <div class="flex justify-center">
     <div ref="rootRef" class="relative">
-      <div :class="[PILL_BASE, 'max-w-full gap-2.5 px-3']">
+      <div :class="[PILL_BASE, 'max-w-full gap-2 px-3']">
         <a-button
           size="small"
           shape="circle"
@@ -107,13 +107,13 @@ function updateRightChannelVolume(value: number | [number, number]) {
           shape="circle"
           :disabled="disabled"
           :title="isPlaying ? '暂停播放' : '开始播放'"
-          :class="[CIRCLE_BTN_BASE, 'h-11 min-h-11 w-11 min-w-11', CIRCLE_BTN_PRIMARY]"
+          :class="[CIRCLE_BTN_BASE, 'h-10 min-h-10 w-10 min-w-10', CIRCLE_BTN_PRIMARY]"
           @click="isPlaying ? $emit('pause') : $emit('play')"
         >
           <Icon
             :icon="isPlaying ? 'ph:pause-fill' : 'ph:play-fill'"
-            width="20"
-            height="20"
+            width="18"
+            height="18"
             class="block shrink-0"
             aria-hidden="true"
           />

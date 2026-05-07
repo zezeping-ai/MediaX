@@ -102,9 +102,10 @@ impl RendererState {
         self.inner
             .is_realtime_source
             .store(is_realtime_source, Ordering::Relaxed);
-        self.inner
-            .target_queue_capacity
-            .store(queue_policy::base_target_queue_capacity(&self.inner), Ordering::Relaxed);
+        self.inner.target_queue_capacity.store(
+            queue_policy::base_target_queue_capacity(&self.inner),
+            Ordering::Relaxed,
+        );
         if let Ok(mut tuning) = self.inner.queue_tuning.lock() {
             *tuning = QueueTuningState::default();
         }
@@ -241,9 +242,10 @@ impl RendererState {
         self.inner
             .last_presented_pts_bits
             .store(f64::NAN.to_bits(), Ordering::Relaxed);
-        self.inner
-            .target_queue_capacity
-            .store(queue_policy::base_target_queue_capacity(&self.inner), Ordering::Relaxed);
+        self.inner.target_queue_capacity.store(
+            queue_policy::base_target_queue_capacity(&self.inner),
+            Ordering::Relaxed,
+        );
         if let Ok(mut tuning) = self.inner.queue_tuning.lock() {
             *tuning = QueueTuningState::default();
         }
@@ -251,7 +253,8 @@ impl RendererState {
             // After seek/restart/pause-resume we still debounce reactive growth, but for
             // non-realtime playback the hold must stay short so heavy GOP/B-frame content can
             // rebuild a useful render lead immediately instead of starving at depth 1.
-            *hold_until = Some(Instant::now() + queue_policy::queue_growth_hold_after_reset(&self.inner));
+            *hold_until =
+                Some(Instant::now() + queue_policy::queue_growth_hold_after_reset(&self.inner));
         }
         self.update_clock(media_seconds, playback_rate);
         if let Ok(mut pending) = self.inner.pending_render.lock() {
@@ -333,8 +336,14 @@ impl RendererState {
             .lock()
             .ok()
             .map(|queue| {
-                let head = queue.front().map(QueuedFrame::pts_seconds).filter(|v| v.is_finite());
-                let tail = queue.back().map(QueuedFrame::pts_seconds).filter(|v| v.is_finite());
+                let head = queue
+                    .front()
+                    .map(QueuedFrame::pts_seconds)
+                    .filter(|v| v.is_finite());
+                let tail = queue
+                    .back()
+                    .map(QueuedFrame::pts_seconds)
+                    .filter(|v| v.is_finite());
                 (head, tail)
             })
             .unwrap_or((None, None))
@@ -394,8 +403,7 @@ impl RendererState {
     }
 }
 
-pub(super) fn recycle_frame(_inner: &RendererInner, _frame: QueuedFrame) {
-}
+pub(super) fn recycle_frame(_inner: &RendererInner, _frame: QueuedFrame) {}
 
 fn update_dynamic_queue_capacity(
     inner: &RendererInner,
@@ -428,7 +436,9 @@ fn update_dynamic_queue_capacity(
         .and_then(|value| *value)
         .map(|deadline| Instant::now() < deadline)
         .unwrap_or(false);
-    if has_presented_frame && (lag_ms >= QUEUE_GROW_LAG_MS || (lag_ms >= 12.0 && remaining_queue_depth == 0)) {
+    if has_presented_frame
+        && (lag_ms >= QUEUE_GROW_LAG_MS || (lag_ms >= 12.0 && remaining_queue_depth == 0))
+    {
         if queue_growth_held {
             tuning.late_present_streak = 0;
             tuning.healthy_present_streak = 0;
@@ -476,4 +486,3 @@ fn update_dynamic_queue_capacity(
     tuning.late_present_streak = 0;
     tuning.healthy_present_streak = 0;
 }
-

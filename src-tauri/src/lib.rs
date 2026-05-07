@@ -96,6 +96,7 @@ pub fn run() {
             transcode_commands::image_compress_enqueue,
             transcode_commands::image_compress_estimate,
             app::windows::window_set_main_always_on_top,
+            app::windows::window_set_main_title,
             app::windows::window_set_main_video_scale_mode,
             app::windows::window_toggle_main_fullscreen,
             app::windows::window_start_main_dragging,

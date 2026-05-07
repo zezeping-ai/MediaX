@@ -10,12 +10,13 @@ import {
   startMainWindowDragging,
   toggleMainWindowFullscreen,
 } from "@/modules/media-player/windowCommands";
-import AudioLyricsOverlay from "./AudioLyricsOverlay";
+import AudioLyricPanel from "./AudioLyricsOverlay";
 import TransferStatusOverlay from "./TransferStatusOverlay.vue";
 
 const props = defineProps<{
   source: string;
   pendingSource: string;
+  initialized: boolean;
   controlsVisible: boolean;
   loading: boolean;
   playback: PlaybackState | null;
@@ -45,14 +46,10 @@ const emit = defineEmits<{
   "quick-open-url": [];
 }>();
 
-const hasVideoPresentationSignals = computed(() =>
-  props.playback?.media_kind === "video" || props.metadataMediaKind === "video",
-);
 const hasAudioPresentationSignals = computed(() =>
   Boolean(
     props.playback?.media_kind === "audio"
     || props.metadataMediaKind === "audio"
-    || (!hasVideoPresentationSignals.value && props.metadataHasCoverArt)
   ),
 );
 const effectiveMediaKind = computed(() => {
@@ -65,11 +62,14 @@ const playbackStatus = computed(() => props.playback?.status ?? "idle");
 const isTerminalPlaybackState = computed(() =>
   playbackStatus.value === "idle" || playbackStatus.value === "stopped",
 );
+const hasRenderableSource = computed(() =>
+  Boolean(props.source || props.pendingSource || props.playback?.current_path),
+);
 const showPlaybackSurface = computed(() =>
-  Boolean(props.source) && !isTerminalPlaybackState.value,
+  hasRenderableSource.value || !isTerminalPlaybackState.value,
 );
 const showEmptySourceActions = computed(() =>
-  isTerminalPlaybackState.value && !props.pendingSource,
+  props.initialized && !props.loading && !hasRenderableSource.value && isTerminalPlaybackState.value,
 );
 
 const WINDOW_DRAG_BLOCK_SELECTORS = [
@@ -139,7 +139,7 @@ async function handleViewportMouseDown(event: MouseEvent) {
         </a-empty>
       </div>
     </Transition>
-    <AudioLyricsOverlay
+    <AudioLyricPanel
       :media-kind="effectiveMediaKind"
       :playback="playback"
       :audio-meter="latestAudioMeter"

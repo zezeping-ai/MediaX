@@ -3,8 +3,8 @@ use super::progress::{resolve_buffered_position_seconds, update_playback_progres
 use super::seek_control;
 use super::video_pipeline;
 use super::{DecodeRuntime, AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT};
-use crate::app::media::playback::runtime::audio::effective_playback_rate;
 use crate::app::media::playback::render::renderer::RendererState;
+use crate::app::media::playback::runtime::audio::effective_playback_rate;
 use crate::app::media::state::{MediaState, TimingControls};
 use ffmpeg_next::Error as FfmpegError;
 use ffmpeg_next::Packet;
@@ -19,8 +19,7 @@ mod tail;
 
 use self::pacing::{
     refresh_audio_rate, refresh_tail_audio_rate, should_wait_for_audio_queue_drain,
-    should_wait_for_rate_switch_drain,
-    should_wait_for_decode_lead,
+    should_wait_for_decode_lead, should_wait_for_rate_switch_drain,
 };
 use self::packet_flow::{drain_video_frames, handle_packet};
 pub(super) use self::tail::finish_decode_runtime;
@@ -288,10 +287,21 @@ fn apply_pending_seek(
         )
         .as_f64(),
     );
+    // Audio-only playback uses cover art as the sole visual frame.
+    // Seek reset clears queued frames, so re-submit the cover frame to keep rendering stable.
+    if !runtime.has_video_stream() {
+        if let Some(cover_frame) = runtime.video_ctx.cover_frame.as_ref() {
+            renderer.submit_frame(cover_frame.clone());
+        }
+    }
     runtime.loop_state.reset_audio_sync_state();
     runtime.loop_state.active_seek_target_seconds = Some(target_seconds.max(0.0));
-    runtime.loop_state.begin_seek_refill(Duration::from_millis(220));
-    runtime.loop_state.begin_seek_settle(Duration::from_millis(700));
+    runtime
+        .loop_state
+        .begin_seek_refill(Duration::from_millis(220));
+    runtime
+        .loop_state
+        .begin_seek_settle(Duration::from_millis(700));
     if let Some(audio_state) = runtime.audio_pipeline.as_mut() {
         audio_state.stats.seek_refill_logged = false;
     }

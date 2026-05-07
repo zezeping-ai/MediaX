@@ -1,7 +1,7 @@
-use crate::app::media::state::TimingControls;
 use crate::app::media::playback::runtime::audio::{
     effective_playback_rate, playback_rate_limited_reason,
 };
+use crate::app::media::state::TimingControls;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 

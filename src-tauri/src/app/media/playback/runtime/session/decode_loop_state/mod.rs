@@ -54,10 +54,11 @@ impl DecodeLoopState {
     ) -> Self {
         let now = Instant::now();
         Self {
-            last_applied_audio_rate: crate::app::media::playback::runtime::audio::effective_playback_rate(
-                timing_controls.playback_rate_value(),
-                is_realtime_source,
-            ),
+            last_applied_audio_rate:
+                crate::app::media::playback::runtime::audio::effective_playback_rate(
+                    timing_controls.playback_rate_value(),
+                    is_realtime_source,
+                ),
             pending_audio_rate: None,
             playback_clock: PlaybackClock::new(
                 fps_value,

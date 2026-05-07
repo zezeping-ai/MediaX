@@ -12,6 +12,7 @@ import { createTelemetryPayloadHandler } from "./createTelemetryPayloadHandler";
 
 export function useMediaSessionState() {
   const snapshot = ref<MediaSnapshot | null>(null);
+  const initialized = ref(false);
   const currentSource = ref("");
   const latestAudioMeter = shallowRef<MediaAudioMeterPayload | null>(null);
   const metadataDurationSeconds = ref<number | null>(null);
@@ -50,11 +51,18 @@ export function useMediaSessionState() {
   function updateSnapshot(next: MediaSnapshot) {
     const previousSource = currentSource.value;
     snapshot.value = next;
+    initialized.value = true;
     currentSource.value = next.playback.current_path ?? "";
     if (previousSource !== currentSource.value) {
       resetTransientMediaState();
     }
     metadataMediaKind.value = next.playback.media_kind;
+    metadataDurationSeconds.value = next.playback.duration_seconds || null;
+    metadataTitle.value = next.playback.title ?? "";
+    metadataArtist.value = next.playback.artist ?? "";
+    metadataAlbum.value = next.playback.album ?? "";
+    metadataHasCoverArt.value = Boolean(next.playback.has_cover_art);
+    metadataLyrics.value = next.playback.lyrics ?? [];
   }
 
   function applyMetadataPayload(payload: MediaMetadataPayload) {
@@ -104,6 +112,7 @@ export function useMediaSessionState() {
     applyMetadataPayload,
     applyTelemetryPayload,
     currentSource,
+    initialized,
     latestAudioMeter,
     markTelemetryStaleIfNeeded,
     metadataDurationSeconds,

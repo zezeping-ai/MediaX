@@ -1,6 +1,6 @@
 use super::command_result;
-use crate::app::media::error::MediaError;
 use crate::app::media::error::MediaCommandError;
+use crate::app::media::error::MediaError;
 use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::dto::{
     HardwareDecodeMode, PlaybackChannelRouting, PlaybackQualityMode,

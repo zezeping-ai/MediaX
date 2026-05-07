@@ -1,3 +1,4 @@
+use crate::app::media::model::MediaLyricLine;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -57,6 +58,11 @@ pub struct PlaybackState {
     pub status: PlaybackStatus,
     pub media_kind: PlaybackMediaKind,
     pub current_path: Option<String>,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub has_cover_art: bool,
+    pub lyrics: Vec<MediaLyricLine>,
     pub position_seconds: f64,
     pub duration_seconds: f64,
     pub buffered_position_seconds: f64,
@@ -84,6 +90,11 @@ impl Default for PlaybackState {
             status: PlaybackStatus::Idle,
             media_kind: PlaybackMediaKind::Video,
             current_path: None,
+            title: None,
+            artist: None,
+            album: None,
+            has_cover_art: false,
+            lyrics: Vec::new(),
             position_seconds: 0.0,
             duration_seconds: 0.0,
             buffered_position_seconds: 0.0,

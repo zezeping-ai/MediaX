@@ -41,7 +41,6 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     };
     let about_text = format!("关于 {}", app_menu_title(app));
     let about = PredefinedMenuItem::about(app, Some(about_text.as_str()), Some(about_metadata))?;
-    let sep_after_about = PredefinedMenuItem::separator(app)?;
     let settings = MenuItem::with_id(
         app,
         MENU_APP_SETTINGS_ID,
@@ -52,8 +51,6 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, MENU_APP_QUIT_ID, "退出", true, Some("CmdOrCtrl+Q"))?;
 
     let app_submenu = Submenu::new(app, app_menu_title(app), true)?;
-    app_submenu.append(&about)?;
-    app_submenu.append(&sep_after_about)?;
     app_submenu.append(&settings)?;
 
     #[cfg(target_os = "macos")]
@@ -155,18 +152,24 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
-    let help_submenu =
-        Submenu::with_id_and_items(
-            app,
-            HELP_SUBMENU_ID,
-            "帮助",
-            true,
-            &[&set_default_player, &check_update],
-        )?;
+    let sep_after_about = PredefinedMenuItem::separator(app)?;
+    let help_submenu = Submenu::with_id_and_items(
+        app,
+        HELP_SUBMENU_ID,
+        "帮助",
+        true,
+        &[&about, &sep_after_about, &set_default_player, &check_update],
+    )?;
 
     let menu = Menu::with_items(
         app,
-        &[&app_submenu, &file_submenu, &edit_submenu, &tools_submenu, &help_submenu],
+        &[
+            &app_submenu,
+            &file_submenu,
+            &edit_submenu,
+            &tools_submenu,
+            &help_submenu,
+        ],
     )?;
     app.set_menu(menu)?;
     Ok(())

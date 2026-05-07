@@ -32,6 +32,7 @@ export function useMediaSession() {
 
   return {
     snapshot: state.snapshot,
+    initialized: state.initialized,
     currentSource: state.currentSource,
     latestAudioMeter: state.latestAudioMeter,
     networkReadBytesPerSecond: state.networkReadBytesPerSecond,

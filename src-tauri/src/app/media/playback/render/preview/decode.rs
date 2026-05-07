@@ -101,8 +101,9 @@ where
         let hinted_seconds =
             timestamp_to_seconds(decoded.timestamp(), decoded.pts(), ctx.video_time_base);
         if !ctx.seek_applied
-            && hinted_seconds
-                .is_some_and(|seconds| seconds + 0.04 < ctx.target_seconds && Instant::now() < ctx.deadline)
+            && hinted_seconds.is_some_and(|seconds| {
+                seconds + 0.04 < ctx.target_seconds && Instant::now() < ctx.deadline
+            })
         {
             continue;
         }

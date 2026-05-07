@@ -1,5 +1,5 @@
 use crate::app::media::playback::dto::PlaybackChannelRouting;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
 #[derive(Default)]
 pub struct AudioControls {
@@ -25,7 +25,8 @@ impl AudioControls {
 
     pub fn set_volume(&self, value: f32) {
         let normalized = value.clamp(0.0, 1.0);
-        self.volume_bits.store(normalized.to_bits(), Ordering::Relaxed);
+        self.volume_bits
+            .store(normalized.to_bits(), Ordering::Relaxed);
     }
 
     pub fn muted(&self) -> bool {

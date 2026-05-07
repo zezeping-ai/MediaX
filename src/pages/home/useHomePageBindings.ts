@@ -19,6 +19,7 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
   const mediaViewportProps = computed(() => ({
     source: viewModel.currentSource.value,
     pendingSource: viewModel.pendingSource.value,
+    initialized: viewModel.initialized.value,
     controlsVisible: viewModel.controlsVisible.value,
     playback: viewModel.playback.value,
     loading: viewModel.isBusy.value,

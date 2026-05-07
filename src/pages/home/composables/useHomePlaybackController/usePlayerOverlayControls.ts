@@ -7,7 +7,7 @@ type UsePlayerOverlayControlsOptions = {
 
 export function usePlayerOverlayControls(options: UsePlayerOverlayControlsOptions) {
   const controlsVisible = ref(true);
-  const controlsLocked = ref(false);
+  const controlsLocked = ref(true);
   const controlsHovered = ref(false);
   const controlsOverlayInteracting = ref(false);
   let hideTimer: number | null = null;

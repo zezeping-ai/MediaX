@@ -1,7 +1,11 @@
 use super::{QueuedFrame, Renderer, VideoScaleMode};
 
 impl Renderer {
-    pub(super) fn render(&mut self, frame: Option<&QueuedFrame>, force_if_idle: bool) -> Result<(), String> {
+    pub(super) fn render(
+        &mut self,
+        frame: Option<&QueuedFrame>,
+        force_if_idle: bool,
+    ) -> Result<(), String> {
         let resized = self.resize_if_needed();
         if frame.is_none() && !resized && !force_if_idle {
             return Ok(());
@@ -16,12 +20,16 @@ impl Renderer {
                 self.surface.configure(&self.device, &self.config);
                 return Ok(());
             }
-            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => return Ok(()),
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                return Ok(())
+            }
             wgpu::CurrentSurfaceTexture::Validation => {
                 return Err("wgpu surface validation error".to_string());
             }
         };
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {

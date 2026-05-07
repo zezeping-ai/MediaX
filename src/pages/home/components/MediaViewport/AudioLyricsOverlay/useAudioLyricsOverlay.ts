@@ -22,7 +22,7 @@ type StereoBridgeChannel = {
   holdDbfs: string;
 };
 
-type UseAudioLyricsOverlayOptions = {
+type UseAudioLyricPanelOptions = {
   mediaKind: Readonly<Ref<"video" | "audio">>;
   playback: Readonly<Ref<PlaybackState | null>>;
   audioMeter: Readonly<Ref<MediaAudioMeterPayload | null>>;
@@ -39,7 +39,7 @@ const HOLD_DECAY_STEP = 0.035;
 const HOLD_TICK_MS = 70;
 const OVERLAY_ACTIVITY_TICK_MS = 100;
 
-export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
+export function useAudioLyricPanel(options: UseAudioLyricPanelOptions) {
   const interpolatedPosition = ref(0);
   const leftHoldBars = ref(Array.from({ length: SPECTRUM_BAR_COUNT }, () => MIN_BAR_LEVEL));
   const rightHoldBars = ref(Array.from({ length: SPECTRUM_BAR_COUNT }, () => MIN_BAR_LEVEL));
@@ -47,7 +47,7 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
   const rightSpectrumBars = ref(Array.from({ length: SPECTRUM_BAR_COUNT }, () => MIN_BAR_LEVEL));
   const leftPeakHold = ref(MIN_BAR_LEVEL);
   const rightPeakHold = ref(MIN_BAR_LEVEL);
-  const showAudioOverlay = computed(() => options.mediaKind.value === "audio");
+  const showAudioLyricPanel = computed(() => options.mediaKind.value === "audio");
 
   let activityTimer: number | null = null;
   let lastTickAt = Date.now();
@@ -75,7 +75,7 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
     const now = Date.now();
     const elapsedMs = Math.max(0, now - lastTickAt);
     lastTickAt = now;
-    if (!showAudioOverlay.value || !playback || playback.status !== "playing") {
+    if (!showAudioLyricPanel.value || !playback || playback.status !== "playing") {
       interpolatedPosition.value = playback?.position_seconds ?? 0;
       stopActivityTicker();
       return;
@@ -95,7 +95,7 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
 
   function syncActivityTicker() {
     lastTickAt = Date.now();
-    if (showAudioOverlay.value && options.playback.value?.status === "playing") {
+    if (showAudioLyricPanel.value && options.playback.value?.status === "playing") {
       scheduleActivityTick();
       return;
     }
@@ -104,7 +104,7 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
 
   watch(
     () => [
-      showAudioOverlay.value,
+      showAudioLyricPanel.value,
       options.playback.value?.position_seconds ?? 0,
       options.playback.value?.status ?? "idle",
       options.playback.value?.playback_rate ?? 1,
@@ -165,7 +165,7 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
       absoluteIndex: start + offset,
     }));
   });
-  const { height: viewportHeight } = useWindowSize();
+  const { height: viewportHeight, width: viewportWidth } = useWindowSize();
   const trackTitle = computed(() => options.title.value || "Unknown Track");
   const trackSubtitle = computed(() =>
     [options.artist.value, options.album.value].filter(Boolean).join(" · "),
@@ -209,8 +209,16 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
   const rightPeakState = computed(() => describePeakState(rightPeakLevel.value));
   const hasLyrics = computed(() => orderedLyrics.value.length > 0);
   const isMasterMuted = computed(() => options.playback.value?.muted ?? false);
-  const showStereoBridge = computed(() => viewportHeight.value >= 700);
-  const useCompactStereoBridge = computed(() => viewportHeight.value < 900);
+  // Prefer showing spectrum whenever there is practical room.
+  const showStereoBridge = computed(() => {
+    const height = viewportHeight.value;
+    const width = viewportWidth.value;
+    if (height >= 620) {
+      return true;
+    }
+    return height >= 560 && width >= 980;
+  });
+  const useCompactStereoBridge = computed(() => viewportHeight.value < 840 || viewportWidth.value < 1200);
   const useDenseStageLayout = computed(() => viewportHeight.value < 820);
   const overlayShellClass = computed(() => (
     useDenseStageLayout.value
@@ -271,11 +279,8 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
       ? "flex h-[5rem] flex-col border border-white/8 px-3 py-2"
       : "flex h-[5.25rem] flex-col border border-white/8 px-4 py-2"
   ));
-  const emptyStateLabel = computed(() => (options.hasCoverArt.value ? "Cover View" : "Metadata View"));
-
   return {
     activeLyricIndex,
-    emptyStateLabel,
     footerFrameClass,
     formatClock,
     hasLyrics,
@@ -287,7 +292,7 @@ export function useAudioLyricsOverlay(options: UseAudioLyricsOverlayOptions) {
     playbackPositionSeconds,
     playbackStatusText,
     progressPercent,
-    showAudioOverlay,
+    showAudioLyricPanel,
     showStereoBridge,
     stageFrameClass,
     stereoBridgeChannels,

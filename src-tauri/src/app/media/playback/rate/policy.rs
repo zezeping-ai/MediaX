@@ -107,10 +107,7 @@ pub fn seek_refill_output_staging_frames(has_video_stream: bool) -> usize {
     }
 }
 
-pub fn seek_settle_output_staging_frames(
-    has_video_stream: bool,
-    is_network_source: bool,
-) -> usize {
+pub fn seek_settle_output_staging_frames(has_video_stream: bool, is_network_source: bool) -> usize {
     if has_video_stream {
         OUTPUT_STAGING_FRAMES_SEEK_SETTLE_VIDEO
     } else if is_network_source {
@@ -227,8 +224,7 @@ pub fn video_drain_batch_limit(
     if !has_audio_stream {
         return None;
     }
-    let prefill_target =
-        audio_queue_prefill_target(playback_rate, true, is_realtime_source, false);
+    let prefill_target = audio_queue_prefill_target(playback_rate, true, is_realtime_source, false);
     let critical_threshold = (prefill_target / 2).max(1);
     match audio_queue_depth {
         None if is_realtime_source => Some(VIDEO_DRAIN_BATCH_LIMIT_CRITICAL),
@@ -241,7 +237,9 @@ pub fn video_drain_batch_limit(
         Some(_) if is_realtime_source && playback_rate.as_f32() > 1.0 => {
             Some(VIDEO_DRAIN_BATCH_LIMIT_WARMUP)
         }
-        Some(depth) if playback_rate.as_f32() >= 1.25 && depth <= prefill_target.saturating_add(1) => {
+        Some(depth)
+            if playback_rate.as_f32() >= 1.25 && depth <= prefill_target.saturating_add(1) =>
+        {
             Some(VIDEO_DRAIN_BATCH_LIMIT_WARMUP)
         }
         Some(_) => None,
@@ -267,21 +265,38 @@ mod tests {
         audio_queue_depth_limit, audio_queue_prefill_target, audio_queue_seconds_limit,
         audio_rate_switch_cover_seconds, audio_rate_switch_min_apply_seconds,
         discontinuity_smoothing_profile, output_staging_frames,
-        seek_refill_output_staging_frames, seek_settle_output_staging_frames,
-        seek_settle_queue_depth_limit, rate_switch_cover_output_staging_frames,
-        video_drain_batch_limit, PlaybackRate,
-        DISCONTINUITY_CROSSFADE_FRAMES_BASE, DISCONTINUITY_FADE_IN_FRAMES_BASE,
+        rate_switch_cover_output_staging_frames, seek_refill_output_staging_frames,
+        seek_settle_output_staging_frames, seek_settle_queue_depth_limit, video_drain_batch_limit,
+        PlaybackRate, DISCONTINUITY_CROSSFADE_FRAMES_BASE, DISCONTINUITY_FADE_IN_FRAMES_BASE,
         OUTPUT_STAGING_FRAMES_DEFAULT, OUTPUT_STAGING_FRAMES_FAST, OUTPUT_STAGING_FRAMES_SLOW,
     };
 
     #[test]
     fn queue_depth_policy_tracks_playback_rate() {
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.5), true, false, false), 14);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.25), true, false, false), 18);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(0.75), true, false, false), 30);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.25), true, true, true), 10);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, false), 8);
-        assert_eq!(audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, true), 32);
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(1.5), true, false, false),
+            14
+        );
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(1.25), true, false, false),
+            18
+        );
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(0.75), true, false, false),
+            30
+        );
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(1.25), true, true, true),
+            10
+        );
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, false),
+            8
+        );
+        assert_eq!(
+            audio_queue_depth_limit(PlaybackRate::new(1.0), false, false, true),
+            32
+        );
     }
 
     #[test]
@@ -356,11 +371,26 @@ mod tests {
 
     #[test]
     fn audio_prefill_tracks_media_type_and_rate() {
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), true, false, false), 5);
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, false), 3);
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, true), 12);
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(0.5), false, false, false), 5);
-        assert_eq!(audio_queue_prefill_target(PlaybackRate::new(1.0), true, true, true), 3);
+        assert_eq!(
+            audio_queue_prefill_target(PlaybackRate::new(1.0), true, false, false),
+            5
+        );
+        assert_eq!(
+            audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, false),
+            3
+        );
+        assert_eq!(
+            audio_queue_prefill_target(PlaybackRate::new(1.0), false, false, true),
+            12
+        );
+        assert_eq!(
+            audio_queue_prefill_target(PlaybackRate::new(0.5), false, false, false),
+            5
+        );
+        assert_eq!(
+            audio_queue_prefill_target(PlaybackRate::new(1.0), true, true, true),
+            3
+        );
     }
 
     #[test]
@@ -401,13 +431,37 @@ mod tests {
 
     #[test]
     fn video_drain_batch_limit_protects_audio_queue() {
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), false, None, false), None);
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), true, None, false), Some(3));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(2), false), Some(1));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(4), false), Some(2));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.5), true, Some(5), false), Some(3));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(8), false), None);
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.25), true, None, true), Some(1));
-        assert_eq!(video_drain_batch_limit(PlaybackRate::new(1.25), true, Some(4), true), Some(2));
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), false, None, false),
+            None
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), true, None, false),
+            Some(3)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(2), false),
+            Some(1)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(4), false),
+            Some(2)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.5), true, Some(5), false),
+            Some(3)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.0), true, Some(8), false),
+            None
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.25), true, None, true),
+            Some(1)
+        );
+        assert_eq!(
+            video_drain_batch_limit(PlaybackRate::new(1.25), true, Some(4), true),
+            Some(2)
+        );
     }
 }

@@ -138,6 +138,7 @@ export function useMediaCenter() {
 
   return {
     playback,
+    initialized: mediaSession.initialized,
     currentSource: mediaSession.currentSource,
     pendingSource,
     effectiveDurationSeconds: cacheRecordingController.effectiveDurationSeconds,

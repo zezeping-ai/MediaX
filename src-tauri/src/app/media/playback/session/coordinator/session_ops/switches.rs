@@ -4,8 +4,8 @@ use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::dto::{HardwareDecodeMode, PlaybackQualityMode, PlaybackStatus};
 use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::state;
-use crate::app::media::state::MediaState;
 use crate::app::media::state::emit_snapshot_with_request_id;
+use crate::app::media::state::MediaState;
 use tauri::{AppHandle, State};
 
 pub fn set_hw_decode_mode(
@@ -17,7 +17,8 @@ pub fn set_hw_decode_mode(
     let playing_path = {
         let mut playback = state::playback(&state)?;
         if playback.hw_decode_mode() == mode {
-            return emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from);
+            return emit_snapshot_with_request_id(&app, &state, request_id)
+                .map_err(MediaError::from);
         }
         playback.set_hw_decode_mode(mode);
         playback.update_hw_decode_status(false, None, None);
@@ -39,7 +40,11 @@ pub fn set_quality_mode(
     mode: PlaybackQualityMode,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
-    emit_debug(&app, "quality_request", format!("requested quality_mode={mode:?}"));
+    emit_debug(
+        &app,
+        "quality_request",
+        format!("requested quality_mode={mode:?}"),
+    );
     let playing_path = {
         let mut playback = state::playback(&state)?;
         if mode == PlaybackQualityMode::Auto && !playback.adaptive_quality_supported() {

@@ -6,7 +6,7 @@ import type {
   PlaybackState,
 } from "@/modules/media-types";
 import AudioSpectrumChart from "../AudioSpectrumChart.vue";
-import { useAudioLyricsOverlay } from "./useAudioLyricsOverlay";
+import { useAudioLyricPanel } from "./useAudioLyricsOverlay";
 
 const props = defineProps<{
   mediaKind: "video" | "audio";
@@ -22,9 +22,6 @@ const props = defineProps<{
 const {
   activeLyricIndex,
   bodySectionClass,
-  emptyStateLabel,
-  footerFrameClass,
-  formatClock,
   hasLyrics,
   isMasterMuted,
   lyricsViewportClass,
@@ -32,11 +29,8 @@ const {
   metadataRowClass,
   orderedLyrics,
   overlayShellClass,
-  playbackDurationSeconds,
-  playbackPositionSeconds,
   playbackStatusText,
-  progressPercent,
-  showAudioOverlay,
+  showAudioLyricPanel,
   showStereoBridge,
   stageFrameClass,
   stereoBridgeChannels,
@@ -47,7 +41,7 @@ const {
   trackTitle,
   useCompactStereoBridge,
   visibleLyrics,
-} = useAudioLyricsOverlay({
+} = useAudioLyricPanel({
   mediaKind: toRef(props, "mediaKind"),
   playback: toRef(props, "playback"),
   audioMeter: toRef(props, "audioMeter"),
@@ -61,10 +55,15 @@ const {
 
 <template>
   <div
-    v-if="showAudioOverlay"
+    v-if="showAudioLyricPanel"
     class="pointer-events-none absolute inset-0 z-20 overflow-hidden"
   >
-    <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),rgba(0,0,0,0.60))]" />
+    <div
+      class="pointer-events-none absolute inset-0"
+      :class="props.hasCoverArt
+        ? 'bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03),rgba(0,0,0,0.24))]'
+        : 'bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),rgba(0,0,0,0.60))]'"
+    />
     <div class="absolute inset-x-5 bottom-5 top-4 md:bottom-6 md:left-7 md:right-7 md:top-5">
       <div :class="overlayShellClass">
         <div
@@ -101,7 +100,7 @@ const {
               <span class="border border-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/70">
                 {{ playbackStatusText }}
               </span>
-              <span class="text-[10px] uppercase tracking-[0.24em] text-white/38">Audio Stage</span>
+              <span class="text-[10px] uppercase tracking-[0.24em] text-white/38">歌词面板</span>
               <span
                 v-if="isMasterMuted"
                 class="border border-red-300/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-red-100/80"
@@ -141,13 +140,13 @@ const {
                 <span>{{ activeLyricIndex >= 0 ? `${activeLyricIndex + 1}/${orderedLyrics.length}` : "Ready" }}</span>
               </div>
               <div :class="lyricsViewportClass">
-                <div class="pointer-events-none absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/40 to-transparent" />
-                <div class="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/40 to-transparent" />
+                <div class="pointer-events-none absolute inset-x-0 top-0 h-10 bg-linear-to-b from-black/40 to-transparent" />
+                <div class="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-linear-to-t from-black/40 to-transparent" />
                 <div class="relative py-2">
                   <p
                     v-for="entry in visibleLyrics"
                     :key="`${entry.line.time_seconds}-${entry.absoluteIndex}`"
-                    class="py-1.5 text-[14px] tracking-[0.05em] text-white/24 transition-all duration-300 md:text-base"
+                    class="py-1.5 text-[14px] tracking-wider text-white/24 transition-all duration-300 md:text-base"
                     :class="entry.absoluteIndex === activeLyricIndex ? 'scale-[1.01] text-lg text-white/98 [text-shadow:0_4px_24px_rgba(0,0,0,0.5)] md:text-[20px]' : ''"
                   >
                     {{ entry.line.text }}
@@ -156,35 +155,7 @@ const {
               </div>
             </div>
 
-            <div
-              v-else
-              :class="bodySectionClass"
-            >
-              <div class="flex items-center justify-between text-[10px] uppercase tracking-[0.22em] text-white/34">
-                <span>Lyrics</span>
-                <span>{{ emptyStateLabel }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="shrink-0">
-          <div class="mx-auto w-full">
-            <div :class="footerFrameClass">
-              <div class="mb-1 flex items-center justify-between text-[11px] tracking-[0.18em] text-white/52">
-                <span>{{ formatClock(playbackPositionSeconds) }}</span>
-                <span>{{ formatClock(playbackDurationSeconds) }}</span>
-              </div>
-              <div class="mt-1 h-1.5 shrink-0 overflow-hidden rounded-full bg-white/10">
-                <div
-                  class="h-full rounded-full bg-[linear-gradient(90deg,rgba(255,255,255,0.72),rgba(255,255,255,0.34))] transition-[width] duration-150 ease-out"
-                  :style="{ width: `${progressPercent}%` }"
-                />
-              </div>
-              <div class="mt-auto flex items-center justify-between pt-1.5 text-[10px] uppercase tracking-[0.22em] text-white/34">
-                <span>{{ hasLyrics ? "Lyrics Sync" : "Metadata View" }}</span>
-                <span>{{ playbackStatusText }}</span>
-              </div>
-            </div>
+            <div v-else :class="bodySectionClass" />
           </div>
         </div>
       </div>

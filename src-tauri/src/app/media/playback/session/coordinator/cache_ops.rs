@@ -16,7 +16,9 @@ pub fn get_cache_recording_status(
         .lock()
         .map_err(|_| MediaError::state_poisoned_lock("cache recorder"))?;
     if let Some(session) = guard.as_ref() {
-        let output_size_bytes = fs::metadata(&session.output_path).ok().map(|meta| meta.len());
+        let output_size_bytes = fs::metadata(&session.output_path)
+            .ok()
+            .map(|meta| meta.len());
         Ok(CacheRecordingStatus {
             recording: session.active,
             source: Some(session.source.clone()),
@@ -134,7 +136,9 @@ pub fn stop_cache_recording(state: State<'_, MediaState>) -> MediaResult<CacheRe
             fallback_transcoding: None,
         });
     };
-    let output_size_bytes = fs::metadata(&session.output_path).ok().map(|meta| meta.len());
+    let output_size_bytes = fs::metadata(&session.output_path)
+        .ok()
+        .map(|meta| meta.len());
     Ok(CacheRecordingStatus {
         recording: false,
         source: Some(session.source),

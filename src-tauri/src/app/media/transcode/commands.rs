@@ -97,7 +97,9 @@ fn estimate_lossy_ratio(format: &str, quality: u8) -> f64 {
 }
 
 #[tauri::command]
-pub fn image_compress_estimate(payload: ImageCompressEstimateRequest) -> Result<ImageCompressEstimateResponse, String> {
+pub fn image_compress_estimate(
+    payload: ImageCompressEstimateRequest,
+) -> Result<ImageCompressEstimateResponse, String> {
     if payload.source_paths.is_empty() {
         return Ok(ImageCompressEstimateResponse {
             total_input_size_bytes: 0,
@@ -142,12 +144,17 @@ pub fn image_compress_estimate(payload: ImageCompressEstimateRequest) -> Result<
 }
 
 #[tauri::command]
-pub fn transcode_queue_snapshot(state: State<'_, TranscodeState>) -> Result<TranscodeQueueSnapshot, String> {
+pub fn transcode_queue_snapshot(
+    state: State<'_, TranscodeState>,
+) -> Result<TranscodeQueueSnapshot, String> {
     Ok(state.snapshot())
 }
 
 #[tauri::command]
-pub fn transcode_job_cancel(job_id: u64, state: State<'_, TranscodeState>) -> Result<TranscodeQueueSnapshot, String> {
+pub fn transcode_job_cancel(
+    job_id: u64,
+    state: State<'_, TranscodeState>,
+) -> Result<TranscodeQueueSnapshot, String> {
     state.with_inner(|inner| {
         inner.canceled.push(job_id);
         inner.pending.retain(|id| *id != job_id);
@@ -160,7 +167,10 @@ pub fn transcode_job_cancel(job_id: u64, state: State<'_, TranscodeState>) -> Re
 }
 
 #[tauri::command]
-pub fn transcode_job_remove(job_id: u64, state: State<'_, TranscodeState>) -> Result<TranscodeQueueSnapshot, String> {
+pub fn transcode_job_remove(
+    job_id: u64,
+    state: State<'_, TranscodeState>,
+) -> Result<TranscodeQueueSnapshot, String> {
     state.with_inner(|inner| {
         inner.pending.retain(|id| *id != job_id);
         inner.running.retain(|id| *id != job_id);

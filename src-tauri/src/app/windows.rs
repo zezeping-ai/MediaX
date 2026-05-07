@@ -4,14 +4,15 @@ use crate::app::media::playback::session::coordinator;
 use crate::app::media::state::MediaState;
 use std::path::Path;
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
-use std::sync::{Mutex, OnceLock};
 use tauri::Manager;
-use tauri::{PhysicalPosition, PhysicalSize, Position, Size};
 use tauri::State;
+use tauri::{PhysicalPosition, PhysicalSize, Position, Size};
 
 const MAIN_WINDOW_LABEL: &str = "main";
+const DEFAULT_MAIN_WINDOW_TITLE: &str = env!("CARGO_PKG_NAME");
 const PREFERENCES_WINDOW_LABEL: &str = "preferences";
 const VIDEO_TRANSCODE_WINDOW_LABEL: &str = "video_transcode";
 const AUDIO_TRANSCODE_WINDOW_LABEL: &str = "audio_transcode";
@@ -34,6 +35,22 @@ pub fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         window.show()?;
         window.set_focus()?;
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn window_set_main_title(app: tauri::AppHandle, title: Option<String>) -> Result<(), String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| "main window not found".to_string())?;
+    let next_title = title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(DEFAULT_MAIN_WINDOW_TITLE);
+    window
+        .set_title(next_title)
+        .map_err(|err| format!("set main title failed: {err}"))?;
     Ok(())
 }
 

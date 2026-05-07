@@ -34,11 +34,11 @@ impl QueuedDurationTracker {
         else {
             return;
         };
-        let _ = self.total_micros.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |total| Some(total.saturating_sub(duration_micros)),
-        );
+        let _ = self
+            .total_micros
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |total| {
+                Some(total.saturating_sub(duration_micros))
+            });
     }
 
     pub(crate) fn clear(&self) {

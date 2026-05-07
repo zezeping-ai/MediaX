@@ -104,7 +104,11 @@ fn parse_resolution_height(resolution: &str) -> Result<Option<u32>, String> {
     Ok(Some(height))
 }
 
-fn compute_target_dimensions(source_width: u32, source_height: u32, target_height: Option<u32>) -> (u32, u32) {
+fn compute_target_dimensions(
+    source_width: u32,
+    source_height: u32,
+    target_height: Option<u32>,
+) -> (u32, u32) {
     let Some(target_height) = target_height else {
         return (source_width, source_height);
     };
@@ -158,7 +162,8 @@ fn transcode_video_to_gif_with_progress(
     resolution: &str,
     rate: f64,
 ) -> Result<JobResult, String> {
-    let mut input_ctx = format::input(&job.source_path).map_err(|err| format!("打开输入失败: {err}"))?;
+    let mut input_ctx =
+        format::input(&job.source_path).map_err(|err| format!("打开输入失败: {err}"))?;
     let duration_ms = {
         let d = input_ctx.duration();
         if d > 0 {
@@ -178,7 +183,8 @@ fn transcode_video_to_gif_with_progress(
         .video()
         .map_err(|err| format!("打开视频解码器失败: {err}"))?;
     let target_height = parse_resolution_height(resolution)?;
-    let (target_width, target_height) = compute_target_dimensions(decoder.width(), decoder.height(), target_height);
+    let (target_width, target_height) =
+        compute_target_dimensions(decoder.width(), decoder.height(), target_height);
     let mut scaler = ScalingContext::get(
         decoder.format(),
         decoder.width(),
@@ -189,7 +195,8 @@ fn transcode_video_to_gif_with_progress(
         ScaleFlags::BILINEAR,
     )
     .map_err(|err| format!("创建 GIF 缩放器失败: {err}"))?;
-    let gif_file = fs::File::create(output_path).map_err(|err| format!("创建 GIF 输出失败: {err}"))?;
+    let gif_file =
+        fs::File::create(output_path).map_err(|err| format!("创建 GIF 输出失败: {err}"))?;
     let mut gif_encoder = GifEncoder::new(gif_file);
     gif_encoder
         .set_repeat(Repeat::Infinite)
@@ -218,7 +225,8 @@ fn transcode_video_to_gif_with_progress(
             .send_packet(&packet)
             .map_err(|err| format!("向视频解码器送包失败: {err}"))?;
         while decoder.receive_frame(&mut decoded).is_ok() {
-            let source_frame = transfer_hw_frame_if_needed(&decoded).map_err(|err| format!("转换视频帧失败: {err}"))?;
+            let source_frame = transfer_hw_frame_if_needed(&decoded)
+                .map_err(|err| format!("转换视频帧失败: {err}"))?;
             let pts_seconds = source_frame
                 .pts()
                 .map(|pts| f64::from(time_base) * pts as f64)
@@ -255,7 +263,8 @@ fn transcode_video_to_gif_with_progress(
         .send_eof()
         .map_err(|err| format!("发送视频解码 EOF 失败: {err}"))?;
     while decoder.receive_frame(&mut decoded).is_ok() {
-        let source_frame = transfer_hw_frame_if_needed(&decoded).map_err(|err| format!("转换视频帧失败: {err}"))?;
+        let source_frame = transfer_hw_frame_if_needed(&decoded)
+            .map_err(|err| format!("转换视频帧失败: {err}"))?;
         let pts_seconds = source_frame
             .pts()
             .map(|pts| f64::from(time_base) * pts as f64)
@@ -294,7 +303,8 @@ fn transcode_video_encoded_with_progress(
     plan: &VideoTranscodePlan,
     rate: f64,
 ) -> Result<JobResult, String> {
-    let mut input_ctx = format::input(&job.source_path).map_err(|err| format!("打开输入失败: {err}"))?;
+    let mut input_ctx =
+        format::input(&job.source_path).map_err(|err| format!("打开输入失败: {err}"))?;
     let duration_ms = {
         let d = input_ctx.duration();
         if d > 0 {
@@ -303,8 +313,12 @@ fn transcode_video_encoded_with_progress(
             None
         }
     };
-    let mut output_ctx = format::output(output_path).map_err(|err| format!("打开输出失败: {err}"))?;
-    let global_header = output_ctx.format().flags().contains(format::Flags::GLOBAL_HEADER);
+    let mut output_ctx =
+        format::output(output_path).map_err(|err| format!("打开输出失败: {err}"))?;
+    let global_header = output_ctx
+        .format()
+        .flags()
+        .contains(format::Flags::GLOBAL_HEADER);
     let Some(video_stream) = input_ctx.streams().best(Type::Video) else {
         return Err("未找到视频流".to_string());
     };
@@ -315,7 +329,8 @@ fn transcode_video_encoded_with_progress(
         .video()
         .map_err(|err| format!("打开视频解码器失败: {err}"))?;
     let target_height = parse_resolution_height(resolution)?;
-    let (target_width, target_height) = compute_target_dimensions(video_decoder.width(), video_decoder.height(), target_height);
+    let (target_width, target_height) =
+        compute_target_dimensions(video_decoder.width(), video_decoder.height(), target_height);
     let codec_id = match plan.video_codec.as_str() {
         "h264" | "libx264" => codec::Id::H264,
         "vp9" | "libvpx-vp9" => codec::Id::VP9,
@@ -328,11 +343,12 @@ fn transcode_video_encoded_with_progress(
     let mut out_video_stream = output_ctx
         .add_stream(codec)
         .map_err(|err| format!("创建视频输出流失败: {err}"))?;
-    let mut encoder =
-        codec::context::Context::new_with_codec(codec.ok_or_else(|| "找不到可用视频编码器".to_string())?)
-            .encoder()
-            .video()
-            .map_err(|err| format!("创建视频编码器失败: {err}"))?;
+    let mut encoder = codec::context::Context::new_with_codec(
+        codec.ok_or_else(|| "找不到可用视频编码器".to_string())?,
+    )
+    .encoder()
+    .video()
+    .map_err(|err| format!("创建视频编码器失败: {err}"))?;
     out_video_stream.set_parameters(&encoder);
     encoder.set_height(target_height);
     encoder.set_width(target_width);
@@ -369,7 +385,8 @@ fn transcode_video_encoded_with_progress(
         input_time_base: video_stream.time_base(),
         output_time_base: ffmpeg::Rational(0, 1),
     };
-    let mut stream_mapping: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut stream_mapping: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::new();
     for stream in input_ctx.streams() {
         if stream.index() == video_stream_index {
             continue;
@@ -429,9 +446,16 @@ fn transcode_video_encoded_with_progress(
                     .encoder
                     .send_frame(&scaled)
                     .map_err(|err| format!("向视频编码器送帧失败: {err}"))?;
-                while video_transcoder.encoder.receive_packet(&mut encoded).is_ok() {
+                while video_transcoder
+                    .encoder
+                    .receive_packet(&mut encoded)
+                    .is_ok()
+                {
                     encoded.set_stream(video_transcoder.output_stream_index);
-                    encoded.rescale_ts(video_transcoder.input_time_base, video_transcoder.output_time_base);
+                    encoded.rescale_ts(
+                        video_transcoder.input_time_base,
+                        video_transcoder.output_time_base,
+                    );
                     encoded
                         .write_interleaved(&mut output_ctx)
                         .map_err(|err| format!("写入视频输出包失败: {err}"))?;
@@ -466,7 +490,8 @@ fn transcode_video_encoded_with_progress(
         .send_eof()
         .map_err(|err| format!("发送视频解码 EOF 失败: {err}"))?;
     while video_transcoder.decoder.receive_frame(&mut decoded).is_ok() {
-        let frame_for_scale = transfer_hw_frame_if_needed(&decoded).map_err(|err| format!("转换视频帧失败: {err}"))?;
+        let frame_for_scale = transfer_hw_frame_if_needed(&decoded)
+            .map_err(|err| format!("转换视频帧失败: {err}"))?;
         let mut scaled = frame::Video::empty();
         video_transcoder
             .scaler
@@ -478,9 +503,16 @@ fn transcode_video_encoded_with_progress(
             .encoder
             .send_frame(&scaled)
             .map_err(|err| format!("向视频编码器送帧失败: {err}"))?;
-        while video_transcoder.encoder.receive_packet(&mut encoded).is_ok() {
+        while video_transcoder
+            .encoder
+            .receive_packet(&mut encoded)
+            .is_ok()
+        {
             encoded.set_stream(video_transcoder.output_stream_index);
-            encoded.rescale_ts(video_transcoder.input_time_base, video_transcoder.output_time_base);
+            encoded.rescale_ts(
+                video_transcoder.input_time_base,
+                video_transcoder.output_time_base,
+            );
             encoded
                 .write_interleaved(&mut output_ctx)
                 .map_err(|err| format!("写入视频输出包失败: {err}"))?;
@@ -490,9 +522,16 @@ fn transcode_video_encoded_with_progress(
         .encoder
         .send_eof()
         .map_err(|err| format!("发送视频编码 EOF 失败: {err}"))?;
-    while video_transcoder.encoder.receive_packet(&mut encoded).is_ok() {
+    while video_transcoder
+        .encoder
+        .receive_packet(&mut encoded)
+        .is_ok()
+    {
         encoded.set_stream(video_transcoder.output_stream_index);
-        encoded.rescale_ts(video_transcoder.input_time_base, video_transcoder.output_time_base);
+        encoded.rescale_ts(
+            video_transcoder.input_time_base,
+            video_transcoder.output_time_base,
+        );
         encoded
             .write_interleaved(&mut output_ctx)
             .map_err(|err| format!("写入视频输出包失败: {err}"))?;

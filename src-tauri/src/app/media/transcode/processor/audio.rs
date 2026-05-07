@@ -20,7 +20,8 @@ pub(super) fn transcode_audio_with_progress(
     rate: f64,
     format_name: &str,
 ) -> Result<JobResult, String> {
-    let mut input_ctx = format::input(&job.source_path).map_err(|err| format!("打开输入失败: {err}"))?;
+    let mut input_ctx =
+        format::input(&job.source_path).map_err(|err| format!("打开输入失败: {err}"))?;
     let duration_ms = {
         let d = input_ctx.duration();
         if d > 0 {
@@ -33,14 +34,19 @@ pub(super) fn transcode_audio_with_progress(
         return Err("未找到音频流".to_string());
     };
     let audio_stream_index = audio_stream.index();
-    let mut decoder = ffmpeg_next::codec::context::Context::from_parameters(audio_stream.parameters())
-        .map_err(|err| format!("创建音频解码上下文失败: {err}"))?
-        .decoder()
-        .audio()
-        .map_err(|err| format!("打开音频解码器失败: {err}"))?;
+    let mut decoder =
+        ffmpeg_next::codec::context::Context::from_parameters(audio_stream.parameters())
+            .map_err(|err| format!("创建音频解码上下文失败: {err}"))?
+            .decoder()
+            .audio()
+            .map_err(|err| format!("打开音频解码器失败: {err}"))?;
 
-    let mut output_ctx = format::output(output_path).map_err(|err| format!("打开输出失败: {err}"))?;
-    let global_header = output_ctx.format().flags().contains(format::Flags::GLOBAL_HEADER);
+    let mut output_ctx =
+        format::output(output_path).map_err(|err| format!("打开输出失败: {err}"))?;
+    let global_header = output_ctx
+        .format()
+        .flags()
+        .contains(format::Flags::GLOBAL_HEADER);
     let encoder_codec_id = parse_audio_codec_id(format_name);
     let encoder_codec_opt = ffmpeg_next::encoder::find(encoder_codec_id);
     let mut out_stream = output_ctx
@@ -51,11 +57,12 @@ pub(super) fn transcode_audio_with_progress(
     let audio_codec = encoder_codec
         .audio()
         .map_err(|err| format!("获取音频编码器信息失败: {err}"))?;
-    let mut encoder = ffmpeg_next::codec::context::Context::from_parameters(out_stream.parameters())
-        .map_err(|err| format!("创建音频编码上下文失败: {err}"))?
-        .encoder()
-        .audio()
-        .map_err(|err| format!("创建音频编码器失败: {err}"))?;
+    let mut encoder =
+        ffmpeg_next::codec::context::Context::from_parameters(out_stream.parameters())
+            .map_err(|err| format!("创建音频编码上下文失败: {err}"))?
+            .encoder()
+            .audio()
+            .map_err(|err| format!("创建音频编码器失败: {err}"))?;
     let channel_layout = audio_codec
         .channel_layouts()
         .map(|layouts| layouts.best(fallback_channel_layout(&decoder).channels()))

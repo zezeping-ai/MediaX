@@ -22,10 +22,7 @@ pub(super) fn sync_audio_clock(
             *active_seek_target_seconds = None;
         }
         if audio_clock.is_none() {
-            *audio_clock = Some(AudioClock::new(
-                seconds,
-                playback_rate.as_f64(),
-            ));
+            *audio_clock = Some(AudioClock::new(seconds, playback_rate.as_f64()));
         }
     }
 }

@@ -46,6 +46,11 @@ export interface PlaybackState {
   status: PlaybackStatus;
   media_kind: PlaybackMediaKind;
   current_path: string | null;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  has_cover_art: boolean;
+  lyrics: MediaLyricLine[];
   position_seconds: number;
   duration_seconds: number;
   buffered_position_seconds: number;
@@ -135,6 +140,7 @@ export function isMediaSnapshot(value: unknown): value is MediaSnapshot {
   return (
     typeof playback.engine === "string" &&
     typeof playback.status === "string" &&
+    (typeof playback.title === "string" || playback.title === null || playback.title === undefined) &&
     typeof playback.position_seconds === "number" &&
     typeof playback.duration_seconds === "number" &&
     Array.isArray(library.roots) &&

@@ -1,8 +1,8 @@
 use super::{ColorParams, QueuedFrame, Renderer, VideoFrame, VideoFramePlanes, VideoScaleMode};
-use ffmpeg_next::format;
 use crate::app::media::playback::render::renderer::helpers::{
     create_plane_texture, sanitize_surface_size,
 };
+use ffmpeg_next::format;
 
 impl Renderer {
     pub(super) fn set_video_scale_mode(&mut self, mode: VideoScaleMode) {
@@ -253,8 +253,18 @@ impl Renderer {
                 frame.color_matrix[0][2],
                 1.0,
             ],
-            row1: [frame.color_matrix[1][0], frame.color_matrix[1][1], frame.color_matrix[1][2], 0.0],
-            row2: [frame.color_matrix[2][0], frame.color_matrix[2][1], frame.color_matrix[2][2], 0.0],
+            row1: [
+                frame.color_matrix[1][0],
+                frame.color_matrix[1][1],
+                frame.color_matrix[1][2],
+                0.0,
+            ],
+            row2: [
+                frame.color_matrix[2][0],
+                frame.color_matrix[2][1],
+                frame.color_matrix[2][2],
+                0.0,
+            ],
         };
         let words = flatten_color_params(params);
         self.queue.write_buffer(
@@ -287,20 +297,27 @@ impl Renderer {
                     _ => 0.0,
                 },
             ],
-            row1: [frame.color_matrix[1][0], frame.color_matrix[1][1], frame.color_matrix[1][2], 0.0],
-            row2: [frame.color_matrix[2][0], frame.color_matrix[2][1], frame.color_matrix[2][2], 0.0],
+            row1: [
+                frame.color_matrix[1][0],
+                frame.color_matrix[1][1],
+                frame.color_matrix[1][2],
+                0.0,
+            ],
+            row2: [
+                frame.color_matrix[2][0],
+                frame.color_matrix[2][1],
+                frame.color_matrix[2][2],
+                0.0,
+            ],
         };
         let words = flatten_color_params(params);
-        self.queue.write_buffer(
-            &self.color_params_buffer,
-            0,
-            unsafe {
+        self.queue
+            .write_buffer(&self.color_params_buffer, 0, unsafe {
                 std::slice::from_raw_parts(
                     words.as_ptr() as *const u8,
                     std::mem::size_of_val(&words),
                 )
-            },
-        );
+            });
     }
 }
 

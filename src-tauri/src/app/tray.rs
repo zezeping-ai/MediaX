@@ -23,16 +23,14 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         .menu(&menu)
         // 交互约定：右键弹菜单；左键用于「打开主窗口」
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event: MenuEvent| {
-            match event.id().as_ref() {
-                MENU_TRAY_SHOW_MAIN_ID => {
-                    let _ = show_main_window(app);
-                }
-                MENU_TRAY_QUIT_ID => {
-                    app.exit(0);
-                }
-                _ => {}
+        .on_menu_event(|app, event: MenuEvent| match event.id().as_ref() {
+            MENU_TRAY_SHOW_MAIN_ID => {
+                let _ = show_main_window(app);
             }
+            MENU_TRAY_QUIT_ID => {
+                app.exit(0);
+            }
+            _ => {}
         })
         .on_tray_icon_event(|tray, event: TrayIconEvent| {
             if let TrayIconEvent::Click {

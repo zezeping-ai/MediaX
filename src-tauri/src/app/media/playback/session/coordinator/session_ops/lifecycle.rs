@@ -9,8 +9,8 @@ use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::runtime::{start_decode_stream, stop_decode_stream_non_blocking};
 use crate::app::media::playback::session::service::supports_timeline_seek;
 use crate::app::media::state;
-use crate::app::media::state::MediaState;
 use crate::app::media::state::emit_snapshot_with_request_id;
+use crate::app::media::state::MediaState;
 use tauri::{AppHandle, Manager, State};
 
 pub fn open(
@@ -52,7 +52,11 @@ pub fn play(
         .runtime
         .pause_prefetch_active
         .swap(false, std::sync::atomic::Ordering::Relaxed);
-    let has_active_stream = state.runtime.stream.has_active_stream().map_err(MediaError::from)?;
+    let has_active_stream = state
+        .runtime
+        .stream
+        .has_active_stream()
+        .map_err(MediaError::from)?;
     let should_restart_stream = !resume_prefetch_stream || !has_active_stream;
     if let Some(source) = current_path.as_deref() {
         if should_restart_stream && supports_timeline_seek(source) {
@@ -99,7 +103,11 @@ pub fn pause(
             .runtime
             .pause_prefetch_active
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        emit_debug(&app, "pause_prefetch", "keep network stream alive for paused buffering");
+        emit_debug(
+            &app,
+            "pause_prefetch",
+            "keep network stream alive for paused buffering",
+        );
     } else {
         state
             .runtime

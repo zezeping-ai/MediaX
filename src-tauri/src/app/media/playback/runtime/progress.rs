@@ -1,3 +1,4 @@
+use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::state::MediaState;
 use ffmpeg_next::{ffi, format};
 use tauri::{AppHandle, Manager};
@@ -37,7 +38,11 @@ pub fn update_playback_progress(
     finalize: bool,
 ) -> Result<(), String> {
     let state = app.state::<MediaState>();
-    if !state.runtime.stream.is_generation_current(stream_generation) {
+    if !state
+        .runtime
+        .stream
+        .is_generation_current(stream_generation)
+    {
         return Ok(());
     }
     let snapshot = {
@@ -55,8 +60,15 @@ pub fn update_playback_progress(
                 .stream
                 .reset_pending_seek_to_zero()
                 .map_err(|err| err.to_string())?;
+            if let Err(err) = (*app.state::<RendererState>()).clone().clear_surface(app) {
+                eprintln!("clear renderer surface on eof finalize failed: {err}");
+            }
         } else {
-            playback.sync_position(position_seconds, duration_seconds, buffered_position_seconds);
+            playback.sync_position(
+                position_seconds,
+                duration_seconds,
+                buffered_position_seconds,
+            );
         }
         playback.snapshot(library)
     };

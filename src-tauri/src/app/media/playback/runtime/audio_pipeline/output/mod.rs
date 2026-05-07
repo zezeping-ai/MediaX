@@ -163,9 +163,8 @@ impl Source for OwnedPcmSource {
 
     fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
         let curr_channel = self.position % self.channels.get() as usize;
-        let new_pos = pos.as_secs_f64()
-            * self.sample_rate.get() as f64
-            * self.channels.get() as f64;
+        let new_pos =
+            pos.as_secs_f64() * self.sample_rate.get() as f64 * self.channels.get() as f64;
         let new_pos = (new_pos as usize).min(self.data.len());
         let new_pos = new_pos.next_multiple_of(self.channels.get() as usize);
         self.position = new_pos.saturating_sub(curr_channel);

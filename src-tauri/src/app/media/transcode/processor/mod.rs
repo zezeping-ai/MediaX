@@ -34,7 +34,9 @@ pub fn schedule_jobs(app: &AppHandle) {
     let mut to_start = Vec::new();
     state.with_inner(|inner| {
         while inner.running.len() < TranscodeState::MAX_CONCURRENT_JOBS {
-            let Some(job_id) = inner.pending.pop_front() else { break; };
+            let Some(job_id) = inner.pending.pop_front() else {
+                break;
+            };
             if inner.canceled.contains(&job_id) {
                 continue;
             }
@@ -65,13 +67,21 @@ fn run_job(app: &AppHandle, job_id: u64) {
         let state = app.state::<TranscodeState>();
         state.with_inner(|inner| inner.jobs.get(&job_id).cloned())
     };
-    let Some(job) = job else { return; };
+    let Some(job) = job else {
+        return;
+    };
     append_transcode_debug_log(
         app,
         "job_start",
         &format!(
             "job_id={} kind={:?} source=\"{}\" output=\"{}\" format={:?} resolution={:?} rate={:?}",
-            job.id, job.kind, job.source_path, job.output_path, job.format, job.resolution, job.playback_rate
+            job.id,
+            job.kind,
+            job.source_path,
+            job.output_path,
+            job.format,
+            job.resolution,
+            job.playback_rate
         ),
     );
     let canceled = {
@@ -85,29 +95,59 @@ fn run_job(app: &AppHandle, job_id: u64) {
     let result = match job.kind {
         TranscodeJobKind::Video => {
             let rate = job.playback_rate.unwrap_or(1.0);
-            let resolution = job.resolution.clone().unwrap_or_else(|| "source".to_string());
+            let resolution = job
+                .resolution
+                .clone()
+                .unwrap_or_else(|| "source".to_string());
             let format = job.format.clone().unwrap_or_default();
-            video::transcode_video_with_progress(app, &job, std::path::Path::new(&job.output_path), &resolution, &format, rate)
+            video::transcode_video_with_progress(
+                app,
+                &job,
+                std::path::Path::new(&job.output_path),
+                &resolution,
+                &format,
+                rate,
+            )
         }
         TranscodeJobKind::Audio => {
             let rate = job.playback_rate.unwrap_or(1.0);
             let format = job.format.clone().unwrap_or_default();
-            audio::transcode_audio_with_progress(app, &job, std::path::Path::new(&job.output_path), rate, &format)
+            audio::transcode_audio_with_progress(
+                app,
+                &job,
+                std::path::Path::new(&job.output_path),
+                rate,
+                &format,
+            )
         }
         TranscodeJobKind::ImageLossless => image::compress_image_lossless(app, &job),
         TranscodeJobKind::ImageLossy => image::compress_image_lossy(app, &job),
     };
     match result {
         Ok(JobResult::Success(output_size_bytes)) => {
-            append_transcode_debug_log(app, "job_success", &format!("job_id={} output_size_bytes={}", job_id, output_size_bytes));
-            update_progress(app, job_id, 100.0, Some(output_size_bytes), Some(TranscodeJobStatus::Success), None);
+            append_transcode_debug_log(
+                app,
+                "job_success",
+                &format!("job_id={} output_size_bytes={}", job_id, output_size_bytes),
+            );
+            update_progress(
+                app,
+                job_id,
+                100.0,
+                Some(output_size_bytes),
+                Some(TranscodeJobStatus::Success),
+                None,
+            );
             finish_job(app, job_id, TranscodeJobStatus::Success, None);
         }
         Ok(JobResult::Skipped(output_size_bytes, reason)) => {
             append_transcode_debug_log(
                 app,
                 "job_skipped",
-                &format!("job_id={} output_size_bytes={} reason={}", job_id, output_size_bytes, reason),
+                &format!(
+                    "job_id={} output_size_bytes={} reason={}",
+                    job_id, output_size_bytes, reason
+                ),
             );
             update_progress(
                 app,
@@ -120,13 +160,22 @@ fn run_job(app: &AppHandle, job_id: u64) {
             finish_job(app, job_id, TranscodeJobStatus::Skipped, Some(reason));
         }
         Err(err) => {
-            append_transcode_debug_log(app, "job_failed", &format!("job_id={} error={}", job_id, err));
+            append_transcode_debug_log(
+                app,
+                "job_failed",
+                &format!("job_id={} error={}", job_id, err),
+            );
             finish_job(app, job_id, TranscodeJobStatus::Failed, Some(err));
         }
     }
 }
 
-fn finish_job(app: &AppHandle, job_id: u64, status: TranscodeJobStatus, error_message: Option<String>) {
+fn finish_job(
+    app: &AppHandle,
+    job_id: u64,
+    status: TranscodeJobStatus,
+    error_message: Option<String>,
+) {
     let state = app.state::<TranscodeState>();
     let mut final_progress_percent = 0.0_f64;
     state.with_inner(|inner| {
@@ -156,11 +205,17 @@ fn transcode_debug_log_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn append_transcode_debug_log(app: &AppHandle, stage: &str, message: &str) {
-    let Ok(log_path) = transcode_debug_log_path(app) else { return; };
-    let Some(parent_dir) = log_path.parent() else { return; };
+    let Ok(log_path) = transcode_debug_log_path(app) else {
+        return;
+    };
+    let Some(parent_dir) = log_path.parent() else {
+        return;
+    };
     if fs::create_dir_all(parent_dir).is_err() {
         return;
     }
-    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) else { return; };
+    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) else {
+        return;
+    };
     let _ = writeln!(file, "[{}] {}: {}", now_ms(), stage, message);
 }

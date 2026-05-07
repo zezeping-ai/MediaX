@@ -1,3 +1,4 @@
+use crate::app::media::model::MediaLyricLine;
 use crate::app::media::playback::dto::{
     HardwareDecodeMode, PlaybackChannelRouting, PlaybackMediaKind, PlaybackQualityMode,
     PlaybackStatus,
@@ -15,6 +16,11 @@ pub(super) struct PlaybackSessionModel {
 pub(super) struct PlaybackSourceState {
     pub current_path: Option<String>,
     pub media_kind: PlaybackMediaKind,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub has_cover_art: bool,
+    pub lyrics: Vec<MediaLyricLine>,
     pub adaptive_quality_supported: bool,
     pub quality_mode: PlaybackQualityMode,
 }
@@ -62,6 +68,11 @@ impl Default for PlaybackSourceState {
         Self {
             current_path: None,
             media_kind: PlaybackMediaKind::Video,
+            title: None,
+            artist: None,
+            album: None,
+            has_cover_art: false,
+            lyrics: Vec::new(),
             adaptive_quality_supported: false,
             quality_mode: PlaybackQualityMode::Source,
         }

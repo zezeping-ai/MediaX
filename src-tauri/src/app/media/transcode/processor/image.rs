@@ -12,7 +12,10 @@ use std::path::Path;
 use tauri::{AppHandle, Emitter};
 use webp::Encoder as WebpEncoder;
 
-pub(super) fn compress_image_lossless(app: &AppHandle, job: &TranscodeJob) -> Result<JobResult, String> {
+pub(super) fn compress_image_lossless(
+    app: &AppHandle,
+    job: &TranscodeJob,
+) -> Result<JobResult, String> {
     let source_path = Path::new(&job.source_path);
     let output_path = Path::new(&job.output_path);
     let input_size = fs::metadata(source_path)
@@ -32,7 +35,14 @@ pub(super) fn compress_image_lossless(app: &AppHandle, job: &TranscodeJob) -> Re
         let optimized = optimize_png_lossless(source_path)?;
         update_progress(app, job.id, 86.0, Some(optimized.len() as u64), None, None);
         if optimized.len() as u64 >= input_size {
-            return Ok(JobResult::Skipped(input_size, format!("无损压缩未减小体积（原始: {} B, 输出: {} B）", input_size, optimized.len())));
+            return Ok(JobResult::Skipped(
+                input_size,
+                format!(
+                    "无损压缩未减小体积（原始: {} B, 输出: {} B）",
+                    input_size,
+                    optimized.len()
+                ),
+            ));
         }
         fs::write(output_path, &optimized).map_err(|err| format!("写入输出文件失败: {err}"))?;
         let size = optimized.len() as u64;
@@ -43,7 +53,14 @@ pub(super) fn compress_image_lossless(app: &AppHandle, job: &TranscodeJob) -> Re
         let optimized = optimize_jpeg_near_lossless(&image, 95)?;
         update_progress(app, job.id, 86.0, Some(optimized.len() as u64), None, None);
         if optimized.len() as u64 >= input_size {
-            return Ok(JobResult::Skipped(input_size, format!("无损压缩未减小体积（原始: {} B, 输出: {} B）", input_size, optimized.len())));
+            return Ok(JobResult::Skipped(
+                input_size,
+                format!(
+                    "无损压缩未减小体积（原始: {} B, 输出: {} B）",
+                    input_size,
+                    optimized.len()
+                ),
+            ));
         }
         fs::write(output_path, &optimized).map_err(|err| format!("写入输出文件失败: {err}"))?;
         let size = optimized.len() as u64;
@@ -53,7 +70,10 @@ pub(super) fn compress_image_lossless(app: &AppHandle, job: &TranscodeJob) -> Re
     Err("当前仅支持 PNG/JPG/JPEG 的优化压缩".to_string())
 }
 
-pub(super) fn compress_image_lossy(app: &AppHandle, job: &TranscodeJob) -> Result<JobResult, String> {
+pub(super) fn compress_image_lossy(
+    app: &AppHandle,
+    job: &TranscodeJob,
+) -> Result<JobResult, String> {
     let source_path = Path::new(&job.source_path);
     let output_path = Path::new(&job.output_path);
     let input_size = fs::metadata(source_path)
@@ -74,11 +94,8 @@ pub(super) fn compress_image_lossy(app: &AppHandle, job: &TranscodeJob) -> Resul
         let (rgba_width, rgba_height) = rgba.dimensions();
         let mut png = Vec::new();
         let mut cursor = Cursor::new(&mut png);
-        let encoder = PngEncoder::new_with_quality(
-            &mut cursor,
-            CompressionType::Best,
-            FilterType::Adaptive,
-        );
+        let encoder =
+            PngEncoder::new_with_quality(&mut cursor, CompressionType::Best, FilterType::Adaptive);
         encoder
             .write_image(&rgba, rgba_width, rgba_height, ColorType::Rgba8.into())
             .map_err(|err| format!("PNG 编码失败: {err}"))?;
@@ -86,9 +103,11 @@ pub(super) fn compress_image_lossy(app: &AppHandle, job: &TranscodeJob) -> Resul
     } else if target_format == "jpeg" {
         optimize_jpeg_near_lossless(&image, tuned_quality)?
     } else if target_format == "gif" {
-        encode_with_image_format(&image, ImageFormat::Gif).map_err(|err| format!("GIF 编码失败: {err}"))?
+        encode_with_image_format(&image, ImageFormat::Gif)
+            .map_err(|err| format!("GIF 编码失败: {err}"))?
     } else if target_format == "bmp" {
-        encode_with_image_format(&image, ImageFormat::Bmp).map_err(|err| format!("BMP 编码失败: {err}"))?
+        encode_with_image_format(&image, ImageFormat::Bmp)
+            .map_err(|err| format!("BMP 编码失败: {err}"))?
     } else {
         return Err(format!("不支持的有损输出格式: {target_format}"));
     };
@@ -127,11 +146,13 @@ fn optimize_png_lossless(source_path: &Path) -> Result<Vec<u8>, String> {
     let data = fs::read(source_path).map_err(|err| format!("读取 PNG 失败: {err}"))?;
     let mut opts = OxipngOptions::max_compression();
     opts.strip = oxipng::StripChunks::All;
-    oxipng::optimize_from_memory(&data, &opts)
-        .map_err(|err| format!("PNG 优化失败: {err}"))
+    oxipng::optimize_from_memory(&data, &opts).map_err(|err| format!("PNG 优化失败: {err}"))
 }
 
-fn optimize_jpeg_near_lossless(image: &image::DynamicImage, quality: u8) -> Result<Vec<u8>, String> {
+fn optimize_jpeg_near_lossless(
+    image: &image::DynamicImage,
+    quality: u8,
+) -> Result<Vec<u8>, String> {
     let rgb = image.to_rgb8();
     let (width, height) = rgb.dimensions();
     let mut comp = MozCompress::new(MozColorSpace::JCS_RGB);
@@ -162,7 +183,10 @@ fn tuned_lossy_quality(input_quality: u8, target_format: &str) -> u8 {
     tuned.clamp(1, 100)
 }
 
-fn encode_with_image_format(image: &image::DynamicImage, format: ImageFormat) -> Result<Vec<u8>, image::ImageError> {
+fn encode_with_image_format(
+    image: &image::DynamicImage,
+    format: ImageFormat,
+) -> Result<Vec<u8>, image::ImageError> {
     let mut cursor = Cursor::new(Vec::new());
     image.write_to(&mut cursor, format)?;
     Ok(cursor.into_inner())

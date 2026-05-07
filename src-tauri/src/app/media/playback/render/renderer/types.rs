@@ -65,10 +65,7 @@ pub(super) enum QueuedFrame {
 
 #[derive(Clone)]
 pub enum VideoFramePlanes {
-    Nv12 {
-        y_plane: Vec<u8>,
-        uv_plane: Vec<u8>,
-    },
+    Nv12 { y_plane: Vec<u8>, uv_plane: Vec<u8> },
 }
 
 impl QueuedFrame {

@@ -15,10 +15,7 @@ use tauri::Manager;
 
 use self::audio_pipeline::prepare_audio_pipeline;
 use self::diagnostics::emit_video_stream_diagnostics;
-use self::metadata::{
-    emit_decoder_ready, emit_runtime_metadata, prime_audio_poster_frame,
-    spawn_deferred_audio_cover_load,
-};
+use self::metadata::{emit_decoder_ready, emit_runtime_metadata, prime_audio_poster_frame};
 use self::playback_gateway::PlaybackRuntimeGateway;
 use self::source_flags::{is_network_source, is_realtime_source, should_tail_eof_for_source};
 
@@ -48,6 +45,7 @@ pub(super) fn create_decode_runtime(
         request.force_audio_only,
     )?;
     playback_gateway.sync_media_kind(video_ctx.media_kind)?;
+    playback_gateway.sync_media_metadata(&video_ctx)?;
     emit_decoder_ready(dependencies.app, &video_ctx);
     emit_debug(
         dependencies.app,
@@ -56,26 +54,18 @@ pub(super) fn create_decode_runtime(
     );
     emit_video_stream_diagnostics(dependencies.app, &video_ctx);
     playback_gateway.sync_hw_decode_snapshot(&video_ctx)?;
-    spawn_deferred_audio_cover_load(
-        dependencies.app,
-        dependencies.renderer,
-        request.source,
-        request.stream_generation,
-        &video_ctx,
-    );
-    let audio_pipeline = prepare_audio_pipeline(
-        dependencies.app,
-        &video_ctx,
-        dependencies.audio_controls,
-    )?;
+    let audio_pipeline =
+        prepare_audio_pipeline(dependencies.app, &video_ctx, dependencies.audio_controls)?;
     emit_runtime_metadata(dependencies.app, &video_ctx);
-    dependencies.renderer.set_realtime_source(is_realtime_source);
+    dependencies
+        .renderer
+        .set_realtime_source(is_realtime_source);
     dependencies.renderer.reset_timeline(
         0.0,
         effective_playback_rate(
-            crate::app::media::playback::rate::PlaybackRate::new(
-                clamp_playback_rate(dependencies.timing_controls.playback_rate()),
-            ),
+            crate::app::media::playback::rate::PlaybackRate::new(clamp_playback_rate(
+                dependencies.timing_controls.playback_rate(),
+            )),
             is_realtime_source,
         )
         .as_f64(),

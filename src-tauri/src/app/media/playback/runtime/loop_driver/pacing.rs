@@ -1,10 +1,10 @@
 use super::DecodeRuntime;
-use crate::app::media::playback::runtime::audio::effective_playback_rate;
 use crate::app::media::playback::rate::{
     audio_queue_depth_limit, audio_queue_prefill_target, audio_queue_seconds_limit,
     audio_rate_switch_cover_seconds, audio_rate_switch_min_apply_seconds,
     seek_settle_queue_depth_limit,
 };
+use crate::app::media::playback::runtime::audio::effective_playback_rate;
 use crate::app::media::playback::runtime::{
     AUDIO_ALLOWED_LEAD_SECONDS_DEFAULT, AUDIO_ALLOWED_LEAD_SECONDS_DURING_SETTLE,
     MAX_DECODE_LEAD_SECONDS_DEFAULT, MAX_DECODE_LEAD_SECONDS_DURING_SETTLE,
@@ -24,10 +24,8 @@ pub(super) fn refresh_audio_rate(
     let Some(audio_state) = runtime.audio_pipeline.as_mut() else {
         return;
     };
-    let requested_rate = effective_playback_rate(
-        timing_controls.playback_rate_value(),
-        is_realtime_source,
-    );
+    let requested_rate =
+        effective_playback_rate(timing_controls.playback_rate_value(), is_realtime_source);
     if requested_rate.delta(runtime.loop_state.last_applied_audio_rate) <= 1e-3 {
         runtime.loop_state.clear_pending_audio_rate_switch();
         return;
@@ -43,11 +41,8 @@ pub(super) fn refresh_audio_rate(
     };
     let queued_seconds = audio_state.output.queued_duration_seconds();
     let queued_sources = audio_state.output.queue_depth();
-    let cover_seconds = audio_rate_switch_cover_seconds(
-        has_video_stream,
-        is_realtime_source,
-        is_network_source,
-    );
+    let cover_seconds =
+        audio_rate_switch_cover_seconds(has_video_stream, is_realtime_source, is_network_source);
     let min_apply_seconds = audio_rate_switch_min_apply_seconds(
         has_video_stream,
         is_realtime_source,
@@ -90,7 +85,11 @@ pub(super) fn should_wait_for_rate_switch_drain(
 pub(super) fn should_wait_for_decode_lead(runtime: &DecodeRuntime) -> bool {
     let in_rate_switch_settle = runtime.loop_state.in_rate_switch_settle();
     let max_lead_seconds = if runtime.is_realtime_source {
-        if in_rate_switch_settle { 0.12 } else { 0.08 }
+        if in_rate_switch_settle {
+            0.12
+        } else {
+            0.08
+        }
     } else if in_rate_switch_settle {
         MAX_DECODE_LEAD_SECONDS_DURING_SETTLE
     } else {

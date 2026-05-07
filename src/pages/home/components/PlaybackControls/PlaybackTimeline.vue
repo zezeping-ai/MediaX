@@ -37,15 +37,7 @@ const timelineRailInsetPx = 5;
 
 <template>
   <div class="space-y-1.5">
-    <div class="flex items-center justify-between gap-3">
-      <span
-        class="inline-flex h-6 items-center rounded-md border px-2 text-[10px] font-semibold tracking-[0.1px] leading-none transition-colors duration-150"
-        :class="[decodeBadgeClass, 'justify-center whitespace-nowrap']"
-        :title="decodeBadgeTitle"
-      >
-        {{ decodeBadgeLabel }}
-      </span>
-
+    <div class="flex items-center justify-end gap-3">
       <div
         class="flex items-baseline gap-1.5 text-[11px] text-white/70 [font-variant-numeric:tabular-nums]"
       >
