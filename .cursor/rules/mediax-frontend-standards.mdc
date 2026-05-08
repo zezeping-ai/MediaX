@@ -1,0 +1,14 @@
+---
+description: MediaX 前端架构与 UI 规范
+alwaysApply: true
+---
+
+# MediaX Frontend Standards
+
+- 技术栈默认：Vue 3 + TS + Pinia + Vue Router + VueUse + Ant Design Vue + Tailwind。
+- 保持 `@/` 路径导入；新增代码避免相对路径层层回退。
+- 组件可读性优先：复杂页面拆分为子组件/组合式函数，职责单一。
+- 组件拆分规则：`XXX.vue` 需要继续拆分时，改为 `XXX/index.vue` 并同目录放私有依赖。
+- composable 拆分规则：`useXXX.ts` 需要继续拆分时，改为 `XXX/index.ts` 并同目录放私有依赖。
+- UI 风格保持统一：Antd 维持 small 尺寸，图标优先 `@iconify/vue`。
+- 新增交互默认考虑主题一致性（light/dark）与窗口场景一致性（主窗/子窗）。

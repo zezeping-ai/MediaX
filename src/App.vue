@@ -34,6 +34,7 @@ void listen<string>(MEDIA_MENU_EVENT, async (event) => {
         menuAction: action,
       },
     });
+    return;
   }
 }).then((unlisten) => {
   unlistenMenuEvent = unlisten;

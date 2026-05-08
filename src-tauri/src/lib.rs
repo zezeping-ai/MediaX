@@ -63,6 +63,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            app::feedback::submit_user_feedback,
             playback_session_commands::playback_get_snapshot,
             library::media_set_library_roots,
             library::media_rescan_library,

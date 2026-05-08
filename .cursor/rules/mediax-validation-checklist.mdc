@@ -1,0 +1,14 @@
+---
+description: MediaX 交付前验证清单
+alwaysApply: true
+---
+
+# MediaX Validation Checklist
+
+- 任何“实质改动”后必须执行对应验证，不跳过：
+  - Rust/Tauri 改动至少执行 `cargo check`。
+  - 前端 TS/Vue 改动至少执行 `pnpm -s vue-tsc --noEmit`。
+  - 若改动涉及构建链路或脚本，补充执行最小可行构建验证。
+- 若验证失败，优先修复问题再交付，不以“已知失败”直接结束。
+- 交付说明必须包含：执行了哪些命令、是否通过、若未执行则说明阻塞原因。
+- 涉及用户可见功能改动，补充一句最小手测路径（入口 -> 操作 -> 预期结果）。

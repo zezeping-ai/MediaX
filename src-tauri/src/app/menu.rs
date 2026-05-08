@@ -2,7 +2,7 @@ use crate::app::default_player::open_default_player_settings;
 use crate::app::updates::check_and_install_update;
 use crate::app::windows::{
     show_audio_transcode_window, show_image_compress_window, show_preferences_window,
-    show_video_transcode_window,
+    show_user_feedback_window, show_video_transcode_window,
 };
 use tauri::menu::{
     AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
@@ -20,6 +20,7 @@ const MENU_TOOLS_AUDIO_TRANSCODE_ID: &str = "mediax.tools.audio_transcode";
 const MENU_TOOLS_IMAGE_COMPRESS_ID: &str = "mediax.tools.image_compress";
 const MENU_HELP_SET_DEFAULT_PLAYER_ID: &str = "mediax.help.set_default_player";
 const MENU_HELP_CHECK_UPDATE_ID: &str = "mediax.help.check_update";
+const MENU_HELP_USER_FEEDBACK_ID: &str = "mediax.help.user_feedback";
 
 fn app_menu_title(app: &tauri::App) -> String {
     let name = app.package_info().name.clone();
@@ -152,13 +153,26 @@ pub fn setup(app: &tauri::App) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
+    let user_feedback = MenuItem::with_id(
+        app,
+        MENU_HELP_USER_FEEDBACK_ID,
+        "用户反馈",
+        true,
+        None::<&str>,
+    )?;
     let sep_after_about = PredefinedMenuItem::separator(app)?;
     let help_submenu = Submenu::with_id_and_items(
         app,
         HELP_SUBMENU_ID,
         "帮助",
         true,
-        &[&about, &sep_after_about, &set_default_player, &check_update],
+        &[
+            &about,
+            &sep_after_about,
+            &set_default_player,
+            &check_update,
+            &user_feedback,
+        ],
     )?;
 
     let menu = Menu::with_items(
@@ -191,6 +205,9 @@ pub fn handle_menu_event(app: &tauri::AppHandle, event: MenuEvent) {
             tauri::async_runtime::spawn(async move {
                 check_and_install_update(app).await;
             });
+        }
+        MENU_HELP_USER_FEEDBACK_ID => {
+            let _ = show_user_feedback_window(app);
         }
         MENU_FILE_OPEN_LOCAL_ID => {
             let _ = app.emit(APP_MENU_EVENT, "open_local");

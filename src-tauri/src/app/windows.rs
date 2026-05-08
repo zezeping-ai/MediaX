@@ -17,6 +17,7 @@ const PREFERENCES_WINDOW_LABEL: &str = "preferences";
 const VIDEO_TRANSCODE_WINDOW_LABEL: &str = "video_transcode";
 const AUDIO_TRANSCODE_WINDOW_LABEL: &str = "audio_transcode";
 const IMAGE_COMPRESS_WINDOW_LABEL: &str = "image_compress";
+const USER_FEEDBACK_WINDOW_LABEL: &str = "user_feedback";
 
 #[derive(Clone, Copy)]
 struct WindowRestoreBounds {
@@ -137,6 +138,26 @@ pub fn show_image_compress_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     .title("图片压缩")
     .inner_size(1040.0, 760.0)
     .min_inner_size(920.0, 680.0)
+    .resizable(true)
+    .visible(true)
+    .build()?;
+    Ok(())
+}
+
+pub fn show_user_feedback_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window(USER_FEEDBACK_WINDOW_LABEL) {
+        window.show()?;
+        window.set_focus()?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        app,
+        USER_FEEDBACK_WINDOW_LABEL,
+        tauri::WebviewUrl::App("/#/feedback".into()),
+    )
+    .title("用户反馈")
+    .inner_size(760.0, 620.0)
+    .min_inner_size(680.0, 560.0)
     .resizable(true)
     .visible(true)
     .build()?;

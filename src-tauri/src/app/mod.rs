@@ -1,5 +1,6 @@
 pub mod autoprobe;
 pub mod default_player;
+pub mod feedback;
 pub mod launch;
 pub mod media;
 pub mod menu;

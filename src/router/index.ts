@@ -28,5 +28,10 @@ export const router = createRouter({
       name: "image-compress",
       component: () => import("@/pages/image-compress/index.vue"),
     },
+    {
+      path: "/feedback",
+      name: "feedback",
+      component: () => import("@/pages/feedback/index.vue"),
+    },
   ],
 });

@@ -1,0 +1,13 @@
+---
+description: MediaX Rust/Tauri 结构与发布规范
+alwaysApply: true
+---
+
+# MediaX Rust/Tauri Standards
+
+- Rust 代码强调模块边界清晰；当文件膨胀时采用 `xxx/mod.rs` 进行目录化拆分。
+- 命令与窗口逻辑分层：`tauri::command` 仅做输入校验与编排，复杂业务下沉到 app 模块。
+- 错误信息面向用户可读、面向日志可定位，避免吞错与空 `Err`。
+- 涉及更新器（updater）改动时，始终同步检查：`pubkey`、签名私钥来源、release 产物匹配关系。
+- 涉及菜单/托盘改动时，保持“主窗口关闭不退出、托盘可恢复”的既有行为不回归。
+- 发布链路变更优先可维护与可追踪：关键步骤有明确注释，避免隐式魔法脚本。

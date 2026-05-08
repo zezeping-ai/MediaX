@@ -44,6 +44,7 @@ soundtouch = { version = "0.5.4", features = ["bundled"] }
 webp = "0.3.1"
 oxipng = { version = "9", default-features = false, features = ["parallel"] }
 mozjpeg = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ffmpeg-next = { version = "7", default-features = false, features = [
