@@ -1,86 +1,14 @@
-use crate::app::media::playback::debug_log::append_playback_debug_log;
-use serde_json::Value;
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+mod config;
+mod dialogs;
+mod logging;
+#[cfg(target_os = "macos")]
+mod macos;
+
+use config::{github_release_page_url, update_log_context, updater_platform_key};
+use dialogs::{show_error_dialog, show_info_dialog};
+use logging::append_update_log;
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
-
-fn show_info_dialog(app: &tauri::AppHandle, title: &str, message: &str) {
-    app.dialog()
-        .message(message)
-        .title(title)
-        .kind(MessageDialogKind::Info)
-        .show(|_| {});
-}
-
-fn show_error_dialog(app: &tauri::AppHandle, title: &str, message: &str) {
-    app.dialog()
-        .message(message)
-        .title(title)
-        .kind(MessageDialogKind::Error)
-        .show(|_| {});
-}
-
-fn updater_platform_key() -> &'static str {
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        "darwin-aarch64"
-    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-        "darwin-x86_64"
-    } else if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
-        "windows-aarch64"
-    } else if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-        "windows-x86_64"
-    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
-        "linux-aarch64"
-    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        "linux-x86_64"
-    } else {
-        "unknown"
-    }
-}
-
-fn configured_updater_endpoints(app: &tauri::AppHandle) -> Vec<String> {
-    let Ok(config_value) = serde_json::to_value(app.config()) else {
-        return Vec::new();
-    };
-
-    config_value
-        .get("plugins")
-        .and_then(Value::as_object)
-        .and_then(|plugins| plugins.get("updater"))
-        .and_then(Value::as_object)
-        .and_then(|updater| updater.get("endpoints"))
-        .and_then(Value::as_array)
-        .map(|endpoints| {
-            endpoints
-                .iter()
-                .filter_map(|endpoint| endpoint.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn update_log_context(app: &tauri::AppHandle) -> String {
-    let endpoints = configured_updater_endpoints(app);
-    let endpoint_summary = if endpoints.is_empty() {
-        "none".to_string()
-    } else {
-        endpoints.join(", ")
-    };
-
-    format!(
-        "platform={}, current_version={}, endpoints={}",
-        updater_platform_key(),
-        app.package_info().version,
-        endpoint_summary
-    )
-}
-
-fn append_update_log(app: &tauri::AppHandle, stage: &str, message: impl AsRef<str>) {
-    let at_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|value| value.as_millis() as u64)
-        .unwrap_or_default();
-    append_playback_debug_log(app, at_ms, stage, message.as_ref());
-}
 
 pub async fn check_and_install_update(app: tauri::AppHandle) {
     let context = update_log_context(&app);
@@ -145,6 +73,27 @@ pub async fn check_and_install_update(app: tauri::AppHandle) {
         "发现新版本",
         &format!("发现新版本 {}，开始自动下载并安装。", update.version),
     );
+    if let Some(releases_url) = github_release_page_url(&app) {
+        if let Err(err) = app.opener().open_url(&releases_url, None::<String>) {
+            append_update_log(
+                &app,
+                "updater",
+                format!("open releases page failed: url={releases_url}, error={err}, {context}"),
+            );
+        } else {
+            append_update_log(
+                &app,
+                "updater",
+                format!("opened releases page: url={releases_url}, {context}"),
+            );
+        }
+    } else {
+        append_update_log(
+            &app,
+            "updater",
+            format!("skip opening releases page: no github endpoint found, {context}"),
+        );
+    }
 
     let result = update
         .download_and_install(
@@ -178,6 +127,12 @@ pub async fn check_and_install_update(app: tauri::AppHandle) {
             update.version
         ),
     );
+    #[cfg(target_os = "macos")]
+    {
+        if !macos::ensure_macos_quarantine_ready_for_restart(&app, &context) {
+            return;
+        }
+    }
     show_info_dialog(&app, "更新完成", "更新已安装，应用将立即重启。");
     app.restart();
 }
