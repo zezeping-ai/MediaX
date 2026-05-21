@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { resolveDialogPath } from "@/modules/resolve-dialog-path";
 
 type UseWindowFileDropOptions = {
   openPath: (path: string) => Promise<void>;
@@ -31,11 +32,11 @@ export function useWindowFileDrop(options: UseWindowFileDropOptions) {
 
       dragDepth = 0;
       dropActive.value = false;
-      const [firstPath] = event.payload.paths;
-      if (!firstPath) {
+      const path = resolveDialogPath(event.payload.paths);
+      if (!path) {
         return;
       }
-      await options.openPath(firstPath);
+      await options.openPath(path);
     });
   });
 

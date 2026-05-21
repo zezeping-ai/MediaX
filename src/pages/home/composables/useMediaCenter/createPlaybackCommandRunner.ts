@@ -1,5 +1,18 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { resolveDialogPath } from "@/modules/resolve-dialog-path";
 import type { MediaSnapshot, PlaybackChannelRouting, PlaybackQualityMode } from "@/modules/media-types";
+
+const LOCAL_MEDIA_DIALOG_FILTERS = [
+  {
+    name: "媒体文件",
+    extensions: [
+      "mp4", "mkv", "mov", "avi", "webm", "flv", "m4v", "wmv", "mpeg", "mpg", "ts", "m2ts",
+      "mts", "mxf", "rm", "rmvb", "3gp", "3g2", "ogv", "asf", "vob", "f4v", "divx",
+      "mp3", "flac", "wav", "aac", "m4a", "ogg", "opus", "wma", "aif", "aiff", "ape",
+      "alac", "amr", "ac3", "dts", "mp2", "mka",
+    ],
+  },
+];
 
 const DEV_SEEK_LOG = import.meta.env.DEV;
 const SEEK_COALESCE_WINDOW_MS = 90;
@@ -92,25 +105,24 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
   }
 
   async function openLocalFileByDialog() {
-    const selected = await open({
+    try {
+      const selected = await open({
+        title: "选择本地媒体文件",
+        multiple: false,
+        filters: LOCAL_MEDIA_DIALOG_FILTERS,
+      });
+      const resolved = resolveDialogPath(selected);
+      if (resolved) {
+        return resolved;
+      }
+    } catch {
+      // Filtered picker can fail on some platforms; fall back to the system file dialog.
+    }
+    const fallback = await open({
       title: "选择本地媒体文件",
       multiple: false,
-      filters: [
-        {
-          name: "媒体文件",
-          extensions: [
-            "mp4", "mkv", "mov", "avi", "webm", "flv", "m4v", "wmv", "mpeg", "mpg", "ts", "m2ts",
-            "mts", "mxf", "rm", "rmvb", "3gp", "3g2", "ogv", "asf", "vob", "f4v", "divx",
-            "mp3", "flac", "wav", "aac", "m4a", "ogg", "opus", "wma", "aif", "aiff", "ape",
-            "alac", "amr", "ac3", "dts", "mp2", "mka",
-          ],
-        },
-      ],
     });
-    if (!selected || Array.isArray(selected)) {
-      return null;
-    }
-    return selected;
+    return resolveDialogPath(fallback);
   }
 
   async function openPath(path: string) {

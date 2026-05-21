@@ -4,6 +4,7 @@ import type {
   PreviewFrame,
 } from "@/modules/media-types";
 import { open } from "@tauri-apps/plugin-dialog";
+import { resolveDialogPath } from "@/modules/resolve-dialog-path";
 import type { createPlaybackCommandRunner } from "./createPlaybackCommandRunner";
 import type { useCacheRecordingController } from "./useCacheRecordingController";
 import type { useMediaUrlInputController } from "./useMediaUrlInputController";
@@ -41,10 +42,7 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
       directory: true,
       multiple: false,
     });
-    if (!selected || Array.isArray(selected)) {
-      return null;
-    }
-    return String(selected);
+    return resolveDialogPath(selected);
   }
 
   async function exportCurrentAudio() {
@@ -60,12 +58,15 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
     openPath: (path: string) => withBusyState(async () => {
       await playbackRunner.openPath(path);
     }),
-    openLocalFileByDialog: () => withBusyState(async () => {
+    openLocalFileByDialog: async () => {
       const selectedPath = await playbackRunner.openLocalFileByDialog();
-      if (selectedPath) {
-        await playbackRunner.openPath(selectedPath);
+      if (!selectedPath) {
+        return;
       }
-    }),
+      await withBusyState(async () => {
+        await playbackRunner.openPath(selectedPath);
+      });
+    },
     openUrl: (url: string) => withBusyState(async () => {
       await urlInputController.submitUrl(url);
     }),

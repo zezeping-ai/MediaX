@@ -8,6 +8,7 @@ use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::runtime::{start_decode_stream, stop_decode_stream_non_blocking};
 use crate::app::media::playback::session::service::supports_timeline_seek;
+use crate::app::media::playback::session::source_path::normalize_local_source_path;
 use crate::app::media::state;
 use crate::app::media::state::emit_snapshot_with_request_id;
 use crate::app::media::state::MediaState;
@@ -19,6 +20,7 @@ pub fn open(
     path: String,
     request_id: Option<String>,
 ) -> MediaResult<MediaSnapshot> {
+    let path = normalize_local_source_path(path)?;
     finalize_active_cache_recording(&state, "播放源已切换，录制已自动停止")?;
     state
         .runtime
