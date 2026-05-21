@@ -1,11 +1,19 @@
+mod progress_store;
+
 use crate::app::media::error::MediaError;
 use crate::app::media::model::{MediaItem, MediaLibraryState, MediaSnapshot};
 use crate::app::media::state::{emit_snapshot, MediaState};
+use progress_store::{
+    load_progress_map, normalize_saved_position, playback_progress_path, save_progress_map,
+    ProgressRecord,
+};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, State};
 use walkdir::WalkDir;
+
+const PROGRESS_AUTOSAVE_INTERVAL_SECS: u64 = 3;
 
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "mp4", "mkv", "mov", "avi", "webm", "flv", "m4v", "wmv", "mpeg", "mpg", "ts", "m2ts", "mts",
@@ -17,12 +25,31 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
 #[derive(Default)]
 pub struct MediaLibraryService {
     state: MediaLibraryState,
-    recent_progress: HashMap<String, (u64, f64)>,
+    recent_progress: HashMap<String, ProgressRecord>,
+    persist_path: Option<PathBuf>,
+    last_disk_save_epoch: u64,
 }
 
 impl MediaLibraryService {
+    pub fn load_persisted_progress(&mut self, app: &AppHandle) {
+        let Ok(path) = playback_progress_path(app) else {
+            return;
+        };
+        self.persist_path = Some(path.clone());
+        self.recent_progress = load_progress_map(&path);
+    }
+
     pub fn state(&self) -> MediaLibraryState {
         self.state.clone()
+    }
+
+    pub fn saved_position_seconds(&self, path: &str) -> f64 {
+        self.recent_progress
+            .get(path)
+            .map(|record| {
+                normalize_saved_position(record.position_seconds, record.duration_seconds)
+            })
+            .unwrap_or(0.0)
     }
 
     pub fn set_roots_and_scan(&mut self, roots: Vec<String>) {
@@ -43,14 +70,67 @@ impl MediaLibraryService {
         self.state.items = items;
     }
 
-    pub fn mark_playback_progress(&mut self, path: &str, position_seconds: f64) {
+    pub fn autosave_playback_progress(
+        &mut self,
+        path: &str,
+        position_seconds: f64,
+        duration_seconds: Option<f64>,
+    ) {
         let now = now_epoch_seconds();
-        self.recent_progress
-            .insert(path.to_string(), (now, position_seconds));
+        let position_seconds =
+            normalize_saved_position(position_seconds.max(0.0), duration_seconds);
+        let should_flush_disk = self
+            .recent_progress
+            .get(path)
+            .map(|record| now.saturating_sub(record.played_at) >= PROGRESS_AUTOSAVE_INTERVAL_SECS)
+            .unwrap_or(true);
+        self.recent_progress.insert(
+            path.to_string(),
+            ProgressRecord {
+                played_at: now,
+                position_seconds,
+                duration_seconds,
+            },
+        );
         if let Some(item) = self.state.items.iter_mut().find(|item| item.path == path) {
             item.last_played_at = Some(now);
-            item.last_position_seconds = position_seconds.max(0.0);
+            item.last_position_seconds = position_seconds;
         }
+        if should_flush_disk {
+            self.flush_progress_to_disk(now);
+        }
+    }
+
+    pub fn mark_playback_progress(
+        &mut self,
+        path: &str,
+        position_seconds: f64,
+        duration_seconds: Option<f64>,
+    ) {
+        let now = now_epoch_seconds();
+        let position_seconds =
+            normalize_saved_position(position_seconds.max(0.0), duration_seconds);
+        self.recent_progress.insert(
+            path.to_string(),
+            ProgressRecord {
+                played_at: now,
+                position_seconds,
+                duration_seconds,
+            },
+        );
+        if let Some(item) = self.state.items.iter_mut().find(|item| item.path == path) {
+            item.last_played_at = Some(now);
+            item.last_position_seconds = position_seconds;
+        }
+        self.flush_progress_to_disk(now);
+    }
+
+    fn flush_progress_to_disk(&mut self, now: u64) {
+        let Some(persist_path) = self.persist_path.as_ref() else {
+            return;
+        };
+        self.last_disk_save_epoch = now;
+        let _ = save_progress_map(persist_path, &self.recent_progress);
     }
 
     fn collect_items_from_root(&self, root_path: &Path, items: &mut Vec<MediaItem>) {
@@ -71,8 +151,14 @@ impl MediaLibraryService {
             let (last_played_at, last_position_seconds) = self
                 .recent_progress
                 .get(&path_string)
-                .map_or((None, 0.0), |(played_at, position)| {
-                    (Some(*played_at), *position)
+                .map_or((None, 0.0), |record| {
+                    (
+                        Some(record.played_at),
+                        normalize_saved_position(
+                            record.position_seconds,
+                            record.duration_seconds,
+                        ),
+                    )
                 });
             items.push(MediaItem {
                 id: path_string.clone(),

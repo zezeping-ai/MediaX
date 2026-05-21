@@ -6,6 +6,7 @@ export {
   getPlaybackSnapshot,
   playbackConfigureDecoderMode,
   playbackOpenSource,
+  playbackSetResumeLastPosition,
   playbackPause,
   playbackPreviewFrame,
   playbackResume,

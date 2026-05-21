@@ -1,4 +1,5 @@
 import {
+  invokeMediaCommand,
   invokeMediaCommandValidated,
   invokeMediaCommandWithRequestIdValidated,
 } from "../media-command";
@@ -31,12 +32,16 @@ export function getPlaybackSnapshot() {
   return invokeMediaCommandValidated<MediaSnapshot>("playback_get_snapshot", isMediaSnapshot);
 }
 
-export function playbackOpenSource(path: string) {
+export function playbackOpenSource(path: string, resumeLastPosition = true) {
   return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
     "playback_open_source",
     isMediaSnapshot,
-    { path },
+    { path, resumeLastPosition },
   );
+}
+
+export function playbackSetResumeLastPosition(enabled: boolean) {
+  return invokeMediaCommand<void>("playback_set_resume_last_position", { enabled });
 }
 
 export function playbackResume() {

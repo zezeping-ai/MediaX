@@ -13,6 +13,7 @@ export type Preferences = {
     videoScaleMode: PlayerVideoScaleMode;
     showDownlinkSpeed: boolean;
     showUplinkSpeed: boolean;
+    resumeLastPosition: boolean;
   };
 };
 
@@ -25,6 +26,7 @@ const DEFAULT_PREFERENCES: Preferences = {
     videoScaleMode: "contain",
     showDownlinkSpeed: true,
     showUplinkSpeed: true,
+    resumeLastPosition: true,
   },
 };
 
@@ -52,6 +54,7 @@ export function usePreferences() {
       || !player.videoScaleMode
       || typeof player.showDownlinkSpeed !== "boolean"
       || typeof player.showUplinkSpeed !== "boolean"
+      || typeof player.resumeLastPosition !== "boolean"
     ) {
       preferences.value = {
         ...preferences.value,
@@ -63,6 +66,8 @@ export function usePreferences() {
             player?.showDownlinkSpeed ?? DEFAULT_PREFERENCES.player.showDownlinkSpeed,
           showUplinkSpeed:
             player?.showUplinkSpeed ?? DEFAULT_PREFERENCES.player.showUplinkSpeed,
+          resumeLastPosition:
+            player?.resumeLastPosition ?? DEFAULT_PREFERENCES.player.resumeLastPosition,
         },
       };
     }
@@ -134,6 +139,15 @@ export function usePreferences() {
         preferences.value = {
           ...preferences.value,
           player: { ...preferences.value.player, showUplinkSpeed: v },
+        };
+      },
+    }),
+    playerResumeLastPosition: computed({
+      get: () => preferences.value.player.resumeLastPosition,
+      set: (v: boolean) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, resumeLastPosition: v },
         };
       },
     }),

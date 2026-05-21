@@ -24,7 +24,8 @@ pub fn sync_position(
     };
     if let Some(path) = path {
         let mut library = state::library(&state)?;
-        library.mark_playback_progress(&path, position_seconds);
+        let duration = (duration_seconds > 0.0).then_some(duration_seconds);
+        library.mark_playback_progress(&path, position_seconds, duration);
     }
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }

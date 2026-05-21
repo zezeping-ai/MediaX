@@ -86,7 +86,12 @@ pub(super) fn sync_pause_resume_position(state: &State<'_, MediaState>) -> Media
     };
     let resume_position = current_position.max(latest).max(0.0);
     if let Some(path) = current_path.as_deref() {
-        state::library(state)?.mark_playback_progress(path, resume_position);
+        let duration_seconds = {
+            let playback = state::playback(state)?;
+            let duration = playback.state().duration_seconds;
+            (duration > 0.0).then_some(duration)
+        };
+        state::library(state)?.mark_playback_progress(path, resume_position, duration_seconds);
     }
     {
         let mut playback = state::playback(state)?;

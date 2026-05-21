@@ -168,7 +168,13 @@ fn schedule_open_source(app: AppHandle, source: String, stage: &'static str) {
         append_launch_log(&app, stage, &format!("open source: {source}"));
         let _ = show_main_window(&app);
         if let Err(err) =
-            coordinator::open(app.clone(), app.state::<MediaState>(), source.clone(), None)
+            coordinator::open(
+                app.clone(),
+                app.state::<MediaState>(),
+                source.clone(),
+                None,
+                None,
+            )
         {
             append_launch_log(&app, "launch_error", &format!("open failed: {err}"));
             return;

@@ -21,7 +21,7 @@ pub fn seek(
 ) -> MediaResult<MediaSnapshot> {
     let position_seconds =
         constraints::normalize_non_negative(position_seconds, "position_seconds")?;
-    let (media_path, status, media_kind, current_position_seconds) = {
+    let (media_path, status, media_kind, current_position_seconds, duration_seconds) = {
         let mut playback = state::playback(&state)?;
         let playback_state = playback.state();
         if playback_state
@@ -37,6 +37,7 @@ pub fn seek(
             next_state.status,
             next_state.media_kind,
             next_state.position_seconds,
+            next_state.duration_seconds,
         )
     };
     let supports_seek = media_path.as_deref().is_some_and(supports_timeline_seek);
@@ -54,7 +55,8 @@ pub fn seek(
     }
     if let Some(path_ref) = media_path.as_deref() {
         let mut library = state::library(&state)?;
-        library.mark_playback_progress(path_ref, position_seconds);
+        let duration = (duration_seconds > 0.0).then_some(duration_seconds);
+        library.mark_playback_progress(path_ref, position_seconds, duration);
     }
     set_pending_seek(&state, position_seconds)?;
     write_latest_stream_position(&state, position_seconds.max(0.0))?;

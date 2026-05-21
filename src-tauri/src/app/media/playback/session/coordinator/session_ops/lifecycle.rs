@@ -9,6 +9,7 @@ use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::runtime::{start_decode_stream, stop_decode_stream_non_blocking};
 use crate::app::media::playback::session::service::supports_timeline_seek;
 use crate::app::media::playback::session::source_path::normalize_local_source_path;
+use crate::app::media::playback::session::player_settings;
 use crate::app::media::state;
 use crate::app::media::state::emit_snapshot_with_request_id;
 use crate::app::media::state::MediaState;
@@ -19,6 +20,7 @@ pub fn open(
     state: State<'_, MediaState>,
     path: String,
     request_id: Option<String>,
+    resume_last_position: Option<bool>,
 ) -> MediaResult<MediaSnapshot> {
     let path = normalize_local_source_path(path)?;
     finalize_active_cache_recording(&state, "播放源已切换，录制已自动停止")?;
@@ -31,15 +33,29 @@ pub fn open(
     if let Err(err) = (*app.state::<RendererState>()).clone().clear_surface(&app) {
         eprintln!("clear renderer surface on source switch failed: {err}");
     }
+    let resume_enabled = resume_last_position
+        .unwrap_or_else(|| player_settings::resume_last_position_enabled(&state));
+    let resume_position_seconds = if resume_enabled {
+        let library = state::library(&state)?;
+        library.saved_position_seconds(&path)
+    } else {
+        0.0
+    };
     {
         let mut playback = state::playback(&state)?;
         playback.open(path.clone());
+        if resume_position_seconds > f64::EPSILON {
+            playback.seek(resume_position_seconds);
+        }
     }
-    state.runtime.stream.set_latest_position_seconds(0.0)?;
-    state.runtime.stream.reset_pending_seek_to_zero()?;
-    {
-        let mut library = state::library(&state)?;
-        library.mark_playback_progress(&path, 0.0);
+    state
+        .runtime
+        .stream
+        .set_latest_position_seconds(resume_position_seconds)?;
+    if resume_position_seconds > f64::EPSILON {
+        set_pending_seek(&state, resume_position_seconds)?;
+    } else {
+        state.runtime.stream.reset_pending_seek_to_zero()?;
     }
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
@@ -134,10 +150,24 @@ pub fn stop(
         .store(false, std::sync::atomic::Ordering::Relaxed);
     state.runtime.stream.advance_generation();
     stop_decode_stream_non_blocking(&state)?;
+    let stop_progress = {
+        let playback = state::playback(&state)?;
+        let playback_state = playback.state();
+        (
+            playback_state.current_path.clone(),
+            playback_state.position_seconds.max(0.0),
+            playback_state.duration_seconds,
+        )
+    };
     state.runtime.stream.set_latest_position_seconds(0.0)?;
     {
         let mut playback = state::playback(&state)?;
         playback.stop();
+    }
+    if let Some(path) = stop_progress.0.as_deref() {
+        let mut library = state::library(&state)?;
+        let duration = (stop_progress.2 > 0.0).then_some(stop_progress.2);
+        library.mark_playback_progress(path, stop_progress.1, duration);
     }
     state.runtime.stream.reset_pending_seek_to_zero()?;
     if let Err(err) = (*app.state::<RendererState>()).clone().clear_surface(&app) {

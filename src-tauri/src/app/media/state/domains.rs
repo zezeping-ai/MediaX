@@ -13,12 +13,24 @@ pub struct MediaSessionState {
     pub playback: Mutex<MediaPlaybackService>,
 }
 
-#[derive(Default)]
 pub struct MediaRuntimeState {
     pub stream: StreamRuntimeState,
     pub paused_seek_epoch: AtomicU32,
     pub preview_frame_epoch: AtomicU32,
     pub pause_prefetch_active: AtomicBool,
+    pub resume_last_position_enabled: AtomicBool,
+}
+
+impl Default for MediaRuntimeState {
+    fn default() -> Self {
+        Self {
+            stream: StreamRuntimeState::default(),
+            paused_seek_epoch: AtomicU32::new(0),
+            preview_frame_epoch: AtomicU32::new(0),
+            pause_prefetch_active: AtomicBool::new(false),
+            resume_last_position_enabled: AtomicBool::new(true),
+        }
+    }
 }
 
 pub struct MediaControlState {

@@ -1,4 +1,5 @@
 import { computed, ref } from "vue";
+import { applyResumeLastPositionPreference } from "@/modules/player-settings-actions";
 import { usePreferences } from "@/modules/preferences";
 import type { HardwareDecodeMode, PreviewFrame } from "@/modules/media-types";
 import { useCacheRecordingController } from "./useCacheRecordingController";
@@ -16,7 +17,12 @@ import { usePlaybackSettings } from "../usePlaybackSettings";
 import { useMediaUrlInputController } from "./useMediaUrlInputController";
 
 export function useMediaCenter() {
-  const { playerHwDecodeMode, playerAlwaysOnTop, playerVideoScaleMode } = usePreferences();
+  const {
+    playerHwDecodeMode,
+    playerAlwaysOnTop,
+    playerVideoScaleMode,
+    playerResumeLastPosition,
+  } = usePreferences();
   const mediaSession = useMediaSession();
   const commands = useMediaCommands();
   const { toUserErrorMessage } = useMediaErrorMap();
@@ -63,6 +69,7 @@ export function useMediaCenter() {
     toUserErrorMessage,
     updateSnapshot: mediaSession.updateSnapshot,
     refreshCacheRecordingStatus: cacheRecordingController.refreshCacheRecordingStatus,
+    resumeLastPosition: playerResumeLastPosition,
   });
 
   async function applyHwDecodePreference(mode: HardwareDecodeMode) {
@@ -111,9 +118,11 @@ export function useMediaCenter() {
     playerHwDecodeMode,
     playerAlwaysOnTop,
     playerVideoScaleMode,
+    playerResumeLastPosition,
     applyHwDecodePreference,
     applyAlwaysOnTopPreference,
     applyVideoScaleModePreference,
+    applyResumeLastPositionPreference,
     onReady: async () => {
       await mediaCenterLifecycle.mountMediaCenter();
     },

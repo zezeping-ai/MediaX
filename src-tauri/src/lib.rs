@@ -47,6 +47,29 @@ pub fn run() {
                 let boxed: Box<dyn std::error::Error> = Box::new(std::io::Error::other(err));
                 tauri::Error::Setup(boxed.into())
             })?;
+            {
+                let state = app.state::<MediaState>();
+                let mut library = state
+                    .session
+                    .library
+                    .lock()
+                    .map_err(|_| {
+                        let boxed: Box<dyn std::error::Error> =
+                            Box::new(std::io::Error::other("media library state poisoned"));
+                        tauri::Error::Setup(boxed.into())
+                    })?;
+                library.load_persisted_progress(app.handle());
+                app::media::playback::session::player_settings::bootstrap_player_settings(
+                    app.handle(),
+                    &state,
+                )
+                .map_err(|err| {
+                    let boxed: Box<dyn std::error::Error> = Box::new(std::io::Error::other(
+                        err.to_string(),
+                    ));
+                    tauri::Error::Setup(boxed.into())
+                })?;
+            }
             app::launch::bootstrap_from_launch_sources(app.handle());
             #[cfg(desktop)]
             app::launch::bootstrap_from_deep_links(app.handle()).map_err(|err| {
@@ -69,6 +92,7 @@ pub fn run() {
             library::media_set_library_roots,
             library::media_rescan_library,
             playback_session_commands::playback_open_source,
+            playback_session_commands::playback_set_resume_last_position,
             playback_session_commands::playback_resume,
             playback_session_commands::playback_pause,
             playback_session_commands::playback_stop_session,

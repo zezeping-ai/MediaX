@@ -20,7 +20,9 @@ export function syncMediaCenterRuntime(options: SyncMediaCenterRuntimeOptions) {
 
   watch(options.mediaSession.metadataDurationSeconds, (duration) => {
     if (typeof duration === "number" && Number.isFinite(duration) && duration > 0) {
-      void options.playbackRunner.syncPosition(0, duration);
+      const positionSeconds =
+        options.mediaSession.snapshot.value?.playback.position_seconds ?? 0;
+      void options.playbackRunner.syncPosition(positionSeconds, duration);
     }
   });
 

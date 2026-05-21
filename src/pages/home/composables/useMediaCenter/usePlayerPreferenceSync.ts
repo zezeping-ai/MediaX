@@ -5,9 +5,11 @@ type UsePlayerPreferenceSyncOptions = {
   playerHwDecodeMode: Ref<HardwareDecodeMode>;
   playerAlwaysOnTop: Ref<boolean>;
   playerVideoScaleMode: Ref<"contain" | "cover">;
+  playerResumeLastPosition: Ref<boolean>;
   applyHwDecodePreference: (mode: HardwareDecodeMode) => Promise<void>;
   applyAlwaysOnTopPreference: (enabled: boolean) => Promise<void>;
   applyVideoScaleModePreference: (mode: "contain" | "cover") => Promise<void>;
+  applyResumeLastPositionPreference: (enabled: boolean) => Promise<void>;
   onReady: () => Promise<void>;
 };
 
@@ -17,6 +19,7 @@ export function usePlayerPreferenceSync(options: UsePlayerPreferenceSyncOptions)
     await options.applyHwDecodePreference(options.playerHwDecodeMode.value);
     await options.applyAlwaysOnTopPreference(options.playerAlwaysOnTop.value);
     await options.applyVideoScaleModePreference(options.playerVideoScaleMode.value);
+    await options.applyResumeLastPositionPreference(options.playerResumeLastPosition.value);
   });
 
   watch(
@@ -42,6 +45,14 @@ export function usePlayerPreferenceSync(options: UsePlayerPreferenceSyncOptions)
     options.playerVideoScaleMode,
     (mode) => {
       void options.applyVideoScaleModePreference(mode);
+    },
+    { immediate: false },
+  );
+
+  watch(
+    options.playerResumeLastPosition,
+    (enabled) => {
+      void options.applyResumeLastPositionPreference(enabled);
     },
     { immediate: false },
   );

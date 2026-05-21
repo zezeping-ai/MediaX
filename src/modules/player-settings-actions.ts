@@ -1,4 +1,8 @@
-import { setMainWindowAlwaysOnTop, setMainWindowVideoScaleMode } from "./media-player";
+import {
+  playbackSetResumeLastPosition,
+  setMainWindowAlwaysOnTop,
+  setMainWindowVideoScaleMode,
+} from "./media-player";
 import type { PlayerVideoScaleMode } from "./preferences";
 import type { HardwareDecodeMode, MediaSnapshot } from "./media-types";
 
@@ -33,5 +37,13 @@ export async function applyVideoScaleModePreference(mode: PlayerVideoScaleMode) 
     await setMainWindowVideoScaleMode(mode);
   } catch {
     // Keep silent here; rendering preference should not break playback flow.
+  }
+}
+
+export async function applyResumeLastPositionPreference(enabled: boolean) {
+  try {
+    await playbackSetResumeLastPosition(enabled);
+  } catch {
+    // Keep silent here; resume preference should not block settings flow.
   }
 }

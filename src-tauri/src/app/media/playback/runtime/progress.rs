@@ -45,6 +45,17 @@ pub fn update_playback_progress(
     {
         return Ok(());
     }
+    let persist_progress = {
+        let playback = crate::app::media::state::playback(&state)?;
+        let playback_state = playback.state();
+        playback_state.current_path.clone().map(|path| {
+            (
+                path,
+                position_seconds.max(0.0),
+                (duration_seconds > 0.0).then_some(duration_seconds),
+            )
+        })
+    };
     let snapshot = {
         let library = crate::app::media::state::library(&state)?.state();
         let mut playback = crate::app::media::state::playback(&state)?;
@@ -72,6 +83,15 @@ pub fn update_playback_progress(
         }
         playback.snapshot(library)
     };
+    if let Some((path, position_seconds, duration_seconds)) = persist_progress {
+        let mut library = crate::app::media::state::library(&state)
+            .map_err(|err| err.to_string())?;
+        if finalize {
+            library.mark_playback_progress(&path, position_seconds, duration_seconds);
+        } else {
+            library.autosave_playback_progress(&path, position_seconds, duration_seconds);
+        }
+    }
     crate::app::media::state::emit_playback_state_snapshot(app, snapshot, None)?;
     Ok(())
 }

@@ -38,6 +38,7 @@ pub fn bootstrap_from_env(app: &tauri::AppHandle) -> Result<(), String> {
             app_handle.state::<MediaState>(),
             source.clone(),
             None,
+            None,
         ) {
             append_playback_debug_log(
                 &app_handle,

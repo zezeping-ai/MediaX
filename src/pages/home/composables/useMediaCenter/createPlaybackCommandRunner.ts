@@ -1,6 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { resolveDialogPath } from "@/modules/resolve-dialog-path";
 import type { MediaSnapshot, PlaybackChannelRouting, PlaybackQualityMode } from "@/modules/media-types";
+import type { Ref } from "vue";
 
 const LOCAL_MEDIA_DIALOG_FILTERS = [
   {
@@ -19,7 +20,7 @@ const SEEK_COALESCE_WINDOW_MS = 90;
 
 type CreatePlaybackCommandRunnerOptions = {
   commands: {
-    openPath: (path: string) => Promise<MediaSnapshot>;
+    openPath: (path: string, resumeLastPosition?: boolean) => Promise<MediaSnapshot>;
     play: () => Promise<MediaSnapshot>;
     pause: () => Promise<MediaSnapshot>;
     stop: () => Promise<MediaSnapshot>;
@@ -44,6 +45,7 @@ type CreatePlaybackCommandRunnerOptions = {
   toUserErrorMessage: (error: unknown) => string;
   updateSnapshot: (snapshot: MediaSnapshot) => void;
   refreshCacheRecordingStatus: () => Promise<void>;
+  resumeLastPosition: Ref<boolean>;
 };
 
 export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunnerOptions) {
@@ -128,7 +130,7 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
   async function openPath(path: string) {
     options.pendingSource.value = path;
     try {
-      await run(() => options.commands.openPath(path));
+      await run(() => options.commands.openPath(path, options.resumeLastPosition.value));
       await run(options.commands.play);
       await options.refreshCacheRecordingStatus();
       options.recordingNoticeMessage.value = "";

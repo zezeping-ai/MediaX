@@ -2,6 +2,7 @@
 import { usePreferences } from "@/modules/preferences";
 import {
   applyAlwaysOnTopPreference,
+  applyResumeLastPositionPreference,
   applyVideoScaleModePreference,
 } from "@/modules/player-settings-actions";
 
@@ -11,6 +12,7 @@ const {
   playerVideoScaleMode,
   playerShowDownlinkSpeed,
   playerShowUplinkSpeed,
+  playerResumeLastPosition,
 } = usePreferences();
 
 async function applyAlwaysOnTop(enabled: boolean) {
@@ -28,6 +30,23 @@ async function applyVideoScaleMode(mode: "contain" | "cover") {
     <a-typography-text type="secondary" class="text-[12px]">
       这些设置会自动保存，并在播放时生效。
     </a-typography-text>
+
+    <a-card title="播放" :bordered="false" size="small" :body-style="{ padding: '12px' }">
+      <a-space direction="vertical" class="w-full">
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="font-semibold">记住播放进度</div>
+            <div class="text-xs text-black/55 dark:text-white/55">
+              重新打开同一文件时，从上次停止的位置继续播放；已播到结尾则从头开始。
+            </div>
+          </div>
+          <a-switch
+            v-model:checked="playerResumeLastPosition"
+            @change="(checked: boolean) => void applyResumeLastPositionPreference(checked)"
+          />
+        </div>
+      </a-space>
+    </a-card>
 
     <a-card title="解码" :bordered="false" size="small" :body-style="{ padding: '12px' }">
       <a-space direction="vertical" class="w-full">

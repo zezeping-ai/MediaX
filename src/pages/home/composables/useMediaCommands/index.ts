@@ -9,7 +9,7 @@ import {
 } from "./createCacheRecordingCommandSet";
 
 export interface MediaCommandSet extends PlaybackCommandSet, CacheRecordingCommandSet {
-  openPath: (path: string) => Promise<MediaSnapshot>;
+  openPath: (path: string, resumeLastPosition?: boolean) => Promise<MediaSnapshot>;
   play: () => Promise<MediaSnapshot>;
   pause: () => Promise<MediaSnapshot>;
   stop: () => Promise<MediaSnapshot>;

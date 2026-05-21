@@ -29,7 +29,7 @@ import type {
 } from "@/modules/media-types";
 
 export interface PlaybackCommandSet {
-  openPath: (path: string) => Promise<MediaSnapshot>;
+  openPath: (path: string, resumeLastPosition?: boolean) => Promise<MediaSnapshot>;
   play: () => Promise<MediaSnapshot>;
   pause: () => Promise<MediaSnapshot>;
   stop: () => Promise<MediaSnapshot>;
@@ -55,7 +55,7 @@ export interface PlaybackCommandSet {
 
 export function createPlaybackCommandSet(): PlaybackCommandSet {
   return {
-    openPath: (path) => playbackOpenSource(path),
+    openPath: (path, resumeLastPosition = true) => playbackOpenSource(path, resumeLastPosition),
     play: () => playbackResume(),
     pause: () => playbackPause(),
     stop: () => playbackStopSession(),
