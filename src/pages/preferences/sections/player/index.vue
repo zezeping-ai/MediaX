@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { usePreferences } from "@/modules/preferences";
-import { playbackConfigureDecoderMode } from "@/modules/media-player";
 import {
   applyAlwaysOnTopPreference,
   applyVideoScaleModePreference,
 } from "@/modules/player-settings-actions";
-import type { HardwareDecodeMode } from "@/modules/media-types";
 
 const {
   playerHwDecodeMode,
@@ -14,14 +12,6 @@ const {
   playerShowDownlinkSpeed,
   playerShowUplinkSpeed,
 } = usePreferences();
-
-async function applyHwDecode(mode: HardwareDecodeMode) {
-  try {
-    await playbackConfigureDecoderMode(mode);
-  } catch {
-    // 不把错误强行冒泡到偏好页；播放页会显示具体错误事件。
-  }
-}
 
 async function applyAlwaysOnTop(enabled: boolean) {
   await applyAlwaysOnTopPreference(enabled);
@@ -55,7 +45,6 @@ async function applyVideoScaleMode(mode: "contain" | "cover") {
               { label: 'On', value: 'on' },
               { label: 'Off', value: 'off' },
             ]"
-            @change="(value: string | number) => void applyHwDecode(value as HardwareDecodeMode)"
           />
         </div>
       </a-space>

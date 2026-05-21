@@ -3,7 +3,9 @@ use crate::app::media::error::MediaErrorCode;
 use crate::app::media::playback::dto::HardwareDecodeMode;
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::{DecodeDependencies, DecodeRequest};
-use crate::app::media::state::{AudioControls, MediaState, TimingControls};
+use crate::app::media::state::{
+    emit_playback_state_snapshot, library, playback, AudioControls, MediaState, TimingControls,
+};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread;
@@ -36,9 +38,7 @@ pub(super) fn spawn_decode_stream(
             stream_generation,
             requested_hw_mode,
         ) {
-            if let Ok(mut playback) = app_handle.state::<MediaState>().session.playback.lock() {
-                playback.update_hw_decode_status(false, None, Some(err.clone()));
-            }
+            mark_decode_stream_failed(&app_handle, stream_generation, &err);
             super::super::emit_debug(&app_handle, "decode_error", err.clone());
             emit_error_events(&app_handle, MediaErrorCode::DecodeFailed.as_str(), err);
         }
@@ -96,6 +96,32 @@ fn run_decode_stream_with_auto_fallback(
             super::super::decode_and_emit_stream(dependencies, fallback_request)
         }
         Err(err) => Err(err),
+    }
+}
+
+fn mark_decode_stream_failed(app: &AppHandle, stream_generation: u32, err: &str) {
+    let media_state = app.state::<MediaState>();
+    if !media_state
+        .runtime
+        .stream
+        .is_generation_current(stream_generation)
+    {
+        return;
+    }
+    let snapshot = (|| -> Result<_, String> {
+        let library = library(&media_state)?.state();
+        let mut playback = playback(&media_state)?;
+        playback.pause();
+        playback.update_hw_decode_status(false, None, Some(err.to_string()));
+        Ok(playback.snapshot(library))
+    })();
+    match snapshot {
+        Ok(snapshot) => {
+            let _ = emit_playback_state_snapshot(app, snapshot, None);
+        }
+        Err(lock_err) => {
+            super::super::emit_debug(app, "decode_error_snapshot_failed", lock_err);
+        }
     }
 }
 

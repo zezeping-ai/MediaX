@@ -2,16 +2,22 @@ import { setMainWindowAlwaysOnTop, setMainWindowVideoScaleMode } from "./media-p
 import type { PlayerVideoScaleMode } from "./preferences";
 import type { HardwareDecodeMode, MediaSnapshot } from "./media-types";
 
+let hwDecodeApplyQueue: Promise<MediaSnapshot | null> = Promise.resolve(null);
+
 export async function applyHwDecodePreference(
   mode: HardwareDecodeMode,
   configureDecoderMode: (mode: HardwareDecodeMode) => Promise<MediaSnapshot>,
 ) {
-  try {
-    return await configureDecoderMode(mode);
-  } catch {
-    // Keep silent here; player surface already emits error events.
-    return null;
-  }
+  const run = hwDecodeApplyQueue.then(async () => {
+    try {
+      return await configureDecoderMode(mode);
+    } catch {
+      // Keep silent here; player surface already emits error events.
+      return null;
+    }
+  });
+  hwDecodeApplyQueue = run.then(() => null, () => null);
+  return run;
 }
 
 export async function applyAlwaysOnTopPreference(enabled: boolean) {

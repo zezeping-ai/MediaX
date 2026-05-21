@@ -21,7 +21,10 @@ export function usePlayerPreferenceSync(options: UsePlayerPreferenceSyncOptions)
 
   watch(
     options.playerHwDecodeMode,
-    (mode) => {
+    (mode, previousMode) => {
+      if (previousMode === undefined || mode === previousMode) {
+        return;
+      }
       void options.applyHwDecodePreference(mode);
     },
     { immediate: false },

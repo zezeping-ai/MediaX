@@ -10,7 +10,7 @@ pub use snapshot::{
     emit_playback_state_snapshot, emit_snapshot, emit_snapshot_with_request_id, library, playback,
     snapshot_from_state,
 };
-pub use stream_runtime::{DecodeStreamHandles, StreamRuntimeState};
+pub use stream_runtime::{DecodeStreamHandles, StreamRuntimeState, DECODE_RESTART_ORPHAN_DRAIN_MS};
 
 pub struct CacheRecorderSession {
     pub source: String,

@@ -1,4 +1,4 @@
-use crate::app::media::state::{MediaState, StreamRuntimeState};
+use crate::app::media::state::{MediaState, StreamRuntimeState, DECODE_RESTART_ORPHAN_DRAIN_MS};
 use std::thread;
 use tauri::{AppHandle, State};
 
@@ -17,7 +17,7 @@ pub fn stop_decode_stream_blocking(state: &State<'_, MediaState>) -> Result<(), 
     }
     StreamRuntimeState::request_stop(&handles);
     if let Some(handle) = handles.1 {
-        join_decode_thread_with_timeout(handle)?;
+        join_decode_thread_with_timeout(&state.runtime.stream, handle)?;
     }
     Ok(())
 }
@@ -46,6 +46,10 @@ pub fn start_decode_stream(
     state: &State<'_, MediaState>,
     source: String,
 ) -> Result<(), String> {
+    state
+        .runtime
+        .stream
+        .wait_orphans_drained(DECODE_RESTART_ORPHAN_DRAIN_MS)?;
     stop_decode_stream_blocking(state)?;
     let stream_generation = state.runtime.stream.advance_generation();
     super::super::emit_debug(

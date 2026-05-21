@@ -3,8 +3,11 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
+pub const DECODE_RESTART_ORPHAN_DRAIN_MS: u64 = 4000;
+
 mod epochs;
 mod handles;
+mod orphans;
 mod pending_seek;
 mod position;
 
@@ -18,6 +21,7 @@ pub struct StreamRuntimeState {
     latest_position_seconds: Mutex<f64>,
     generation: AtomicU32,
     restart_epoch: AtomicU64,
+    orphan_threads: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl StreamRuntimeState {
@@ -79,5 +83,9 @@ impl StreamRuntimeState {
 
     pub fn take_pending_seek_seconds(&self) -> Result<Option<f64>, MediaError> {
         pending_seek::take_pending_seek_seconds(self)
+    }
+
+    pub fn wait_orphans_drained(&self, total_timeout_ms: u64) -> Result<(), String> {
+        orphans::wait_orphans_drained(self, total_timeout_ms)
     }
 }
