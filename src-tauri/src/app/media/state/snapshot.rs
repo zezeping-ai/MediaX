@@ -49,6 +49,7 @@ pub fn emit_playback_state_snapshot(
     snapshot: MediaSnapshot,
     request_id: Option<String>,
 ) -> Result<(), String> {
+    crate::app::system_keep_awake::sync_for_playback_status(app, &snapshot.playback.status);
     let envelope = build_media_event("playback_state", request_id, snapshot);
     app.emit(MEDIA_PLAYBACK_STATE_EVENT, &envelope)
         .map_err(|err| format!("emit playback state failed: {err}"))?;
