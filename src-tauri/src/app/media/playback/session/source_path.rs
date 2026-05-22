@@ -26,6 +26,18 @@ struct MediaCandidate {
     path: PathBuf,
 }
 
+/// Normalize a playable source: remote URLs pass through; local paths are canonicalized.
+pub fn normalize_playable_source(path: String) -> MediaResult<String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(MediaError::invalid_input("媒体路径为空"));
+    }
+    if is_remote_source(trimmed) {
+        return Ok(trimmed.to_string());
+    }
+    normalize_local_source_path(path)
+}
+
 /// Normalize paths from dialogs, drag-drop, or CLI into a canonical local path for FFmpeg.
 pub fn normalize_local_source_path(path: String) -> MediaResult<String> {
     let trimmed = path.trim();
@@ -131,6 +143,17 @@ fn media_kind_for_path(path: &Path) -> Option<MediaFileKind> {
     None
 }
 
+fn is_remote_source(source: &str) -> bool {
+    matches!(
+        source.split(':').next().map(|value| value.to_ascii_lowercase()),
+        Some(scheme)
+            if matches!(
+                scheme.as_str(),
+                "http" | "https" | "rtsp" | "rtmp" | "mms"
+            )
+    )
+}
+
 fn parse_local_path(raw: &str) -> MediaResult<PathBuf> {
     if let Some(file_url) = raw.strip_prefix("file://") {
         return decode_file_url_path(file_url).map_err(MediaError::invalid_input);
@@ -174,6 +197,13 @@ mod tests {
     use super::*;
     use std::fs;
     use std::io::Write;
+
+    #[test]
+    fn remote_url_passes_through_unchanged() {
+        let url = "https://example.com/media/demo.mp4";
+        let resolved = normalize_playable_source(url.to_string()).expect("remote url");
+        assert_eq!(resolved, url);
+    }
 
     #[test]
     fn resolves_video_inside_fake_mp4_folder() {
