@@ -19,8 +19,8 @@ permissions:
 # +-----------+------------------------------+--------------------------------------------+
 # | 平台       | Cargo / Tauri args           | CI 获取 FFmpeg                               |
 # +-----------+------------------------------+--------------------------------------------+
-# | macOS     | --features bundled-ffmpeg    | ffmpeg-next/build，构建期源码编译并链入       |
-# | Ubuntu    | --features bundled-ffmpeg    | 同上                                          |
+# | macOS     | --features bundled-ffmpeg    | ffmpeg-next/build（vendor：armv8-a + VideoToolbox） |
+# | Ubuntu    | --features bundled-ffmpeg    | 同上（vendor：armv8-a；VAAPI 需 CI 装 libva 且显式 feature） |
 # | Windows   | matrix.args 留空             | 「Setup vcpkg」+静态 triplet ffmpeg；crate 侧 |
 # |           |                              | ffmpeg-next/static（见 Cargo.toml）        |
 # +-----------+------------------------------+--------------------------------------------+

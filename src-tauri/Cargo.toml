@@ -1,3 +1,7 @@
+[patch.crates-io]
+# Portable ARM FFmpeg: avoid -march=native I8MM from newer Apple Silicon builders.
+ffmpeg-sys-next = { path = "vendor/ffmpeg-sys-next" }
+
 [package]
 name = "mediax"
 version = "0.1.0"
@@ -9,6 +13,7 @@ edition = "2021"
 
 # `bundled-ffmpeg`: compile static FFmpeg during build (no system FFmpeg at runtime).
 # Release：macOS/Ubuntu 传 `--features bundled-ffmpeg`；Windows 用 vcpkg + ffmpeg-next/static。
+# vendor ffmpeg-sys-next 在 bundled 构建时自动启用 macOS VideoToolbox（与 dev 系统 FFmpeg 对齐）。
 # 各平台 CI 与用户侧观感对照见仓库根 `.github/workflows/release.yml` 文件头注释表。
 [features]
 default = []
