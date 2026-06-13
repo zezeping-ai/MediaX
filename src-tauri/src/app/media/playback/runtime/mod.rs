@@ -13,6 +13,7 @@ mod session;
 mod stream_control;
 mod video_pipeline;
 
+pub(crate) use self::clock::AudioClock;
 pub(crate) use self::constants::*;
 pub(crate) use self::decode_params::{DecodeDependencies, DecodeRequest};
 use self::decode_runtime::DecodeRuntime;

@@ -114,6 +114,7 @@ pub(crate) fn drain_audio_frames(
             &decoded,
             audio_state.time_base,
             playback_rate,
+            audio_state.playback_pts_offset_seconds,
             audio_clock,
             active_seek_target_seconds,
         );
@@ -162,6 +163,7 @@ pub(crate) fn drain_audio_frames(
             converted.rate(),
             playback_rate,
             audio_state.output.queued_duration_seconds(),
+            audio_state.playback_pts_offset_seconds,
             audio_clock,
         );
         if audio_state.output.queue_depth() > 0 {

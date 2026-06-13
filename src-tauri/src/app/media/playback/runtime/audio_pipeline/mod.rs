@@ -2,6 +2,7 @@ mod builder;
 mod drain;
 mod meter;
 mod output;
+mod priming;
 mod time_stretch;
 mod types;
 

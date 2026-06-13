@@ -22,16 +22,18 @@ pub(super) fn prepare_audio_pipeline(
         app,
         &video_ctx.input_ctx,
         audio_stream_index,
+        video_ctx.video_stream_index,
         audio_controls,
     )?;
     let debug_message = match audio_pipeline.as_ref() {
         Some(pipeline) => format!(
-            "stream={} decoder_rate={}Hz decoder_channels={} decoder_fmt={:?} output=rodio/{} mode=unified-metered",
+            "stream={} decoder_rate={}Hz decoder_channels={} decoder_fmt={:?} output=rodio/{} {} mode=unified-metered",
             pipeline.stream_index,
             pipeline.decoder.rate(),
             pipeline.decoder.channels(),
             pipeline.decoder.format(),
             pipeline.output_sample_format.debug_label(),
+            pipeline.playback_timeline.describe(),
         ),
         None => "audio pipeline skipped (no audio stream)".to_string(),
     };

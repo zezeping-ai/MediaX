@@ -60,6 +60,9 @@ pub(super) fn create_decode_runtime(
     dependencies
         .renderer
         .set_realtime_source(is_realtime_source);
+    dependencies.renderer.set_source_frame_duration(
+        1.0 / video_ctx.fps_value.max(1.0),
+    );
     dependencies.renderer.reset_timeline(
         0.0,
         effective_playback_rate(
@@ -72,6 +75,10 @@ pub(super) fn create_decode_runtime(
     );
     prime_audio_poster_frame(dependencies.renderer, &video_ctx);
     emit_debug(dependencies.app, "running", "decode loop running");
+    let playback_timeline = audio_pipeline
+        .as_ref()
+        .map(|audio| audio.playback_timeline)
+        .unwrap_or_default();
     Ok(DecodeRuntime {
         loop_state: DecodeLoopState::new(
             video_ctx.fps_value,
@@ -81,6 +88,7 @@ pub(super) fn create_decode_runtime(
         video_ctx,
         scaler: None,
         audio_pipeline,
+        playback_timeline,
         should_tail_eof,
         is_network_source: source_is_network,
         is_realtime_source,

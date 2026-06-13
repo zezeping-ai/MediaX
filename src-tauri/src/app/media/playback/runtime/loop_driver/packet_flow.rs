@@ -12,6 +12,7 @@ use crate::app::media::playback::runtime::{
     progress::{resolve_buffered_position_seconds, update_playback_progress},
     write_latest_stream_position,
 };
+use crate::app::media::playback::sync::publish_presentation_clock;
 use crate::app::media::state::TimingControls;
 use ffmpeg_next::Error as FfmpegError;
 use ffmpeg_next::Packet;
@@ -254,7 +255,14 @@ fn handle_audio_packet(
     if seeking_low_latency_refill && audio_state.stats.seek_refill_logged {
         runtime.loop_state.clear_seek_refill();
     }
-    if !has_video_stream {
+    if has_video_stream {
+        publish_presentation_clock(
+            renderer,
+            runtime.loop_state.audio_clock,
+            runtime.loop_state.active_seek_target_seconds,
+            runtime.loop_state.last_applied_audio_rate.as_f64(),
+        );
+    } else {
         update_audio_only_progress(app, renderer, timing_controls, runtime, stream_generation)?;
     }
     Ok(())
@@ -373,6 +381,7 @@ pub(super) fn drain_video_frames(
         &mut runtime.loop_state.frame_pipeline,
         &mut runtime.loop_state.process_metrics,
         audio_allowed_lead_seconds,
+        runtime.playback_timeline,
         network_read_bps,
         media_required_bps,
         runtime.is_network_source,

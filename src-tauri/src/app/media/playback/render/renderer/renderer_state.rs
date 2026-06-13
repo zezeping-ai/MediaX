@@ -42,6 +42,7 @@ pub(super) struct RendererInner {
     pub(super) last_render_cost_micros: AtomicU64,
     pub(super) last_present_lag_ms_bits: AtomicU32,
     pub(super) last_presented_pts_bits: AtomicU64,
+    pub(super) source_frame_duration_bits: AtomicU64,
     pub(super) queue_tuning: Mutex<QueueTuningState>,
     pub(super) queue_growth_hold_until: Mutex<Option<Instant>>,
 }
@@ -86,6 +87,7 @@ impl RendererState {
                 last_render_cost_micros: AtomicU64::new(0),
                 last_present_lag_ms_bits: AtomicU32::new(0f32.to_bits()),
                 last_presented_pts_bits: AtomicU64::new(f64::NAN.to_bits()),
+                source_frame_duration_bits: AtomicU64::new((1.0 / 24.0_f64).to_bits()),
                 queue_tuning: Mutex::new(QueueTuningState::default()),
                 queue_growth_hold_until: Mutex::new(None),
             }),
@@ -96,6 +98,17 @@ impl RendererState {
         self.inner
             .video_scale_mode
             .store(mode.as_u8(), Ordering::Relaxed);
+    }
+
+    pub fn set_source_frame_duration(&self, frame_duration_seconds: f64) {
+        let safe = if frame_duration_seconds.is_finite() && frame_duration_seconds > 0.0 {
+            frame_duration_seconds.clamp(1.0 / 120.0, 1.0 / 10.0)
+        } else {
+            1.0 / 24.0
+        };
+        self.inner
+            .source_frame_duration_bits
+            .store(safe.to_bits(), Ordering::Relaxed);
     }
 
     pub fn set_realtime_source(&self, is_realtime_source: bool) {
@@ -180,28 +193,43 @@ impl RendererState {
                                     u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX),
                                     Ordering::Relaxed,
                                 );
-                                let lag_ms = frame
-                                    .as_ref()
-                                    .map(|f| {
-                                        ((now_media_seconds - f.pts_seconds()).max(0.0) * 1000.0)
-                                            as f32
-                                    })
-                                    .unwrap_or(0.0);
-                                inner
-                                    .last_present_lag_ms_bits
-                                    .store(lag_ms.to_bits(), Ordering::Relaxed);
                                 let presented_pts = frame
                                     .as_ref()
                                     .map(QueuedFrame::pts_seconds)
                                     .filter(|value| value.is_finite());
-                                inner.last_presented_pts_bits.store(
-                                    presented_pts.unwrap_or(f64::NAN).to_bits(),
-                                    Ordering::Relaxed,
-                                );
+                                if let Some(pts) = presented_pts {
+                                    inner.last_presented_pts_bits.store(
+                                        pts.to_bits(),
+                                        Ordering::Relaxed,
+                                    );
+                                }
+                                let lag_ms = if let Some(pts) = presented_pts {
+                                    ((now_media_seconds - pts).max(0.0) * 1000.0) as f32
+                                } else {
+                                    let last_pts = f64::from_bits(
+                                        inner
+                                            .last_presented_pts_bits
+                                            .load(Ordering::Relaxed),
+                                    );
+                                    if last_pts.is_finite() {
+                                        ((now_media_seconds - last_pts).max(0.0) * 1000.0) as f32
+                                    } else {
+                                        0.0
+                                    }
+                                };
+                                inner
+                                    .last_present_lag_ms_bits
+                                    .store(lag_ms.to_bits(), Ordering::Relaxed);
                                 update_dynamic_queue_capacity(
                                     &inner,
                                     f64::from(lag_ms),
-                                    presented_pts.is_some(),
+                                    presented_pts.is_some()
+                                        || f64::from_bits(
+                                            inner
+                                                .last_presented_pts_bits
+                                                .load(Ordering::Relaxed),
+                                        )
+                                        .is_finite(),
                                     selection.remaining_queue_depth,
                                 );
                             }
@@ -486,4 +514,13 @@ fn update_dynamic_queue_capacity(
     }
     tuning.late_present_streak = 0;
     tuning.healthy_present_streak = 0;
+}
+
+pub(super) fn source_frame_duration_seconds(inner: &RendererInner) -> f64 {
+    let value = f64::from_bits(inner.source_frame_duration_bits.load(Ordering::Relaxed));
+    if value.is_finite() && value > 0.0 {
+        value
+    } else {
+        1.0 / 24.0
+    }
 }

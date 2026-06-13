@@ -6,4 +6,5 @@ pub mod events;
 pub mod rate;
 pub mod render;
 pub mod runtime;
+pub mod sync;
 pub mod session;

@@ -1,6 +1,7 @@
 mod resampler;
 
 use super::output::AudioOutput;
+use super::priming::resolve_playback_timeline;
 use super::types::AudioPipeline;
 use crate::app::media::playback::audio_shared::fallback_channel_layout;
 use crate::app::media::state::AudioControls;
@@ -15,6 +16,7 @@ pub(crate) fn build_audio_pipeline(
     app: &AppHandle,
     input_ctx: &format::context::Input,
     audio_stream_index: Option<usize>,
+    video_stream_index: Option<usize>,
     audio_controls: &Arc<AudioControls>,
 ) -> Result<Option<AudioPipeline>, String> {
     let Some(stream_index) = audio_stream_index else {
@@ -35,10 +37,19 @@ pub(crate) fn build_audio_pipeline(
         create_compatible_resampler(&decoder, channel_layout)
             .map_err(|err| format!("audio resampler create failed: {err}"))?;
     let output = AudioOutput::new(app, audio_controls.clone())?;
+    let playback_timeline = resolve_playback_timeline(
+        input_ctx,
+        stream_index,
+        video_stream_index,
+        &decoder,
+    );
+    let playback_pts_offset_seconds = playback_timeline.audio_pts_offset_seconds;
     Ok(Some(AudioPipeline {
         stream_index,
         decoder,
         time_base: input_stream.time_base(),
+        playback_pts_offset_seconds,
+        playback_timeline,
         resampler,
         output_sample_format,
         time_stretch: super::time_stretch::AudioTimeStretch::new(output_sample_format),

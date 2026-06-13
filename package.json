@@ -8,7 +8,9 @@
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "probe:sync": "bash scripts/playback-sync-probe.sh",
+    "probe:sync:seek": "bash scripts/playback-sync-probe.sh \"\" seek"
   },
   "dependencies": {
     "@iconify/vue": "^5.0.0",

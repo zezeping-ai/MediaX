@@ -1,6 +1,8 @@
 mod output_format;
 mod stats;
 
+use crate::app::media::playback::sync::PlaybackTimeline;
+
 use crate::app::media::playback::rate::{discontinuity_smoothing_profile, PlaybackRate};
 use ffmpeg_next::software::resampling::context::Context as ResamplingContext;
 
@@ -16,6 +18,9 @@ pub(crate) struct AudioPipeline {
     pub stream_index: usize,
     pub decoder: ffmpeg_next::decoder::Audio,
     pub time_base: ffmpeg_next::Rational,
+    /// Subtract from decoded audio PTS before publishing the master playback clock.
+    pub playback_pts_offset_seconds: f64,
+    pub playback_timeline: PlaybackTimeline,
     pub resampler: ResamplingContext,
     pub output_sample_format: AudioOutputSampleFormat,
     pub time_stretch: super::time_stretch::AudioTimeStretch,

@@ -8,6 +8,7 @@ mod telemetry;
 
 use crate::app::media::playback::render::renderer::RendererState;
 use crate::app::media::playback::runtime::clock::{AudioClock, FpsWindow, PlaybackClock};
+use crate::app::media::playback::sync::PlaybackTimeline;
 use ffmpeg_next as ffmpeg;
 use ffmpeg_next::format;
 use ffmpeg_next::software::scaling::context::Context as ScalingContext;
@@ -43,6 +44,7 @@ pub(super) struct DrainFramesContext<'a> {
     pub frame_pipeline: &'a mut VideoFramePipeline,
     pub process_metrics: &'a mut ProcessMetricsSampler,
     pub audio_allowed_lead_seconds: f64,
+    pub playback_timeline: PlaybackTimeline,
     pub network_read_bps: Option<f64>,
     pub media_required_bps: Option<f64>,
     pub is_network_source: bool,
@@ -78,6 +80,7 @@ impl<'a> DrainFramesContext<'a> {
         frame_pipeline: &'a mut VideoFramePipeline,
         process_metrics: &'a mut ProcessMetricsSampler,
         audio_allowed_lead_seconds: f64,
+        playback_timeline: PlaybackTimeline,
         network_read_bps: Option<f64>,
         media_required_bps: Option<f64>,
         is_network_source: bool,
@@ -110,6 +113,7 @@ impl<'a> DrainFramesContext<'a> {
             frame_pipeline,
             process_metrics,
             audio_allowed_lead_seconds,
+            playback_timeline,
             network_read_bps,
             media_required_bps,
             is_network_source,

@@ -76,6 +76,7 @@ enum AutoprobeAction {
     SetVolume(f64),
     SetMuted(bool),
     SetRouting(PlaybackChannelRouting),
+    Exit,
 }
 
 fn parse_actions_from_env(app: &tauri::AppHandle) -> Vec<AutoprobeAction> {
@@ -158,6 +159,15 @@ fn parse_action(segment: &str) -> Result<AutoprobeAction, String> {
         )),
         "muted" => Ok(AutoprobeAction::SetMuted(parse_bool(value)?)),
         "routing" => Ok(AutoprobeAction::SetRouting(parse_routing(value)?)),
+        "exit" | "quit" => {
+            if !matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "now" | "yes" | "on"
+            ) {
+                return Err("expected true/now to trigger exit".to_string());
+            }
+            Ok(AutoprobeAction::Exit)
+        }
         _ => Err("unsupported action".to_string()),
     }
 }
@@ -222,6 +232,7 @@ fn describe_action(action: &AutoprobeAction) -> String {
         AutoprobeAction::SetVolume(volume) => format!("set volume {volume:.2}"),
         AutoprobeAction::SetMuted(muted) => format!("set muted {muted}"),
         AutoprobeAction::SetRouting(routing) => format!("set routing {routing:?}"),
+        AutoprobeAction::Exit => "exit application".to_string(),
     }
 }
 
@@ -268,6 +279,11 @@ fn apply_action(app: &tauri::AppHandle, action: &AutoprobeAction) -> Result<(), 
             coordinator::set_channel_routing(app.clone(), state, *routing, None)
                 .map(|_| ())
                 .map_err(|err| err.to_string())
+        }
+        AutoprobeAction::Exit => {
+            let _ = coordinator::stop(app.clone(), state, None);
+            append_playback_debug_log(app, now_unix_ms(), "autoprobe", "exit requested");
+            std::process::exit(0);
         }
     }
 }

@@ -1,12 +1,14 @@
 use super::audio_pipeline::AudioPipeline;
 use super::session::DecodeLoopState;
 use crate::app::media::playback::decode_context::VideoDecodeContext;
+use crate::app::media::playback::sync::PlaybackTimeline;
 use ffmpeg_next::software::scaling::context::Context as ScalingContext;
 
 pub(super) struct DecodeRuntime {
     pub video_ctx: VideoDecodeContext,
     pub scaler: Option<ScalingContext>,
     pub audio_pipeline: Option<AudioPipeline>,
+    pub playback_timeline: PlaybackTimeline,
     pub loop_state: DecodeLoopState,
     pub should_tail_eof: bool,
     pub is_network_source: bool,

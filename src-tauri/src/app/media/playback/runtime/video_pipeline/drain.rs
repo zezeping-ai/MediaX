@@ -6,6 +6,7 @@ use crate::app::media::playback::render::video_frame::{
     can_bypass_scaler_for_renderer, ensure_scaler, preferred_scaled_format_for_renderer,
     transfer_hw_frame_if_needed, ScalerSpec,
 };
+use crate::app::media::playback::sync::publish_presentation_clock;
 use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::runtime::progress::{
     resolve_buffered_position_seconds, update_playback_progress,
@@ -19,6 +20,14 @@ use std::time::{Duration, Instant};
 use tauri::Manager;
 
 pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), String> {
+    if ctx.audio_clock.is_none() {
+        publish_presentation_clock(
+            ctx.renderer,
+            ctx.audio_clock,
+            *ctx.active_seek_target_seconds,
+            ctx.playback_clock.playback_rate(),
+        );
+    }
     let mut decoded = frame::Video::empty();
     let mut processed_frames = 0usize;
     loop {
@@ -57,7 +66,9 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
             *ctx.video_timestamp_metrics.pts_missing =
                 ctx.video_timestamp_metrics.pts_missing.saturating_add(1);
         }
-        let hinted_valid = hinted_seconds.filter(|value| value.is_finite() && *value >= 0.0);
+        let hinted_valid = hinted_seconds
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(|raw| ctx.playback_timeline.normalize_video_pts(raw));
         if should_skip_pre_seek_frame(ctx, hinted_valid) {
             continue;
         }
@@ -74,10 +85,6 @@ pub(crate) fn drain_frames(ctx: &mut DrainFramesContext<'_>) -> Result<(), Strin
             &ctx.app.state::<MediaState>(),
             *ctx.current_position_seconds,
         )?;
-        ctx.renderer.update_clock(
-            render_clock_anchor_seconds(ctx),
-            ctx.playback_clock.playback_rate(),
-        );
         let upload_prep_start = Instant::now();
         let Some((render_frame, color_profile_cost, frame_extract_cost)) = ctx
             .frame_pipeline
@@ -286,14 +293,4 @@ fn update_playback_position(
         position_seconds
     };
     estimated_pts
-}
-
-fn render_clock_anchor_seconds(ctx: &DrainFramesContext<'_>) -> f64 {
-    // Keep decode/progress advancement separate from the render presentation clock.
-    // With audio present, rebasing the renderer to the decode thread's newest position can
-    // collapse queued future frames into "already due", which hurts smoothness on heavier GOPs.
-    ctx.audio_clock
-        .map(|clock| clock.now_seconds())
-        .filter(|value| value.is_finite() && *value >= 0.0)
-        .unwrap_or_else(|| (*ctx.current_position_seconds).max(0.0))
 }

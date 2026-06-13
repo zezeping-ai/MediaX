@@ -1,5 +1,6 @@
 use crate::app::media::playback::rate::PlaybackRate;
 use crate::app::media::playback::render::pts::timestamp_to_seconds;
+use crate::app::media::playback::runtime::audio_pipeline::priming::adjust_audio_pts_seconds;
 use crate::app::media::playback::runtime::clock::AudioClock;
 use crate::app::media::playback::runtime::emit_debug;
 use ffmpeg_next::frame;
@@ -9,12 +10,14 @@ pub(super) fn sync_audio_clock(
     decoded: &frame::Audio,
     time_base: ffmpeg_next::Rational,
     playback_rate: PlaybackRate,
+    pts_offset_seconds: f64,
     audio_clock: &mut Option<AudioClock>,
     active_seek_target_seconds: &mut Option<f64>,
 ) {
     if let Some(seconds) = timestamp_to_seconds(decoded.timestamp(), decoded.pts(), time_base)
         .filter(|value| value.is_finite() && *value >= 0.0)
     {
+        let seconds = adjust_audio_pts_seconds(seconds, pts_offset_seconds);
         if let Some(target) = *active_seek_target_seconds {
             if seconds + 0.03 < target {
                 return;
@@ -27,6 +30,7 @@ pub(super) fn sync_audio_clock(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn sync_audio_clock_to_output_head(
     frame_start_seconds: Option<f64>,
     output_samples: usize,
@@ -34,10 +38,12 @@ pub(super) fn sync_audio_clock_to_output_head(
     sample_rate: u32,
     playback_rate: PlaybackRate,
     queued_wall_seconds: f64,
+    pts_offset_seconds: f64,
     audio_clock: &mut Option<AudioClock>,
 ) {
-    let Some(frame_start_seconds) =
-        frame_start_seconds.filter(|value| value.is_finite() && *value >= 0.0)
+    let Some(frame_start_seconds) = frame_start_seconds
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .map(|value| adjust_audio_pts_seconds(value, pts_offset_seconds))
     else {
         return;
     };

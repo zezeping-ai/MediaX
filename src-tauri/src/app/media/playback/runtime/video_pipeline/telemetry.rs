@@ -26,6 +26,12 @@ pub(super) fn emit_video_telemetry(
     let submitted_video_pts = renderer_metrics.last_submitted_pts_seconds;
     let audio_now = ctx.audio_clock.map(|clock| clock.now_seconds());
     let sync_video_pts = presented_video_pts.unwrap_or_else(|| estimated_pts.max(0.0));
+    let audio_drift_seconds = match (presented_video_pts, audio_now) {
+        (Some(presented), Some(audio)) if presented.is_finite() && audio.is_finite() => {
+            Some(presented - audio)
+        }
+        _ => audio_now.map(|value| sync_video_pts - value),
+    };
     let ts_stats = take_video_timestamp_stats(ctx);
     let frame_type_stats = take_frame_type_stats(ctx);
     let decode_quantiles = perf_snapshot
@@ -94,7 +100,7 @@ pub(super) fn emit_video_telemetry(
                 }
                 _ => None,
             },
-            audio_drift_seconds: audio_now.map(|value| sync_video_pts - value),
+            audio_drift_seconds,
             video_pts_gap_seconds: *ctx.video_timestamp_metrics.last_gap_seconds,
             seek_settle_ms: None,
             decode_avg_frame_cost_ms: perf_snapshot.as_ref().map(|value| value.avg_ms),
