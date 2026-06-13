@@ -5,6 +5,13 @@ import type { HardwareDecodeMode } from "./media-types";
 export type ThemePreference = "system" | "dark" | "light";
 export type PlayerVideoScaleMode = "contain" | "cover";
 
+export type LyricsProviderPreferences = {
+  lrclib: boolean;
+  lrcapi: boolean;
+  kugou: boolean;
+  netease: boolean;
+};
+
 export type Preferences = {
   theme: ThemePreference;
   player: {
@@ -14,7 +21,18 @@ export type Preferences = {
     showDownlinkSpeed: boolean;
     showUplinkSpeed: boolean;
     resumeLastPosition: boolean;
+    autoFetchOnlineLyrics: boolean;
+    showLyrics: boolean;
+    lyricsProviders: LyricsProviderPreferences;
+    lrcApiBaseUrl: string;
   };
+};
+
+const DEFAULT_LYRICS_PROVIDERS: LyricsProviderPreferences = {
+  lrclib: true,
+  lrcapi: true,
+  kugou: true,
+  netease: true,
 };
 
 const DEFAULT_PREFERENCES: Preferences = {
@@ -22,11 +40,14 @@ const DEFAULT_PREFERENCES: Preferences = {
   player: {
     hwDecodeMode: "auto",
     alwaysOnTop: true,
-    // 默认“自适应”：完整显示视频，必要时留黑边。
     videoScaleMode: "contain",
     showDownlinkSpeed: true,
     showUplinkSpeed: true,
     resumeLastPosition: true,
+    autoFetchOnlineLyrics: true,
+    showLyrics: true,
+    lyricsProviders: { ...DEFAULT_LYRICS_PROVIDERS },
+    lrcApiBaseUrl: "",
   },
 };
 
@@ -45,8 +66,6 @@ export function usePreferences() {
     },
   );
 
-  // Backfill newly added nested player preferences for older localStorage snapshots.
-  // `mergeDefaults` may not deep-merge nested objects in all historical states.
   watchEffect(() => {
     const player = preferences.value.player;
     if (
@@ -55,6 +74,9 @@ export function usePreferences() {
       || typeof player.showDownlinkSpeed !== "boolean"
       || typeof player.showUplinkSpeed !== "boolean"
       || typeof player.resumeLastPosition !== "boolean"
+      || typeof player.autoFetchOnlineLyrics !== "boolean"
+      || typeof player.showLyrics !== "boolean"
+      || !player.lyricsProviders
     ) {
       preferences.value = {
         ...preferences.value,
@@ -68,6 +90,16 @@ export function usePreferences() {
             player?.showUplinkSpeed ?? DEFAULT_PREFERENCES.player.showUplinkSpeed,
           resumeLastPosition:
             player?.resumeLastPosition ?? DEFAULT_PREFERENCES.player.resumeLastPosition,
+          autoFetchOnlineLyrics:
+            player?.autoFetchOnlineLyrics ?? DEFAULT_PREFERENCES.player.autoFetchOnlineLyrics,
+          showLyrics: player?.showLyrics ?? DEFAULT_PREFERENCES.player.showLyrics,
+          lyricsProviders: {
+            lrclib: player?.lyricsProviders?.lrclib ?? DEFAULT_LYRICS_PROVIDERS.lrclib,
+            lrcapi: player?.lyricsProviders?.lrcapi ?? DEFAULT_LYRICS_PROVIDERS.lrcapi,
+            kugou: player?.lyricsProviders?.kugou ?? DEFAULT_LYRICS_PROVIDERS.kugou,
+            netease: player?.lyricsProviders?.netease ?? DEFAULT_LYRICS_PROVIDERS.netease,
+          },
+          lrcApiBaseUrl: player?.lrcApiBaseUrl ?? DEFAULT_PREFERENCES.player.lrcApiBaseUrl,
         },
       };
     }
@@ -83,7 +115,6 @@ export function usePreferences() {
   });
 
   watchEffect(() => {
-    // 统一使用 data-theme，方便全局样式与多窗口一致
     document.documentElement.dataset.theme = resolvedTheme.value;
   });
 
@@ -148,6 +179,42 @@ export function usePreferences() {
         preferences.value = {
           ...preferences.value,
           player: { ...preferences.value.player, resumeLastPosition: v },
+        };
+      },
+    }),
+    playerAutoFetchOnlineLyrics: computed({
+      get: () => preferences.value.player.autoFetchOnlineLyrics,
+      set: (v: boolean) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, autoFetchOnlineLyrics: v },
+        };
+      },
+    }),
+    playerShowLyrics: computed({
+      get: () => preferences.value.player.showLyrics,
+      set: (v: boolean) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, showLyrics: v },
+        };
+      },
+    }),
+    playerLyricsProviders: computed({
+      get: () => preferences.value.player.lyricsProviders,
+      set: (v: LyricsProviderPreferences) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, lyricsProviders: v },
+        };
+      },
+    }),
+    playerLrcApiBaseUrl: computed({
+      get: () => preferences.value.player.lrcApiBaseUrl,
+      set: (v: string) => {
+        preferences.value = {
+          ...preferences.value,
+          player: { ...preferences.value.player, lrcApiBaseUrl: v },
         };
       },
     }),

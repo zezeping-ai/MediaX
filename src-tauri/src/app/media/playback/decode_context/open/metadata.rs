@@ -23,6 +23,7 @@ pub(super) struct SourceMetadata {
     pub(super) artist: Option<String>,
     pub(super) album: Option<String>,
     pub(super) lyrics: Vec<MediaLyricLine>,
+    pub(super) lyrics_source: Option<String>,
 }
 
 pub(super) fn build_source_metadata(
@@ -48,7 +49,7 @@ pub(super) fn build_source_metadata(
             .and_then(|index| input_ctx.streams().find(|stream| stream.index() == index))
             .and_then(|stream| first_metadata_value(&stream.metadata(), ALBUM_METADATA_KEYS))
     });
-    let lyrics = load_source_lyrics(source, input_ctx, audio_stream_index)?;
+    let lyrics_result = load_source_lyrics(source, input_ctx, audio_stream_index)?;
     let cover_frame = extract_cover_frame(input_ctx, cover_stream_index);
     let has_cover_art = cover_frame.is_some();
 
@@ -59,7 +60,8 @@ pub(super) fn build_source_metadata(
         title,
         artist,
         album,
-        lyrics,
+        lyrics: lyrics_result.lines,
+        lyrics_source: lyrics_result.source,
     })
 }
 
@@ -75,17 +77,20 @@ pub(super) fn dictionary_value_lossy(
 ) -> Option<String> {
     let key = CString::new(key).ok()?;
     // SAFETY: `dictionary` points to FFmpeg-owned metadata for the lifetime of this call.
-    // We decode metadata bytes lossily instead of trusting ffmpeg-next's unchecked UTF-8 path.
+    // Metadata bytes may be UTF-8 or legacy locale encodings such as GB18030.
     let value = unsafe {
         let entry = ffi::av_dict_get(dictionary.as_ptr(), key.as_ptr(), ptr::null_mut(), 0);
         if entry.is_null() || (*entry).value.is_null() {
             return None;
         }
-        CStr::from_ptr((*entry).value)
-            .to_string_lossy()
-            .into_owned()
+        CStr::from_ptr((*entry).value).to_bytes()
     };
-    Some(value)
+    let decoded = crate::app::media::lyrics::text_encoding::decode_bytes_to_text(value);
+    if decoded.is_empty() {
+        None
+    } else {
+        Some(decoded)
+    }
 }
 
 fn normalize_metadata_value(value: &str) -> Option<String> {

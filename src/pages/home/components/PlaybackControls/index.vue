@@ -2,6 +2,7 @@
 import PlaybackCenterControls from "./PlaybackCenterControls";
 import PlaybackSideActionsResponsive from "./PlaybackSideActionsResponsive.vue";
 import PlaybackTimeline from "./PlaybackTimeline.vue";
+import { usePlayerChromeTheme } from "@/pages/home/composables/usePlayerChromeTheme";
 import { usePlaybackControlsBindings } from "./usePlaybackControlsBindings";
 import {
   usePlaybackControlsViewModel,
@@ -12,6 +13,7 @@ const props = defineProps<PlaybackControlsProps>();
 const emit = defineEmits<PlaybackControlsEmit>();
 
 const viewModel = usePlaybackControlsViewModel(props, emit);
+const { controlsShell } = usePlayerChromeTheme();
 
 const {
   centerControlEvents,
@@ -28,22 +30,37 @@ const {
 </script>
 
 <template>
-  <section
-    class="w-full overflow-visible rounded-t-2xl rounded-b-none border border-white/10 bg-[linear-gradient(180deg,rgba(0,0,0,0.25)_0%,rgba(0,0,0,0.35)_100%)] shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
-  >
-    <div class="px-3.5 pb-2 pt-2.5">
+  <section :class="controlsShell">
+    <div class="px-3.5 pb-1.5 pt-2">
       <PlaybackTimeline
         v-bind="timelineProps"
         v-on="timelineEvents"
       />
 
-      <div class="relative mt-1">
+      <div class="mt-2.5 hidden min-[860px]:grid min-[860px]:grid-cols-[1fr_auto_1fr] min-[860px]:items-center">
+        <PlaybackSideActionsResponsive
+          variant="dock-left"
+          v-bind="sideActionProps"
+          v-on="sideActionEvents"
+        />
         <PlaybackCenterControls
           v-bind="centerControlProps"
           v-on="centerControlEvents"
         />
-
         <PlaybackSideActionsResponsive
+          variant="dock-right"
+          v-bind="sideActionProps"
+          v-on="sideActionEvents"
+        />
+      </div>
+
+      <div class="mt-2.5 min-[860px]:hidden">
+        <PlaybackCenterControls
+          v-bind="centerControlProps"
+          v-on="centerControlEvents"
+        />
+        <PlaybackSideActionsResponsive
+          variant="stack"
           v-bind="sideActionProps"
           v-on="sideActionEvents"
         />

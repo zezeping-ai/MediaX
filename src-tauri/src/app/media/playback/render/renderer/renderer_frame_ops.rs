@@ -9,6 +9,10 @@ impl Renderer {
         self.video_scale_mode = mode;
     }
 
+    pub(super) fn set_backdrop_color(&mut self, color: wgpu::Color) {
+        self.backdrop_color = color;
+    }
+
     pub(super) fn clear_uploaded_frame(&mut self) {
         self.has_uploaded_frame = false;
     }

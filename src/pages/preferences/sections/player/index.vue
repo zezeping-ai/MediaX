@@ -1,10 +1,6 @@
 <script setup lang="ts">
+import { applyLyricsFetchSettingsPreference, applyResumeLastPositionPreference, applyAlwaysOnTopPreference, applyVideoScaleModePreference } from "@/modules/player-settings-actions";
 import { usePreferences } from "@/modules/preferences";
-import {
-  applyAlwaysOnTopPreference,
-  applyResumeLastPositionPreference,
-  applyVideoScaleModePreference,
-} from "@/modules/player-settings-actions";
 
 const {
   playerHwDecodeMode,
@@ -13,6 +9,10 @@ const {
   playerShowDownlinkSpeed,
   playerShowUplinkSpeed,
   playerResumeLastPosition,
+  playerAutoFetchOnlineLyrics,
+  playerShowLyrics,
+  playerLyricsProviders,
+  playerLrcApiBaseUrl,
 } = usePreferences();
 
 async function applyAlwaysOnTop(enabled: boolean) {
@@ -21,6 +21,14 @@ async function applyAlwaysOnTop(enabled: boolean) {
 
 async function applyVideoScaleMode(mode: "contain" | "cover") {
   await applyVideoScaleModePreference(mode);
+}
+
+async function syncLyricsSettings() {
+  await applyLyricsFetchSettingsPreference({
+    autoFetchOnlineLyrics: playerAutoFetchOnlineLyrics.value,
+    providers: playerLyricsProviders.value,
+    lrcApiBaseUrl: playerLrcApiBaseUrl.value,
+  });
 }
 </script>
 
@@ -44,6 +52,83 @@ async function applyVideoScaleMode(mode: "contain" | "cover") {
             v-model:checked="playerResumeLastPosition"
             @change="(checked: boolean) => void applyResumeLastPositionPreference(checked)"
           />
+        </div>
+      </a-space>
+    </a-card>
+
+    <a-card title="歌词" :bordered="false" size="small" :body-style="{ padding: '12px' }">
+      <a-space direction="vertical" class="w-full">
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="font-semibold">显示歌词</div>
+            <div class="text-xs text-black/55 dark:text-white/55">
+              播放音频时展示歌词面板。也可在歌词面板右上角单独隐藏当前歌曲的歌词。
+            </div>
+          </div>
+          <a-switch v-model:checked="playerShowLyrics" />
+        </div>
+
+        <div class="flex items-center justify-between gap-4" :class="!playerShowLyrics ? 'opacity-50' : ''">
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="font-semibold">自动获取在线歌词</div>
+            <div class="text-xs text-black/55 dark:text-white/55">
+              本地无歌词时，会并行查询各在线源并展示全部匹配结果供切换；即使已有本地歌词或缓存，也会继续刷新在线匹配。
+            </div>
+          </div>
+          <a-switch
+            v-model:checked="playerAutoFetchOnlineLyrics"
+            :disabled="!playerShowLyrics"
+            @change="() => void syncLyricsSettings()"
+          />
+        </div>
+
+        <div class="flex items-center justify-between gap-4" :class="!playerAutoFetchOnlineLyrics || !playerShowLyrics ? 'opacity-50' : ''">
+          <div class="font-semibold">网易云音乐</div>
+          <a-switch
+            v-model:checked="playerLyricsProviders.netease"
+            :disabled="!playerAutoFetchOnlineLyrics || !playerShowLyrics"
+            @change="() => void syncLyricsSettings()"
+          />
+        </div>
+
+        <div class="flex items-center justify-between gap-4" :class="!playerAutoFetchOnlineLyrics || !playerShowLyrics ? 'opacity-50' : ''">
+          <div class="font-semibold">酷狗音乐</div>
+          <a-switch
+            v-model:checked="playerLyricsProviders.kugou"
+            :disabled="!playerAutoFetchOnlineLyrics || !playerShowLyrics"
+            @change="() => void syncLyricsSettings()"
+          />
+        </div>
+
+        <div class="flex items-center justify-between gap-4" :class="!playerAutoFetchOnlineLyrics || !playerShowLyrics ? 'opacity-50' : ''">
+          <div class="font-semibold">LRCLIB</div>
+          <a-switch
+            v-model:checked="playerLyricsProviders.lrclib"
+            :disabled="!playerAutoFetchOnlineLyrics || !playerShowLyrics"
+            @change="() => void syncLyricsSettings()"
+          />
+        </div>
+
+        <div class="flex items-center justify-between gap-4" :class="!playerAutoFetchOnlineLyrics || !playerShowLyrics ? 'opacity-50' : ''">
+          <div class="font-semibold">LrcApi</div>
+          <a-switch
+            v-model:checked="playerLyricsProviders.lrcapi"
+            :disabled="!playerAutoFetchOnlineLyrics || !playerShowLyrics"
+            @change="() => void syncLyricsSettings()"
+          />
+        </div>
+
+        <div :class="!playerAutoFetchOnlineLyrics || !playerShowLyrics ? 'opacity-50' : ''">
+          <div class="mb-1 font-semibold">LrcApi 自定义地址</div>
+          <a-input
+            v-model:value="playerLrcApiBaseUrl"
+            :disabled="!playerAutoFetchOnlineLyrics || !playerShowLyrics"
+            placeholder="https://api.lrc.cx"
+            @blur="() => void syncLyricsSettings()"
+          />
+          <div class="mt-1 text-xs text-black/55 dark:text-white/55">
+            留空使用官方公开实例。LrcApi 为 GPL-3.0 项目，MediaX 仅通过 HTTP 调用，不嵌入其源码。
+          </div>
         </div>
       </a-space>
     </a-card>
@@ -134,7 +219,6 @@ async function applyVideoScaleMode(mode: "contain" | "cover") {
 </template>
 
 <style scoped>
-/* migrated to Tailwind utility classes */
 .setting-row {
   display: flex;
   align-items: center;

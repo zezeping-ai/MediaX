@@ -1,6 +1,7 @@
 use crate::app::media::error::MediaError;
 use crate::app::media::playback::decode_context::VideoDecodeContext;
 use crate::app::media::playback::dto::{PlaybackMediaKind, PlaybackQualityMode};
+use crate::app::media::playback::session::service::MediaSourceMetadata;
 use crate::app::media::state::MediaState;
 
 pub(super) struct PlaybackRuntimeGateway<'a> {
@@ -40,13 +41,17 @@ impl<'a> PlaybackRuntimeGateway<'a> {
             .playback
             .lock()
             .map_err(|_| MediaError::state_poisoned_lock("playback state").to_string())?;
-        playback.set_media_metadata(
-            video_ctx.title.clone(),
-            video_ctx.artist.clone(),
-            video_ctx.album.clone(),
-            video_ctx.has_cover_art,
-            video_ctx.lyrics.clone(),
-        );
+        playback.set_media_metadata(MediaSourceMetadata {
+            title: video_ctx.title.clone(),
+            artist: video_ctx.artist.clone(),
+            album: video_ctx.album.clone(),
+            has_cover_art: video_ctx.has_cover_art,
+            lyrics: video_ctx.lyrics.clone(),
+            lyrics_source: video_ctx.lyrics_source.clone(),
+            lyrics_fetching: video_ctx.lyrics_fetching,
+            lyrics_candidate_id: None,
+            lyrics_candidates: Vec::new(),
+        });
         Ok(())
     }
 

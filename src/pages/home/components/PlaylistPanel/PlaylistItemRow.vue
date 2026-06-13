@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
 import type { PlaylistItem } from "@/pages/home/composables/usePlaybackPlaylist/types";
+import { useAppSurfaceTheme } from "@/pages/home/composables/useAppSurfaceTheme";
 
 defineProps<{
   item: PlaylistItem;
@@ -15,6 +16,8 @@ const emit = defineEmits<{
   "add-to-queue": [];
 }>();
 
+const { dragHandle, rowHover, rowMeta, rowMuted, rowTitle } = useAppSurfaceTheme();
+
 function formatTime(timestamp: number | null) {
   if (!timestamp || !Number.isFinite(timestamp)) {
     return "";
@@ -25,26 +28,27 @@ function formatTime(timestamp: number | null) {
 
 <template>
   <div
-    class="group flex items-start gap-2 rounded-lg border border-transparent px-2 py-2 transition-colors hover:border-white/8 hover:bg-white/4"
-    :class="active ? 'border-[#1677ff55] bg-[#1677ff1f]' : ''"
+    class="group flex items-start gap-2 rounded-lg border border-transparent px-2 py-2 transition-colors"
+    :class="[rowHover, active ? 'border-[#1677ff55] bg-[#1677ff1f]' : '']"
   >
     <div
       v-if="draggable"
       role="button"
       tabindex="-1"
-      class="playlist-drag-handle mt-0.5 flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded text-white/35 hover:text-white/70 active:cursor-grabbing"
+      class="playlist-drag-handle mt-0.5 flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded active:cursor-grabbing"
+      :class="dragHandle"
       title="拖动排序"
     >
       <Icon icon="lucide:grip-vertical" width="14" height="14" />
     </div>
     <div class="min-w-0 flex-1">
-      <div class="truncate text-sm font-medium text-white/90" :title="item.title">
+      <div class="truncate" :class="rowTitle" :title="item.title">
         {{ item.title }}
       </div>
-      <div class="mt-0.5 truncate text-[11px] text-white/42" :title="item.source">
+      <div class="mt-0.5 truncate" :class="rowMeta" :title="item.source">
         {{ item.source }}
       </div>
-      <div v-if="item.lastPlayedAt" class="mt-1 text-[10px] text-white/32">
+      <div v-if="item.lastPlayedAt" class="mt-1" :class="rowMuted">
         {{ formatTime(item.lastPlayedAt) }}
       </div>
     </div>

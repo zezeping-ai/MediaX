@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PlaylistItem } from "@/pages/home/composables/usePlaybackPlaylist/types";
+import { useAppSurfaceTheme } from "@/pages/home/composables/useAppSurfaceTheme";
 import PlaylistItemRow from "./PlaylistItemRow.vue";
 
 defineProps<{
@@ -14,20 +15,22 @@ const emit = defineEmits<{
   "add-to-queue": [string];
   clear: [];
 }>();
+
+const { listFrameOverflow, sectionSubtitle, sectionTitle } = useAppSurfaceTheme();
 </script>
 
 <template>
   <section class="space-y-2">
     <div class="flex items-center justify-between gap-3">
       <div>
-        <div class="text-sm font-medium text-white/88">播放历史</div>
-        <div class="text-xs text-white/42">最近播放的内容，可快速重新打开或加入队列</div>
+        <div :class="sectionTitle">播放历史</div>
+        <div :class="sectionSubtitle">最近播放的内容，可快速重新打开或加入队列</div>
       </div>
       <a-button v-if="items.length" size="small" danger type="text" @click="emit('clear')">
         清空历史
       </a-button>
     </div>
-    <div class="overflow-hidden rounded-lg border border-white/8">
+    <div :class="listFrameOverflow">
       <a-empty v-if="!items.length" description="暂无播放历史" class="py-10" />
       <div v-else class="p-1">
         <PlaylistItemRow

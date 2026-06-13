@@ -1,4 +1,4 @@
-use crate::app::media::model::MediaLyricLine;
+use crate::app::media::model::{LyricsCandidateSummary, MediaLyricLine};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,6 +63,10 @@ pub struct PlaybackState {
     pub album: Option<String>,
     pub has_cover_art: bool,
     pub lyrics: Vec<MediaLyricLine>,
+    pub lyrics_source: Option<String>,
+    pub lyrics_candidate_id: Option<String>,
+    pub lyrics_candidates: Vec<LyricsCandidateSummary>,
+    pub lyrics_fetching: bool,
     pub position_seconds: f64,
     pub duration_seconds: f64,
     pub buffered_position_seconds: f64,
@@ -95,6 +99,10 @@ impl Default for PlaybackState {
             album: None,
             has_cover_art: false,
             lyrics: Vec::new(),
+            lyrics_source: None,
+            lyrics_candidate_id: None,
+            lyrics_candidates: Vec::new(),
+            lyrics_fetching: false,
             position_seconds: 0.0,
             duration_seconds: 0.0,
             buffered_position_seconds: 0.0,

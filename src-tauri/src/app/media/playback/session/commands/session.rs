@@ -40,6 +40,35 @@ pub fn playback_set_resume_last_position(
 }
 
 #[tauri::command]
+pub fn playback_select_lyrics_candidate(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    candidate_id: String,
+) -> Result<MediaSnapshot, MediaCommandError> {
+    command_result({
+        crate::app::media::lyrics::select_lyrics_candidate(&app, candidate_id)?;
+        coordinator::get_snapshot(state)
+    })
+}
+
+#[tauri::command]
+pub fn playback_set_lyrics_fetch_settings(
+    app: AppHandle,
+    auto_fetch_online_lyrics: bool,
+    providers: player_settings::LyricsProviderSettings,
+    lrc_api_base_url: String,
+) -> Result<(), MediaCommandError> {
+    command_result(player_settings::set_lyrics_fetch_settings(
+        &app,
+        player_settings::LyricsFetchSettings {
+            auto_fetch_online_lyrics,
+            providers,
+            lrc_api_base_url,
+        },
+    ))
+}
+
+#[tauri::command]
 pub fn playback_resume(
     app: AppHandle,
     state: State<'_, MediaState>,

@@ -4,6 +4,7 @@ import { watchPausable } from "@vueuse/core";
 import type { PlaylistItem } from "@/pages/home/composables/usePlaybackPlaylist/types";
 import { reorderListItems } from "@/pages/home/composables/usePlaybackPlaylist/playlistHelpers";
 import { useSortableList } from "@/pages/home/composables/useSortableList";
+import { useAppSurfaceTheme } from "@/pages/home/composables/useAppSurfaceTheme";
 import PlaylistItemRow from "./PlaylistItemRow.vue";
 
 const props = defineProps<{
@@ -75,6 +76,8 @@ const remountSync = watchPausable(displayItemIds, async () => {
 dragSyncPausers.pause = remountSync.pause;
 dragSyncPausers.resume = remountSync.resume;
 
+const { listFrame, sectionSubtitle, sectionTitle } = useAppSurfaceTheme();
+
 onMounted(() => {
   scrollRef.value = listRef.value?.closest(".ant-drawer-body") ?? null;
 });
@@ -84,14 +87,14 @@ onMounted(() => {
   <section class="space-y-2">
     <div class="flex items-center justify-between gap-3">
       <div>
-        <div class="text-sm font-medium text-white/88">接下来播放</div>
-        <div class="text-xs text-white/42">拖动手柄可调整播放顺序</div>
+        <div :class="sectionTitle">接下来播放</div>
+        <div :class="sectionSubtitle">拖动手柄可调整播放顺序</div>
       </div>
       <a-button v-if="items.length" size="small" danger type="text" @click="emit('clear')">
         清空队列
       </a-button>
     </div>
-    <div class="rounded-lg border border-white/8">
+    <div :class="listFrame">
       <a-empty v-if="!items.length" description="队列为空，打开媒体后会自动加入" class="py-10" />
       <div v-else class="p-1">
         <div ref="listRef" class="flex flex-col">
@@ -116,35 +119,3 @@ onMounted(() => {
     </div>
   </section>
 </template>
-
-<style scoped>
-:global(.playlist-sortable-ghost) {
-  opacity: 0.45;
-  min-height: 52px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  outline: 1px dashed rgba(255, 255, 255, 0.28);
-  outline-offset: -1px;
-}
-
-:global(.playlist-sortable-chosen) {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-:global(.playlist-sortable-fallback) {
-  opacity: 0.98;
-  border-radius: 8px;
-  background: rgba(24, 24, 28, 0.96);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
-  cursor: grabbing;
-}
-
-:global(.playlist-sortable-drag) {
-  opacity: 0.98;
-}
-
-:global(.playlist-drag-handle) {
-  touch-action: none;
-  user-select: none;
-}
-</style>

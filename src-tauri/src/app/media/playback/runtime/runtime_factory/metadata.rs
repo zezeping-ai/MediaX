@@ -1,7 +1,7 @@
 use crate::app::media::playback::decode_context::VideoDecodeContext;
 use crate::app::media::playback::dto::PlaybackMediaKind;
 use crate::app::media::playback::events::MediaMetadataPayload;
-use crate::app::media::playback::render::renderer::RendererState;
+use crate::app::media::playback::render::renderer::{RendererState, VideoScaleMode};
 use crate::app::media::playback::runtime::emit::{emit_debug, emit_metadata_payloads};
 use tauri::AppHandle;
 
@@ -44,6 +44,10 @@ pub(super) fn emit_runtime_metadata(app: &AppHandle, video_ctx: &VideoDecodeCont
             album: video_ctx.album.clone(),
             has_cover_art: video_ctx.has_cover_art,
             lyrics: video_ctx.lyrics.clone(),
+            lyrics_source: video_ctx.lyrics_source.clone(),
+            lyrics_candidate_id: None,
+            lyrics_candidates: Vec::new(),
+            lyrics_fetching: video_ctx.lyrics_fetching,
         },
     );
     emit_debug(
@@ -63,6 +67,10 @@ pub(super) fn emit_runtime_metadata(app: &AppHandle, video_ctx: &VideoDecodeCont
 pub(super) fn prime_audio_poster_frame(renderer: &RendererState, video_ctx: &VideoDecodeContext) {
     if video_ctx.media_kind != PlaybackMediaKind::Audio {
         return;
+    }
+    if video_ctx.has_cover_art {
+        // 音频封面作为全屏背景时使用 cover，避免 contain 留出的底色块遮挡封皮观感
+        renderer.set_video_scale_mode(VideoScaleMode::Cover);
     }
     if let Some(frame) = video_ctx.cover_frame.as_ref() {
         renderer.submit_frame(frame.clone());

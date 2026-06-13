@@ -1,4 +1,4 @@
-use crate::app::media::model::MediaLyricLine;
+use crate::app::media::model::{LyricsCandidateSummary, MediaLyricLine};
 use crate::app::media::playback::dto::{
     HardwareDecodeMode, PlaybackChannelRouting, PlaybackMediaKind, PlaybackQualityMode,
     PlaybackStatus,
@@ -13,6 +13,18 @@ pub(super) struct PlaybackSessionModel {
     pub audio: PlaybackAudioState,
 }
 
+pub(crate) struct MediaSourceMetadata {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub has_cover_art: bool,
+    pub lyrics: Vec<MediaLyricLine>,
+    pub lyrics_source: Option<String>,
+    pub lyrics_fetching: bool,
+    pub lyrics_candidate_id: Option<String>,
+    pub lyrics_candidates: Vec<LyricsCandidateSummary>,
+}
+
 pub(super) struct PlaybackSourceState {
     pub current_path: Option<String>,
     pub media_kind: PlaybackMediaKind,
@@ -21,6 +33,10 @@ pub(super) struct PlaybackSourceState {
     pub album: Option<String>,
     pub has_cover_art: bool,
     pub lyrics: Vec<MediaLyricLine>,
+    pub lyrics_source: Option<String>,
+    pub lyrics_candidate_id: Option<String>,
+    pub lyrics_candidates: Vec<LyricsCandidateSummary>,
+    pub lyrics_fetching: bool,
     pub adaptive_quality_supported: bool,
     pub quality_mode: PlaybackQualityMode,
 }
@@ -73,6 +89,10 @@ impl Default for PlaybackSourceState {
             album: None,
             has_cover_art: false,
             lyrics: Vec::new(),
+            lyrics_source: None,
+            lyrics_candidate_id: None,
+            lyrics_candidates: Vec::new(),
+            lyrics_fetching: false,
             adaptive_quality_supported: false,
             quality_mode: PlaybackQualityMode::Source,
         }

@@ -28,6 +28,10 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     metadataArtist: viewModel.metadataArtist.value,
     metadataHasCoverArt: viewModel.metadataHasCoverArt.value,
     metadataLyrics: viewModel.metadataLyrics.value,
+    metadataLyricsSource: viewModel.metadataLyricsSource.value,
+    metadataLyricsCandidateId: viewModel.metadataLyricsCandidateId.value,
+    metadataLyricsCandidates: viewModel.metadataLyricsCandidates.value,
+    metadataLyricsFetching: viewModel.metadataLyricsFetching.value,
     metadataMediaKind: viewModel.metadataMediaKind.value,
     metadataTitle: viewModel.metadataTitle.value,
     setLeftChannelMuted: viewModel.setLeftChannelMuted,
@@ -41,6 +45,7 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     cacheOutputPath: viewModel.cacheOutputPath.value,
     cacheOutputSizeBytes: viewModel.cacheOutputSizeBytes.value,
     cacheWriteSpeedBytesPerSecond: viewModel.cacheWriteSpeedBytesPerSecond.value,
+    updatePlaybackSnapshot: viewModel.updatePlaybackSnapshot,
   }));
 
   const mediaViewportEvents: MediaViewportEventMap = {
@@ -65,6 +70,8 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     disabled: !viewModel.currentSource.value || viewModel.isBusy.value,
     playlistOpen: viewModel.playlistController.panelVisible.value,
     queueCount: viewModel.playlistController.queueCount.value,
+    hasNext: viewModel.playlistController.hasNext.value,
+    hasPrevious: viewModel.playlistController.hasPrevious.value,
     resumePromptPositionSeconds: viewModel.resumePromptPositionSeconds.value,
     requestPreviewFrame: viewModel.requestPreviewFrame,
   }));
@@ -91,6 +98,8 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     "toggle-cache": viewModel.toggleCacheRecording,
     "toggle-lock": viewModel.toggleLock,
     "toggle-playlist": () => viewModel.togglePlaylistPanel(),
+    "play-next": () => void viewModel.playNextInQueue(),
+    "play-previous": () => void viewModel.playPreviousInQueue(),
     "export-audio": viewModel.exportCurrentAudio,
     "resume-prompt-accept": () => void viewModel.acceptResumePrompt(),
     "resume-prompt-dismiss": viewModel.dismissResumePrompt,

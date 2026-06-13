@@ -13,6 +13,10 @@ export function setMainWindowVideoScaleMode(mode: PlayerVideoScaleMode) {
   return invokeMediaCommand<void>("window_set_main_video_scale_mode", { mode });
 }
 
+export function setRendererBackdropTheme(theme: "light" | "dark") {
+  return invokeMediaCommand<void>("window_set_renderer_backdrop_theme", { theme });
+}
+
 export function toggleMainWindowFullscreen() {
   return invokeMediaCommand<boolean>("window_toggle_main_fullscreen");
 }

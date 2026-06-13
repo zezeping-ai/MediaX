@@ -3,13 +3,9 @@ import { Icon } from "@iconify/vue";
 import { computed, ref, toRef } from "vue";
 import { formatPlaybackRate, normalizePlaybackRate } from "@/modules/player-constraints";
 import type { PlaybackChannelRouting } from "@/modules/media-types";
+import { usePlayerChromeTheme } from "@/pages/home/composables/usePlayerChromeTheme";
 import {
-  CIRCLE_BTN_BASE,
-  CIRCLE_BTN_GHOST,
-  CIRCLE_BTN_PRIMARY,
-  PILL_BASE,
   SPEED_OPTIONS,
-  TINY_PILL_BTN,
 } from "../playbackControls.constants";
 import { type PlaybackQualityOption } from "../playbackControlsUtils";
 import {
@@ -30,6 +26,18 @@ const props = defineProps<CenterControlViewProps & {
 }>();
 
 const emit = defineEmits<CenterControlEmitContract>();
+
+const {
+  channelPanel,
+  circleBtnBase,
+  circleBtnGhost,
+  circleBtnPrimary,
+  divider,
+  isDark,
+  masterSlider,
+  pillBase,
+  tinyPillBtn,
+} = usePlayerChromeTheme();
 
 const rootRef = ref<HTMLElement | null>(null);
 const normalizedPlaybackRate = computed(() => normalizePlaybackRate(props.playbackRate));
@@ -90,16 +98,27 @@ function updateRightChannelVolume(value: number | [number, number]) {
 <template>
   <div class="flex justify-center">
     <div ref="rootRef" class="relative">
-      <div :class="[PILL_BASE, 'max-w-full gap-2 px-3']">
+      <div :class="[pillBase, 'max-w-full']">
         <a-button
           size="small"
           shape="circle"
           :disabled="disabled"
           :title="isPlaying ? '暂停并保留当前画面' : '停止播放并清空当前画面'"
-          :class="[CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST]"
+          :class="[circleBtnBase, circleBtnGhost]"
           @click="$emit('stop')"
         >
-          <Icon icon="ph:stop-fill" width="16" height="16" class="block shrink-0" aria-hidden="true" />
+          <Icon icon="ph:stop-fill" width="15" height="15" class="block shrink-0" aria-hidden="true" />
+        </a-button>
+
+        <a-button
+          size="small"
+          shape="circle"
+          :disabled="disabled || !hasPrevious"
+          title="上一首"
+          :class="[circleBtnBase, circleBtnGhost]"
+          @click="$emit('play-previous')"
+        >
+          <Icon icon="ph:skip-back-fill" width="15" height="15" class="block shrink-0" aria-hidden="true" />
         </a-button>
 
         <a-button
@@ -107,19 +126,30 @@ function updateRightChannelVolume(value: number | [number, number]) {
           shape="circle"
           :disabled="disabled"
           :title="isPlaying ? '暂停播放' : '开始播放'"
-          :class="[CIRCLE_BTN_BASE, 'h-10 min-h-10 w-10 min-w-10', CIRCLE_BTN_PRIMARY]"
+          :class="[circleBtnBase, circleBtnPrimary]"
           @click="isPlaying ? $emit('pause') : $emit('play')"
         >
           <Icon
             :icon="isPlaying ? 'ph:pause-fill' : 'ph:play-fill'"
-            width="18"
-            height="18"
+            width="16"
+            height="16"
             class="block shrink-0"
             aria-hidden="true"
           />
         </a-button>
 
-        <span class="h-5 w-px bg-white/10" aria-hidden="true" />
+        <a-button
+          size="small"
+          shape="circle"
+          :disabled="disabled || !hasNext"
+          title="下一首"
+          :class="[circleBtnBase, circleBtnGhost]"
+          @click="$emit('play-next')"
+        >
+          <Icon icon="ph:skip-forward-fill" width="15" height="15" class="block shrink-0" aria-hidden="true" />
+        </a-button>
+
+        <span :class="divider" aria-hidden="true" />
 
         <a-dropdown
           :open="speedDropdownOpen"
@@ -127,7 +157,7 @@ function updateRightChannelVolume(value: number | [number, number]) {
           placement="top"
           @update:open="$emit('toggle-speed-open', $event)"
         >
-          <a-button size="small" :class="TINY_PILL_BTN" :disabled="disabled" title="调整播放倍速">
+          <a-button size="small" :class="tinyPillBtn" :disabled="disabled" title="调整播放倍速">
             <span class="tabular-nums">{{ playbackRateLabel }}</span>
             <Icon icon="mdi:chevron-up" width="14" height="14" class="shrink-0 opacity-75" aria-hidden="true" />
           </a-button>
@@ -141,7 +171,7 @@ function updateRightChannelVolume(value: number | [number, number]) {
         </a-dropdown>
 
         <template v-if="qualityOptions.length > 1">
-          <span class="h-5 w-px bg-white/10" aria-hidden="true" />
+          <span :class="divider" aria-hidden="true" />
 
           <a-dropdown
             :open="qualityDropdownOpen"
@@ -151,7 +181,7 @@ function updateRightChannelVolume(value: number | [number, number]) {
           >
             <a-button
               size="small"
-              :class="TINY_PILL_BTN"
+              :class="tinyPillBtn"
               :disabled="disabled"
               title="切换清晰度"
             >
@@ -168,48 +198,54 @@ function updateRightChannelVolume(value: number | [number, number]) {
           </a-dropdown>
         </template>
 
-        <span class="h-5 w-px bg-white/10" aria-hidden="true" />
+        <span :class="divider" aria-hidden="true" />
 
-        <a-button
-          size="small"
-          shape="circle"
-          :disabled="disabled"
-          :title="muted || volume <= 0 ? '取消静音' : '静音'"
-          :class="[CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST]"
-          @click="$emit('toggle-mute')"
-        >
-          <Icon :icon="volumeIcon" width="18" height="18" class="block shrink-0" aria-hidden="true" />
-        </a-button>
-
-        <div class="ml-1 mr-2 w-[156px] max-[720px]:hidden">
-          <div class="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.16em] text-white/42">
-            <span>Master</span>
-            <span>{{ formatPercent(muted ? 0 : volume) }}</span>
-          </div>
-          <a-slider
-            class="w-full [&_.ant-slider]:m-0! [&_.ant-slider-handle::after]:bg-white [&_.ant-slider-handle::after]:shadow-[0_0_0_2px_rgba(255,255,255,0.20)] [&_.ant-slider-handle:hover]:opacity-100 [&_.ant-slider-handle]:opacity-90 [&_.ant-slider-rail]:h-[3px] [&_.ant-slider-rail]:bg-white/12 [&_.ant-slider-track]:h-[3px] [&_.ant-slider-track]:bg-white/70"
-            :value="muted ? 0 : volume"
-            :min="0"
-            :max="1"
-            :step="0.01"
-            :tip-formatter="formatPercent"
+        <div class="inline-flex shrink-0 items-center gap-1">
+          <a-button
+            size="small"
+            shape="circle"
             :disabled="disabled"
-            title="调整音量"
-            @update:value="$emit('change-volume', $event)"
-            @change="$emit('change-volume', $event)"
-            @afterChange="$emit('commit-volume', $event)"
-          />
-          <div class="mt-1.5 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/36">
-            <span>L {{ leftChannelSummary }}</span>
-            <span>{{ channelRoutingLabel(channelRouting) }}</span>
-            <span>R {{ rightChannelSummary }}</span>
+            :title="muted || volume <= 0 ? '取消静音' : '静音'"
+            :class="[circleBtnBase, circleBtnGhost]"
+            @click="$emit('toggle-mute')"
+          >
+            <Icon :icon="volumeIcon" width="18" height="18" class="block shrink-0" aria-hidden="true" />
+          </a-button>
+
+          <div class="flex w-[140px] max-[720px]:hidden flex-col justify-center gap-0.5 pr-1">
+            <div class="flex items-center justify-between text-[9px] leading-none uppercase tracking-[0.14em]" :class="isDark ? 'text-white/40' : 'text-slate-500'">
+              <span>Master</span>
+              <span>{{ formatPercent(muted ? 0 : volume) }}</span>
+            </div>
+            <div class="px-0.5">
+              <a-slider
+                :class="['w-full', masterSlider]"
+                :value="muted ? 0 : volume"
+                :min="0"
+                :max="1"
+                :step="0.01"
+                :tip-formatter="formatPercent"
+                :disabled="disabled"
+                title="调整音量"
+                @update:value="$emit('change-volume', $event)"
+                @change="$emit('change-volume', $event)"
+                @afterChange="$emit('commit-volume', $event)"
+              />
+            </div>
+            <div class="flex items-center justify-between text-[9px] leading-none uppercase tracking-[0.12em]" :class="isDark ? 'text-white/32' : 'text-slate-400'">
+              <span>L {{ leftChannelSummary }}</span>
+              <span>{{ channelRoutingLabel(channelRouting) }}</span>
+              <span>R {{ rightChannelSummary }}</span>
+            </div>
           </div>
         </div>
 
+        <span :class="divider" aria-hidden="true" />
+
         <a-button
           size="small"
           :disabled="disabled"
-          :class="[TINY_PILL_BTN, channelPanelOpen ? 'bg-white/14 text-white' : '']"
+          :class="[tinyPillBtn, 'shrink-0', channelPanelOpen ? (isDark ? 'bg-white/14 text-white' : 'bg-black/8 text-slate-900') : '']"
           :title="channelPanelOpen ? '收起声道控制' : '展开声道控制'"
           @click="toggleChannelPanel"
         >
@@ -220,20 +256,20 @@ function updateRightChannelVolume(value: number | [number, number]) {
 
       <div
         v-if="channelPanelOpen"
-        class="absolute bottom-[calc(100%+12px)] left-1/2 z-20 w-[min(340px,calc(100vw-32px))] -translate-x-1/2 rounded-2xl border border-white/12 bg-[linear-gradient(180deg,rgba(8,8,10,0.94)_0%,rgba(14,14,18,0.90)_100%)] p-3 shadow-[0_18px_48px_rgba(0,0,0,0.42)] backdrop-blur-2xl"
+        :class="channelPanel"
       >
-        <div class="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-white/50">
+        <div class="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.18em]" :class="isDark ? 'text-white/50' : 'text-slate-500'">
           <span>Channel Trim</span>
-          <span class="text-white/28">{{ channelRoutingLabel(channelRouting) }}</span>
+          <span :class="isDark ? 'text-white/28' : 'text-slate-400'">{{ channelRoutingLabel(channelRouting) }}</span>
         </div>
 
-        <div class="mb-3 rounded-xl border border-white/8 bg-white/3 p-2.5">
-          <div class="mb-2 flex items-center justify-between text-[11px] text-white/78">
+        <div class="mb-3 rounded-xl border p-2.5" :class="isDark ? 'border-white/8 bg-white/3' : 'border-black/8 bg-black/3'">
+          <div class="mb-2 flex items-center justify-between text-[11px]" :class="isDark ? 'text-white/78' : 'text-slate-700'">
             <div class="flex items-center gap-2">
               <span>Routing</span>
-              <span class="text-[10px] uppercase tracking-[0.16em] text-white/38">Source Map</span>
+              <span class="text-[10px] uppercase tracking-[0.16em]" :class="isDark ? 'text-white/38' : 'text-slate-400'">Source Map</span>
             </div>
-            <span class="text-[10px] uppercase tracking-[0.14em] text-white/42">
+            <span class="text-[10px] uppercase tracking-[0.14em]" :class="isDark ? 'text-white/42' : 'text-slate-500'">
               {{ channelRoutingLabel(channelRouting) }}
             </span>
           </div>
@@ -252,27 +288,27 @@ function updateRightChannelVolume(value: number | [number, number]) {
         </div>
 
         <div class="space-y-3">
-          <div class="rounded-xl border border-white/8 bg-white/3 px-3 py-2.5">
-            <div class="mb-2 flex items-center justify-between text-[11px] text-white/78">
+          <div class="rounded-xl border px-3 py-2.5" :class="isDark ? 'border-white/8 bg-white/3' : 'border-black/8 bg-black/3'">
+            <div class="mb-2 flex items-center justify-between text-[11px]" :class="isDark ? 'text-white/78' : 'text-slate-700'">
               <div class="flex items-center gap-2">
                 <span>L</span>
-                <span class="text-[10px] uppercase tracking-[0.16em] text-white/38">Trim</span>
+                <span class="text-[10px] uppercase tracking-[0.16em]" :class="isDark ? 'text-white/38' : 'text-slate-400'">Trim</span>
               </div>
               <div class="flex items-center gap-2.5">
-                <span class="text-[10px] uppercase tracking-[0.14em] text-white/42">
+                <span class="text-[10px] uppercase tracking-[0.14em]" :class="isDark ? 'text-white/42' : 'text-slate-500'">
                   out {{ formatPercent(leftEffectiveOutput) }}
                 </span>
                 <a-button
                   size="small"
                   :disabled="disabled"
-                  :class="[TINY_PILL_BTN, 'h-7 px-2.5 text-[11px]']"
+                  :class="[tinyPillBtn, 'h-7 px-2.5 text-[11px]']"
                   @click="$emit('set-left-channel-muted', !leftChannelMuted)"
                 >
                   {{ leftChannelMuted ? "Unmute" : "Mute" }}
                 </a-button>
               </div>
             </div>
-            <div class="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/34">
+            <div class="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.14em]" :class="isDark ? 'text-white/34' : 'text-slate-500'">
               <span>trim {{ formatPercent(leftChannelMuted ? 0 : leftVolumePreview) }}</span>
               <span>{{ channelStateLabel(leftChannelMuted) }}</span>
             </div>
@@ -292,27 +328,27 @@ function updateRightChannelVolume(value: number | [number, number]) {
             </div>
           </div>
 
-          <div class="rounded-xl border border-white/8 bg-white/3 px-3 py-2.5">
-            <div class="mb-2 flex items-center justify-between text-[11px] text-white/78">
+          <div class="rounded-xl border px-3 py-2.5" :class="isDark ? 'border-white/8 bg-white/3' : 'border-black/8 bg-black/3'">
+            <div class="mb-2 flex items-center justify-between text-[11px]" :class="isDark ? 'text-white/78' : 'text-slate-700'">
               <div class="flex items-center gap-2">
                 <span>R</span>
-                <span class="text-[10px] uppercase tracking-[0.16em] text-white/38">Trim</span>
+                <span class="text-[10px] uppercase tracking-[0.16em]" :class="isDark ? 'text-white/38' : 'text-slate-400'">Trim</span>
               </div>
               <div class="flex items-center gap-2.5">
-                <span class="text-[10px] uppercase tracking-[0.14em] text-white/42">
+                <span class="text-[10px] uppercase tracking-[0.14em]" :class="isDark ? 'text-white/42' : 'text-slate-500'">
                   out {{ formatPercent(rightEffectiveOutput) }}
                 </span>
                 <a-button
                   size="small"
                   :disabled="disabled"
-                  :class="[TINY_PILL_BTN, 'h-7 px-2.5 text-[11px]']"
+                  :class="[tinyPillBtn, 'h-7 px-2.5 text-[11px]']"
                   @click="$emit('set-right-channel-muted', !rightChannelMuted)"
                 >
                   {{ rightChannelMuted ? "Unmute" : "Mute" }}
                 </a-button>
               </div>
             </div>
-            <div class="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/34">
+            <div class="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.14em]" :class="isDark ? 'text-white/34' : 'text-slate-500'">
               <span>trim {{ formatPercent(rightChannelMuted ? 0 : rightVolumePreview) }}</span>
               <span>{{ channelStateLabel(rightChannelMuted) }}</span>
             </div>

@@ -2,6 +2,7 @@ import { ref, shallowRef } from "vue";
 import type {
   MediaAudioMeterPayload,
   MediaErrorPayload,
+  LyricsCandidateSummary,
   MediaLyricLine,
   MediaMetadataPayload,
   PlaybackMediaKind,
@@ -25,6 +26,10 @@ export function useMediaSessionState() {
   const metadataAlbum = ref("");
   const metadataHasCoverArt = ref(false);
   const metadataLyrics = ref<MediaLyricLine[]>([]);
+  const metadataLyricsSource = ref<string | null>(null);
+  const metadataLyricsCandidateId = ref<string | null>(null);
+  const metadataLyricsCandidates = ref<LyricsCandidateSummary[]>([]);
+  const metadataLyricsFetching = ref(false);
   const playbackErrorMessage = ref("");
   const networkReadBytesPerSecond = ref<number | null>(null);
   const networkSustainRatio = ref<number | null>(null);
@@ -42,6 +47,10 @@ export function useMediaSessionState() {
     metadataAlbum.value = "";
     metadataHasCoverArt.value = false;
     metadataLyrics.value = [];
+    metadataLyricsSource.value = null;
+    metadataLyricsCandidateId.value = null;
+    metadataLyricsCandidates.value = [];
+    metadataLyricsFetching.value = false;
     networkReadBytesPerSecond.value = null;
     networkSustainRatio.value = null;
     lastTelemetryAtMs.value = 0;
@@ -63,6 +72,10 @@ export function useMediaSessionState() {
     metadataAlbum.value = next.playback.album ?? "";
     metadataHasCoverArt.value = Boolean(next.playback.has_cover_art);
     metadataLyrics.value = next.playback.lyrics ?? [];
+    metadataLyricsSource.value = next.playback.lyrics_source ?? null;
+    metadataLyricsCandidateId.value = next.playback.lyrics_candidate_id ?? null;
+    metadataLyricsCandidates.value = next.playback.lyrics_candidates ?? [];
+    metadataLyricsFetching.value = Boolean(next.playback.lyrics_fetching);
   }
 
   function applyMetadataPayload(payload: MediaMetadataPayload) {
@@ -76,6 +89,10 @@ export function useMediaSessionState() {
     metadataAlbum.value = payload.album ?? "";
     metadataHasCoverArt.value = Boolean(payload.has_cover_art);
     metadataLyrics.value = payload.lyrics ?? [];
+    metadataLyricsSource.value = payload.lyrics_source ?? null;
+    metadataLyricsCandidateId.value = payload.lyrics_candidate_id ?? null;
+    metadataLyricsCandidates.value = payload.lyrics_candidates ?? [];
+    metadataLyricsFetching.value = Boolean(payload.lyrics_fetching);
   }
 
   function applyErrorPayload(payload: MediaErrorPayload) {
@@ -122,6 +139,10 @@ export function useMediaSessionState() {
     metadataAlbum,
     metadataHasCoverArt,
     metadataLyrics,
+    metadataLyricsSource,
+    metadataLyricsCandidateId,
+    metadataLyricsCandidates,
+    metadataLyricsFetching,
     metadataVideoFps,
     metadataVideoHeight,
     metadataVideoWidth,

@@ -2,24 +2,40 @@
 import PlaybackSideActions from "./PlaybackSideActions.vue";
 import type { SideActionEmitContract, SideActionViewProps } from "./bindings.contract";
 
-const props = defineProps<SideActionViewProps>();
+const props = defineProps<SideActionViewProps & {
+  variant?: "auto" | "dock-left" | "dock-right" | "stack";
+}>();
 
 const emit = defineEmits<SideActionEmitContract>();
+
+const variant = props.variant ?? "auto";
 </script>
 
 <template>
-  <div class="status-indicators status-indicators--dock">
-    <div class="status-indicators__group">
-      <span
-        class="inline-flex h-6 items-center rounded-md border px-2 text-[10px] font-semibold tracking-[0.1px] leading-none transition-colors duration-150"
-        :class="[props.decodeBadgeClass, 'justify-center whitespace-nowrap']"
-        :title="props.decodeBadgeTitle"
-      >
-        {{ props.decodeBadgeLabel }}
-      </span>
-    </div>
+  <div
+    v-if="variant === 'auto' || variant === 'dock-left'"
+    class="flex items-center"
+    :class="variant === 'auto' ? 'status-indicators--dock' : 'justify-start'"
+  >
+    <span
+      class="inline-flex h-6 items-center rounded-md border px-2 text-[10px] font-semibold tracking-[0.1px] leading-none transition-colors duration-150"
+      :class="[
+        props.decodeBadgeClass,
+        'justify-center whitespace-nowrap',
+        !props.showDecodeBadge && 'pointer-events-none invisible',
+      ]"
+      :title="props.showDecodeBadge ? props.decodeBadgeTitle : undefined"
+      aria-hidden="true"
+    >
+      {{ props.decodeBadgeLabel }}
+    </span>
   </div>
-  <div class="side-actions side-actions--dock">
+
+  <div
+    v-if="variant === 'auto' || variant === 'dock-right'"
+    class="flex items-center"
+    :class="variant === 'auto' ? 'side-actions--dock' : 'justify-end'"
+  >
     <PlaybackSideActions
       v-bind="props"
       @toggle-cache="emit('toggle-cache')"
@@ -28,16 +44,24 @@ const emit = defineEmits<SideActionEmitContract>();
       @export-audio="emit('export-audio')"
     />
   </div>
-  <div class="side-actions side-actions--stack">
-    <div class="status-indicators__group">
-      <span
-        class="inline-flex h-6 items-center rounded-md border px-2 text-[10px] font-semibold tracking-[0.1px] leading-none transition-colors duration-150"
-        :class="[props.decodeBadgeClass, 'justify-center whitespace-nowrap']"
-        :title="props.decodeBadgeTitle"
-      >
-        {{ props.decodeBadgeLabel }}
-      </span>
-    </div>
+
+  <div
+    v-if="variant === 'auto' || variant === 'stack'"
+    class="side-actions--stack"
+    :class="variant === 'stack' ? 'col-span-full mt-2' : ''"
+  >
+    <span
+      class="inline-flex h-6 items-center rounded-md border px-2 text-[10px] font-semibold tracking-[0.1px] leading-none transition-colors duration-150"
+      :class="[
+        props.decodeBadgeClass,
+        'justify-center whitespace-nowrap',
+        !props.showDecodeBadge && 'pointer-events-none invisible',
+      ]"
+      :title="props.showDecodeBadge ? props.decodeBadgeTitle : undefined"
+      aria-hidden="true"
+    >
+      {{ props.decodeBadgeLabel }}
+    </span>
     <PlaybackSideActions
       v-bind="props"
       @toggle-cache="emit('toggle-cache')"
@@ -49,29 +73,7 @@ const emit = defineEmits<SideActionEmitContract>();
 </template>
 
 <style scoped>
-.status-indicators--dock {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  display: none;
-}
-
-.status-indicators__group {
-  display: flex;
-  align-items: center;
-}
-
-.side-actions--dock {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  display: none;
-}
-
 .side-actions--stack {
-  margin-top: 0.5rem;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -80,12 +82,27 @@ const emit = defineEmits<SideActionEmitContract>();
 
 @media (min-width: 860px) {
   .status-indicators--dock {
-    display: block;
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
   }
+
   .side-actions--dock {
-    display: block;
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
   }
+
   .side-actions--stack {
+    display: none;
+  }
+}
+
+@media (max-width: 859px) {
+  .status-indicators--dock,
+  .side-actions--dock {
     display: none;
   }
 }

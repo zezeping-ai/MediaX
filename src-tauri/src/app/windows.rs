@@ -215,6 +215,15 @@ pub fn window_set_main_video_scale_mode(
 }
 
 #[tauri::command]
+pub fn window_set_renderer_backdrop_theme(
+    renderer: State<'_, RendererState>,
+    theme: String,
+) -> Result<(), String> {
+    renderer.set_backdrop_theme(theme.as_str());
+    Ok(())
+}
+
+#[tauri::command]
 pub fn window_toggle_main_fullscreen(app: tauri::AppHandle) -> Result<bool, String> {
     let window = app
         .get_webview_window(MAIN_WINDOW_LABEL)

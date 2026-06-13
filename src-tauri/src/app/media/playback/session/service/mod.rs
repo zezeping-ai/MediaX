@@ -3,7 +3,9 @@ mod snapshot;
 mod source_capabilities;
 mod state_transitions;
 
-use crate::app::media::model::{MediaLibraryState, MediaLyricLine, MediaSnapshot};
+pub(crate) use model::MediaSourceMetadata;
+
+use crate::app::media::model::{MediaLibraryState, MediaLyricLine, MediaSnapshot, LyricsCandidateSummary};
 use crate::app::media::playback::dto::{
     HardwareDecodeMode, PlaybackChannelRouting, PlaybackMediaKind, PlaybackQualityMode,
     PlaybackState, PlaybackStatus,
@@ -110,19 +112,32 @@ impl MediaPlaybackService {
         self.state()
     }
 
-    pub fn set_media_metadata(
+    pub fn set_media_metadata(&mut self, metadata: model::MediaSourceMetadata) -> PlaybackState {
+        self.session.source.title = metadata.title;
+        self.session.source.artist = metadata.artist;
+        self.session.source.album = metadata.album;
+        self.session.source.has_cover_art = metadata.has_cover_art;
+        self.session.source.lyrics = metadata.lyrics;
+        self.session.source.lyrics_source = metadata.lyrics_source;
+        self.session.source.lyrics_fetching = metadata.lyrics_fetching;
+        self.session.source.lyrics_candidate_id = metadata.lyrics_candidate_id;
+        self.session.source.lyrics_candidates = metadata.lyrics_candidates;
+        self.state()
+    }
+
+    pub fn patch_lyrics(
         &mut self,
-        title: Option<String>,
-        artist: Option<String>,
-        album: Option<String>,
-        has_cover_art: bool,
         lyrics: Vec<MediaLyricLine>,
+        lyrics_source: Option<String>,
+        lyrics_fetching: bool,
+        lyrics_candidate_id: Option<String>,
+        lyrics_candidates: Vec<LyricsCandidateSummary>,
     ) -> PlaybackState {
-        self.session.source.title = title;
-        self.session.source.artist = artist;
-        self.session.source.album = album;
-        self.session.source.has_cover_art = has_cover_art;
         self.session.source.lyrics = lyrics;
+        self.session.source.lyrics_source = lyrics_source;
+        self.session.source.lyrics_fetching = lyrics_fetching;
+        self.session.source.lyrics_candidate_id = lyrics_candidate_id;
+        self.session.source.lyrics_candidates = lyrics_candidates;
         self.state()
     }
 
@@ -186,5 +201,9 @@ impl MediaPlaybackService {
         self.session.source.album = None;
         self.session.source.has_cover_art = false;
         self.session.source.lyrics.clear();
+        self.session.source.lyrics_source = None;
+        self.session.source.lyrics_candidate_id = None;
+        self.session.source.lyrics_candidates.clear();
+        self.session.source.lyrics_fetching = false;
     }
 }

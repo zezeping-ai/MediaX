@@ -1,51 +1,92 @@
 <script setup lang="ts">
-import { toRef } from "vue";
+import { computed, toRef } from "vue";
 import type {
+  LyricsCandidateSummary,
   MediaAudioMeterPayload,
   MediaLyricLine,
+  MediaSnapshot,
   PlaybackState,
 } from "@/modules/media-types";
-import AudioSpectrumChart from "../AudioSpectrumChart.vue";
-import { useAudioLyricPanel } from "./useAudioLyricsOverlay";
+import LyricsCandidatePicker from "./LyricsCandidatePicker.vue";
+import LyricsEmptyState from "./LyricsEmptyState.vue";
+import LyricsPanelControls from "./LyricsPanelControls.vue";
+import LyricsScroller from "./LyricsScroller/index.vue";
+import StereoBridgePanel from "./StereoBridgePanel.vue";
+import { useAudioLyricPanel } from "./useAudioLyricPanel";
+import { useLyricsOverlayControls } from "./useLyricsOverlayControls";
 
 const props = defineProps<{
   mediaKind: "video" | "audio";
   playback: PlaybackState | null;
   audioMeter: MediaAudioMeterPayload | null;
   lyrics: MediaLyricLine[];
+  lyricsSource: string | null;
+  lyricsCandidateId: string | null;
+  lyricsCandidates: LyricsCandidateSummary[];
+  lyricsFetching: boolean;
   title: string;
   artist: string;
   album: string;
   hasCoverArt: boolean;
+  updatePlaybackSnapshot: (snapshot: MediaSnapshot) => void;
 }>();
+
+const currentSourcePath = computed(() => props.playback?.current_path ?? "");
+
+const {
+  adjustOffset,
+  displayedOffsetSeconds,
+  fineOffsetStepSeconds,
+  handleDragPreview,
+  handleDraggingChange,
+  handleOffsetCommit,
+  lyricsDragging,
+  lyricsVisible,
+  playerShowLyrics,
+  resetOffset,
+  toggleLyricsVisible,
+  trackLyricsOffsetSeconds,
+} = useLyricsOverlayControls({ currentSourcePath });
 
 const {
   activeLyricIndex,
-  bodySectionClass,
+  contentInsetClass,
+  hasCoverArt,
   hasLyrics,
+  hasSyncedLyrics,
+  headerDividerClass,
+  headerPanelClass,
+  isDark,
   isMasterMuted,
-  lyricsViewportClass,
-  metadataChips,
-  metadataRowClass,
+  lyricsSourceLabel,
+  lyricsStageClass,
+  mainPanelClass,
   orderedLyrics,
+  playbackPositionSeconds,
+  overlayScrimClass,
   overlayShellClass,
-  playbackStatusText,
   showAudioLyricPanel,
+  showLyricsContent,
   showStereoBridge,
-  stageFrameClass,
   stereoBridgeChannels,
   stereoBridgeFrameClass,
-  titleBlockClass,
+  stereoCaptionClass,
+  stereoMetaClass,
   titleTextClass,
-  trackSubtitle,
+  trackMetaClass,
+  trackMetaLine,
   trackTitle,
   useCompactStereoBridge,
-  visibleLyrics,
+  useDenseStageLayout,
 } = useAudioLyricPanel({
   mediaKind: toRef(props, "mediaKind"),
   playback: toRef(props, "playback"),
   audioMeter: toRef(props, "audioMeter"),
   lyrics: toRef(props, "lyrics"),
+  lyricsSource: toRef(props, "lyricsSource"),
+  lyricsFetching: toRef(props, "lyricsFetching"),
+  lyricsOffsetSeconds: trackLyricsOffsetSeconds,
+  lyricsVisible,
   title: toRef(props, "title"),
   artist: toRef(props, "artist"),
   album: toRef(props, "album"),
@@ -60,102 +101,110 @@ const {
   >
     <div
       class="pointer-events-none absolute inset-0"
-      :class="props.hasCoverArt
-        ? 'bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.03),rgba(0,0,0,0.24))]'
-        : 'bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.06),rgba(0,0,0,0.60))]'"
+      :class="overlayScrimClass"
     />
-    <div class="absolute inset-x-5 bottom-5 top-4 md:bottom-6 md:left-7 md:right-7 md:top-5">
+
+    <div class="pointer-events-auto" :class="contentInsetClass" data-no-window-drag="true">
       <div :class="overlayShellClass">
-        <div
+        <StereoBridgePanel
           v-if="showStereoBridge"
-          :class="stereoBridgeFrameClass"
-        >
-          <div class="mb-1.5 flex items-center justify-between text-[10px] uppercase tracking-[0.22em] text-white/38">
-            <span>Stereo Bridge</span>
-            <span>{{ props.audioMeter?.channels ?? 0 }} ch · {{ useCompactStereoBridge ? "Compact" : "Live Meter" }}</span>
-          </div>
-          <div class="grid gap-1.5 md:grid-cols-2">
-            <div
-              v-for="channel in stereoBridgeChannels"
-              :key="channel.key"
-              class="min-w-0 px-1.5"
-            >
-              <div class="mb-0.5 flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-white/52">
-                <span>{{ channel.label }}</span>
-                <span class="truncate pl-3">{{ channel.peakState }} · {{ channel.peakDbfs }} · Hold {{ channel.holdDbfs }}</span>
+          :channels="stereoBridgeChannels"
+          :audio-meter="props.audioMeter"
+          :frame-class="stereoBridgeFrameClass"
+          :caption-class="stereoCaptionClass"
+          :meta-class="stereoMetaClass"
+          :compact="useCompactStereoBridge"
+          :is-dark="isDark"
+        />
+
+        <div :class="mainPanelClass" data-no-window-drag="true">
+          <div :class="[headerPanelClass, headerDividerClass, 'relative z-20 overflow-visible']">
+            <div class="relative flex min-w-0 items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="flex min-w-0 items-center gap-2">
+                  <p :class="titleTextClass">
+                    {{ trackTitle }}
+                  </p>
+                  <span
+                    v-if="isMasterMuted"
+                    class="shrink-0 rounded-full border px-1.5 py-px text-[9px] uppercase tracking-[0.16em]"
+                    :class="isDark
+                      ? 'border-red-300/20 bg-red-950/30 text-red-200/80'
+                      : 'border-red-400/25 bg-red-50 text-red-600'"
+                  >
+                    Muted
+                  </span>
+                </div>
+                <p
+                  v-if="trackMetaLine"
+                  :class="trackMetaClass"
+                >
+                  {{ trackMetaLine }}
+                </p>
               </div>
-              <AudioSpectrumChart
-                :bars="channel.bars"
-                :hold-bars="channel.holdBars"
-                :peak-hold="channel.peakHold"
-                :compact="useCompactStereoBridge"
+
+              <div class="pointer-events-auto flex shrink-0 items-center gap-2">
+                <LyricsPanelControls
+                  :lyrics-visible="lyricsVisible"
+                  :offset-seconds="displayedOffsetSeconds"
+                  :offset-step-seconds="fineOffsetStepSeconds"
+                  :has-synced-lyrics="hasSyncedLyrics"
+                  :dragging="lyricsDragging"
+                  :is-dark="isDark"
+                  @toggle-visible="toggleLyricsVisible"
+                  @reset-offset="resetOffset"
+                  @adjust-offset="adjustOffset"
+                />
+                <LyricsCandidatePicker
+                  v-if="props.lyricsCandidates.length > 1 && lyricsVisible"
+                  :candidate-id="props.lyricsCandidateId"
+                  :candidates="props.lyricsCandidates"
+                  :fetching="props.lyricsFetching"
+                  :transparent-overlay="hasCoverArt"
+                  :is-dark="isDark"
+                  :update-playback-snapshot="props.updatePlaybackSnapshot"
+                />
+                <span
+                  v-if="lyricsSourceLabel || props.lyricsFetching"
+                  class="text-[9px] uppercase tracking-[0.18em]"
+                  :class="isDark ? 'text-white/45' : 'text-slate-400'"
+                >
+                  {{ props.lyricsFetching ? "Fetching…" : lyricsSourceLabel }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div :class="lyricsStageClass">
+            <div class="relative z-0 flex min-h-0 flex-1 flex-col">
+              <LyricsScroller
+                v-if="showLyricsContent || props.lyricsFetching"
+                :lines="orderedLyrics"
+                :active-index="activeLyricIndex"
+                :playback-position-seconds="playbackPositionSeconds"
+                :fetching="props.lyricsFetching"
+                :dense="useDenseStageLayout"
+                :transparent-overlay="hasCoverArt"
+                :is-dark="isDark"
+                :drag-enabled="hasSyncedLyrics"
+                :base-offset-seconds="trackLyricsOffsetSeconds"
+                @drag-preview="handleDragPreview"
+                @dragging-change="handleDraggingChange"
+                @offset-commit="handleOffsetCommit"
+              />
+              <LyricsEmptyState
+                v-else-if="hasLyrics && !lyricsVisible"
+                :message="playerShowLyrics ? '歌词已隐藏' : '歌词显示已在设置中关闭'"
+                :action-label="playerShowLyrics ? '显示歌词' : undefined"
+                :is-dark="isDark"
+                @action="toggleLyricsVisible"
+              />
+              <LyricsEmptyState
+                v-else
+                message="未找到歌词"
+                :is-dark="isDark"
               />
             </div>
-          </div>
-        </div>
-
-        <div class="min-h-0">
-          <div :class="stageFrameClass">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="border border-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/70">
-                {{ playbackStatusText }}
-              </span>
-              <span class="text-[10px] uppercase tracking-[0.24em] text-white/38">歌词面板</span>
-              <span
-                v-if="isMasterMuted"
-                class="border border-red-300/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-red-100/80"
-              >
-                Master Muted
-              </span>
-            </div>
-
-            <div :class="titleBlockClass">
-              <p :class="titleTextClass">
-                {{ trackTitle }}
-              </p>
-              <p
-                v-if="trackSubtitle"
-                class="mt-1.5 text-sm tracking-[0.12em] text-white/58 md:text-base"
-              >
-                {{ trackSubtitle }}
-              </p>
-            </div>
-
-            <div v-if="metadataChips.length > 0" :class="metadataRowClass">
-              <span
-                v-for="chip in metadataChips"
-                :key="chip"
-                class="rounded-full border border-white/8 px-2.5 py-1 text-[10px] tracking-[0.12em] text-white/62"
-              >
-                {{ chip }}
-              </span>
-            </div>
-
-            <div
-              v-if="hasLyrics"
-              :class="bodySectionClass"
-            >
-              <div class="mb-1.5 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-white/40">
-                <span>Lyrics</span>
-                <span>{{ activeLyricIndex >= 0 ? `${activeLyricIndex + 1}/${orderedLyrics.length}` : "Ready" }}</span>
-              </div>
-              <div :class="lyricsViewportClass">
-                <div class="pointer-events-none absolute inset-x-0 top-0 h-10 bg-linear-to-b from-black/40 to-transparent" />
-                <div class="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-linear-to-t from-black/40 to-transparent" />
-                <div class="relative py-2">
-                  <p
-                    v-for="entry in visibleLyrics"
-                    :key="`${entry.line.time_seconds}-${entry.absoluteIndex}`"
-                    class="py-1.5 text-[14px] tracking-wider text-white/24 transition-all duration-300 md:text-base"
-                    :class="entry.absoluteIndex === activeLyricIndex ? 'scale-[1.01] text-lg text-white/98 [text-shadow:0_4px_24px_rgba(0,0,0,0.5)] md:text-[20px]' : ''"
-                  >
-                    {{ entry.line.text }}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div v-else :class="bodySectionClass" />
           </div>
         </div>
       </div>

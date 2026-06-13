@@ -7,6 +7,7 @@ import {
   type PlaybackAdvanceMode,
   type PlaylistItem,
 } from "@/pages/home/composables/usePlaybackPlaylist/types";
+import { useAppSurfaceTheme } from "@/pages/home/composables/useAppSurfaceTheme";
 import HistoryList from "./HistoryList.vue";
 import QueueList from "./QueueList.vue";
 
@@ -41,6 +42,7 @@ const emit = defineEmits<{
 
 const activeTab = ref<"queue" | "history">("queue");
 const drawerReady = ref(false);
+const { countBadge, drawerMaskStyle, insetPanel, sectionCaption } = useAppSurfaceTheme();
 
 function handleAfterOpenChange(nextOpen: boolean) {
   drawerReady.value = nextOpen;
@@ -58,7 +60,7 @@ whenever(() => !open.value, () => {
     width="min(420px, 92vw)"
     :closable="true"
     :push="false"
-    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.45)' }"
+    :mask-style="drawerMaskStyle"
     root-class-name="playlist-panel-drawer"
     @close="open = false"
     @after-open-change="handleAfterOpenChange"
@@ -67,15 +69,15 @@ whenever(() => !open.value, () => {
       <div class="flex items-center gap-2">
         <Icon icon="lucide:list-music" width="18" height="18" />
         <span>播放列表</span>
-        <span v-if="queueCount" class="rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/70">
+        <span v-if="queueCount" :class="countBadge">
           {{ queueCount }}
         </span>
       </div>
     </template>
 
     <div class="flex flex-col gap-4">
-      <div class="rounded-xl border border-white/8 bg-white/3 p-2.5">
-        <div class="mb-2 text-[10px] uppercase tracking-[0.16em] text-white/45">
+      <div :class="insetPanel">
+        <div class="mb-2" :class="sectionCaption">
           播放模式
         </div>
         <div class="grid grid-cols-4 gap-1.5">
@@ -138,45 +140,3 @@ whenever(() => !open.value, () => {
     </div>
   </a-drawer>
 </template>
-
-<style>
-.playlist-panel-drawer .ant-drawer-content {
-  background: linear-gradient(180deg, rgba(18, 18, 22, 0.98) 0%, rgba(10, 10, 14, 0.98) 100%);
-}
-
-.playlist-panel-drawer .ant-drawer-content {
-  display: flex;
-  flex-direction: column;
-}
-
-.playlist-panel-drawer .ant-drawer-header {
-  border-color: rgba(255, 255, 255, 0.08);
-  flex-shrink: 0;
-}
-
-.playlist-panel-drawer .ant-drawer-body {
-  border-color: rgba(255, 255, 255, 0.08);
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.playlist-panel-drawer .ant-drawer-title,
-.playlist-panel-drawer .ant-drawer-close {
-  color: rgba(255, 255, 255, 0.88);
-}
-
-.playlist-panel-drawer .ant-tabs-tab {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.playlist-panel-drawer .ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: rgba(255, 255, 255, 0.92);
-}
-
-/* SortableJS 在含 transform 的祖先下无法正确计算换位 */
-.playlist-panel-drawer.ant-drawer-open .ant-drawer-content-wrapper {
-  transform: none !important;
-}
-</style>

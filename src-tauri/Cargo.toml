@@ -51,6 +51,7 @@ webp = "0.3.1"
 oxipng = { version = "9", default-features = false, features = ["parallel"] }
 mozjpeg = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+encoding_rs = "0.8"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ffmpeg-next = { version = "7", default-features = false, features = [
@@ -75,3 +76,6 @@ ffmpeg-next = { version = "7", default-features = false, features = [
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 souvlaki = "0.8.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }

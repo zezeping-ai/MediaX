@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::app::media::model::MediaLyricLine;
+use crate::app::media::model::{LyricsCandidateSummary, MediaLyricLine};
 use crate::app::media::playback::dto::PlaybackMediaKind;
 
 #[derive(Clone, Serialize)]
@@ -15,6 +15,10 @@ pub struct MediaMetadataPayload {
     pub album: Option<String>,
     pub has_cover_art: bool,
     pub lyrics: Vec<MediaLyricLine>,
+    pub lyrics_source: Option<String>,
+    pub lyrics_candidate_id: Option<String>,
+    pub lyrics_candidates: Vec<LyricsCandidateSummary>,
+    pub lyrics_fetching: bool,
 }
 
 #[derive(Clone, Serialize)]

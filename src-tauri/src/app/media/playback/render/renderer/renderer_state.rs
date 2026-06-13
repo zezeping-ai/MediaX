@@ -15,6 +15,8 @@ use super::helpers::wait_for_render_signal;
 
 pub(super) const FRAME_QUEUE_HARD_CAPACITY: usize = 6;
 const RENDER_LOOP_IDLE_TICK: Duration = Duration::from_millis(8);
+const BACKDROP_THEME_DARK: u8 = 0;
+const BACKDROP_THEME_LIGHT: u8 = 1;
 const QUEUE_GROW_LAG_MS: f64 = 24.0;
 const QUEUE_SHRINK_LAG_MS: f64 = 8.0;
 const QUEUE_GROW_STREAK: u8 = 2;
@@ -37,6 +39,7 @@ pub(super) struct RendererInner {
     pub(super) render_cv: Condvar,
     pub(super) frame_slot_cv: Condvar,
     pub(super) video_scale_mode: AtomicU8,
+    pub(super) backdrop_theme: AtomicU8,
     pub(super) is_realtime_source: AtomicBool,
     pub(super) target_queue_capacity: AtomicUsize,
     pub(super) last_render_cost_micros: AtomicU64,
@@ -80,6 +83,7 @@ impl RendererState {
                 render_cv: Condvar::new(),
                 frame_slot_cv: Condvar::new(),
                 video_scale_mode: AtomicU8::new(VideoScaleMode::Contain.as_u8()),
+                backdrop_theme: AtomicU8::new(BACKDROP_THEME_DARK),
                 is_realtime_source: AtomicBool::new(false),
                 target_queue_capacity: AtomicUsize::new(
                     queue_policy::FRAME_QUEUE_TARGET_BASE_NON_REALTIME,
@@ -98,6 +102,15 @@ impl RendererState {
         self.inner
             .video_scale_mode
             .store(mode.as_u8(), Ordering::Relaxed);
+    }
+
+    pub fn set_backdrop_theme(&self, theme: &str) {
+        let value = if theme.eq_ignore_ascii_case("light") {
+            BACKDROP_THEME_LIGHT
+        } else {
+            BACKDROP_THEME_DARK
+        };
+        self.inner.backdrop_theme.store(value, Ordering::Relaxed);
     }
 
     pub fn set_source_frame_duration(&self, frame_duration_seconds: f64) {
@@ -146,6 +159,9 @@ impl RendererState {
             move || {
                 if let Ok(mut guard) = inner.renderer.lock() {
                     if let Some(renderer) = guard.as_mut() {
+                        renderer.set_backdrop_color(backdrop_color_from_theme_u8(
+                            inner.backdrop_theme.load(Ordering::Relaxed),
+                        ));
                         let _ = renderer.render(None, true);
                     }
                 }
@@ -186,6 +202,9 @@ impl RendererState {
                                 let render_start = Instant::now();
                                 renderer.set_video_scale_mode(VideoScaleMode::from_u8(
                                     inner.video_scale_mode.load(Ordering::Relaxed),
+                                ));
+                                renderer.set_backdrop_color(backdrop_color_from_theme_u8(
+                                    inner.backdrop_theme.load(Ordering::Relaxed),
                                 ));
                                 let _ = renderer.render(frame.as_ref(), true);
                                 let elapsed = render_start.elapsed();
@@ -309,6 +328,9 @@ impl RendererState {
             if let Ok(mut guard) = inner.renderer.lock() {
                 if let Some(renderer) = guard.as_mut() {
                     renderer.clear_uploaded_frame();
+                    renderer.set_backdrop_color(backdrop_color_from_theme_u8(
+                        inner.backdrop_theme.load(Ordering::Relaxed),
+                    ));
                     let _ = renderer.render(None, true);
                 }
             }
@@ -522,5 +544,31 @@ pub(super) fn source_frame_duration_seconds(inner: &RendererInner) -> f64 {
         value
     } else {
         1.0 / 24.0
+    }
+}
+
+pub(crate) fn backdrop_color_from_theme(theme: &str) -> wgpu::Color {
+    backdrop_color_from_theme_u8(if theme.eq_ignore_ascii_case("light") {
+        BACKDROP_THEME_LIGHT
+    } else {
+        BACKDROP_THEME_DARK
+    })
+}
+
+pub(super) fn backdrop_color_from_theme_u8(theme: u8) -> wgpu::Color {
+    if theme == BACKDROP_THEME_LIGHT {
+        wgpu::Color {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        }
+    } else {
+        wgpu::Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        }
     }
 }

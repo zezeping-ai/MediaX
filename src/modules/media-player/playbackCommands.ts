@@ -40,6 +40,34 @@ export function playbackOpenSource(path: string, resumeLastPosition = false) {
   );
 }
 
+export function playbackSelectLyricsCandidate(candidateId: string) {
+  return invokeMediaCommandValidated<MediaSnapshot>("playback_select_lyrics_candidate", isMediaSnapshot, {
+    candidateId,
+  });
+}
+
+export function playbackSetLyricsFetchSettings(settings: {
+  autoFetchOnlineLyrics: boolean;
+  providers: {
+    lrclib: boolean;
+    lrcapi: boolean;
+    kugou: boolean;
+    netease: boolean;
+  };
+  lrcApiBaseUrl: string;
+}) {
+  return invokeMediaCommand<void>("playback_set_lyrics_fetch_settings", {
+    autoFetchOnlineLyrics: settings.autoFetchOnlineLyrics,
+    providers: {
+      lrclib: settings.providers.lrclib,
+      lrcapi: settings.providers.lrcapi,
+      kugou: settings.providers.kugou,
+      netease: settings.providers.netease,
+    },
+    lrcApiBaseUrl: settings.lrcApiBaseUrl,
+  });
+}
+
 export function playbackSetResumeLastPosition(enabled: boolean) {
   return invokeMediaCommand<void>("playback_set_resume_last_position", { enabled });
 }

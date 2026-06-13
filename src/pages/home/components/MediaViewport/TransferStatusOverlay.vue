@@ -12,7 +12,7 @@ const props = defineProps<{
   cacheWriteSpeedBytesPerSecond: number | null;
 }>();
 
-const { playerShowDownlinkSpeed, playerShowUplinkSpeed } = usePreferences();
+const { playerShowDownlinkSpeed, playerShowUplinkSpeed, isDark } = usePreferences();
 
 function isUrlSource(value: string) {
   const v = (value || "").trim().toLowerCase();
@@ -78,8 +78,9 @@ const compactSpeedRows = computed(() => {
       key: "uplink",
       label: "上行",
       value: uplinkSpeedText.value,
-      toneClass:
-        "border-sky-400/35 bg-sky-400/12 text-sky-100 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.14)]",
+      toneClass: isDark.value
+        ? "border-sky-400/35 bg-sky-400/12 text-sky-100 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.14)]"
+        : "border-sky-500/30 bg-sky-50 text-sky-800 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.12)]",
       title: "缓存/录制写入速度",
     });
   }
@@ -94,10 +95,29 @@ const cachePathShort = computed(() => {
   return `${full.slice(0, 14)}…${full.slice(-24)}`;
 });
 
+const speedPanelClass = computed(() => (
+  isDark.value
+    ? "rounded-xl bg-slate-950/30 px-2.5 py-2 text-[12px] leading-4 text-white/90 shadow-[0_10px_30px_rgba(0,0,0,0.25)] backdrop-blur-md"
+    : "rounded-xl border border-black/8 bg-white/78 px-2.5 py-2 text-[12px] leading-4 text-slate-800 shadow-[0_10px_28px_rgba(15,23,42,0.1)] backdrop-blur-md"
+));
+
+const cachePanelClass = computed(() => (
+  isDark.value
+    ? "rounded-xl border border-white/12 bg-slate-950/30 px-3 py-2 text-[12px] leading-4 text-white/90 shadow-[0_10px_30px_rgba(0,0,0,0.25)] backdrop-blur-md"
+    : "rounded-xl border border-black/8 bg-white/78 px-3 py-2 text-[12px] leading-4 text-slate-800 shadow-[0_10px_28px_rgba(15,23,42,0.1)] backdrop-blur-md"
+));
+
+const cacheLabelClass = computed(() => (isDark.value ? "text-white/65" : "text-slate-600"));
+const cacheValueClass = computed(() => (isDark.value ? "text-white/95" : "text-slate-900"));
+const cacheMutedClass = computed(() => (isDark.value ? "text-white/50" : "text-slate-400"));
+const cachePathClass = computed(() => (isDark.value ? "text-white/55" : "text-slate-500"));
+
 function resolveDownlinkToneClass(value: number | null) {
   const ratio = typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
   if (ratio === null) {
-    return "border-white/15 bg-white/8 text-white/90 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]";
+    return isDark.value
+      ? "border-white/15 bg-white/8 text-white/90 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
+      : "border-black/10 bg-black/4 text-slate-700 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]";
   }
   if (ratio >= 1.0) {
     return "border-emerald-400/35 bg-emerald-400/12 text-emerald-50 shadow-[inset_0_0_0_1px_rgba(52,211,153,0.14)]";
@@ -130,7 +150,7 @@ function resolveDownlinkHint(value: number | null) {
   >
     <div
       v-if="compactSpeedRows.length"
-      class="rounded-xl bg-slate-950/30 px-2.5 py-2 text-[12px] leading-4 text-white/90 shadow-[0_10px_30px_rgba(0,0,0,0.25)] backdrop-blur-md"
+      :class="speedPanelClass"
     >
       <div class="flex flex-wrap items-center gap-2">
         <div
@@ -150,17 +170,17 @@ function resolveDownlinkHint(value: number | null) {
 
     <div
       v-if="canShowCacheRecording"
-      class="rounded-xl border border-white/12 bg-slate-950/30 px-3 py-2 text-[12px] leading-4 text-white/90 shadow-[0_10px_30px_rgba(0,0,0,0.25)] backdrop-blur-md"
+      :class="cachePanelClass"
     >
       <div class="mb-1 flex items-center justify-between gap-3">
-        <span class="text-white/65">录制写入</span>
-        <span class="tabular-nums text-white/95">
+        <span :class="cacheLabelClass">录制写入</span>
+        <span class="tabular-nums" :class="cacheValueClass">
           {{ formatBytes(cacheOutputSizeBytes) }}
-          <span class="text-white/50">·</span>
+          <span :class="cacheMutedClass">·</span>
           {{ formatBytes(cacheWriteSpeedBytesPerSecond) }}/s
         </span>
       </div>
-      <div class="text-[11px] text-white/55" :title="cacheOutputPath">{{ cachePathShort }}</div>
+      <div class="text-[11px]" :class="cachePathClass" :title="cacheOutputPath">{{ cachePathShort }}</div>
     </div>
   </div>
 </template>

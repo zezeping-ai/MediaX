@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount } from "vue";
 import type { PreviewFrame } from "@/modules/media-types";
+import { usePlayerChromeTheme } from "@/pages/home/composables/usePlayerChromeTheme";
 import { useTimelineHoverPreview } from "../../composables/useTimelineHoverPreview";
 import { formatSeconds } from "./playbackControlsUtils";
 
@@ -15,6 +16,8 @@ const props = defineProps<{
   sourceKey: string;
   requestPreviewFrame?: RequestPreviewFrame;
 }>();
+
+const { isDark } = usePlayerChromeTheme();
 
 const hoverPreview = useTimelineHoverPreview(
   () => props.durationSeconds,
@@ -58,10 +61,14 @@ onBeforeUnmount(() => {
         :src="hoverImageSrc"
         :width="hoverImageWidth"
         :height="hoverImageHeight"
-        class="rounded-lg border border-white/15 bg-black/50 shadow-[0_14px_40px_rgba(0,0,0,0.55)]"
+        class="rounded-lg border shadow-[0_14px_40px_rgba(0,0,0,0.55)]"
+        :class="isDark ? 'border-white/15 bg-black/50' : 'border-black/10 bg-white/90'"
         alt="preview frame"
       />
-      <span class="rounded-md border border-white/10 bg-black/55 px-2 py-0.5 text-[11px] leading-4 text-white/90">
+      <span
+        class="rounded-md border px-2 py-0.5 text-[11px] leading-4"
+        :class="isDark ? 'border-white/10 bg-black/55 text-white/90' : 'border-black/10 bg-white/92 text-slate-800'"
+      >
         {{ formatSeconds(hoverSeconds) }}
       </span>
     </div>

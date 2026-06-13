@@ -39,6 +39,8 @@ export type CenterControlViewProps = {
   channelRouting: PlaybackState["channel_routing"];
   speedDropdownOpen: boolean;
   qualityDropdownOpen: boolean;
+  hasNext: boolean;
+  hasPrevious: boolean;
 };
 
 export type SideActionViewProps = {
@@ -49,6 +51,7 @@ export type SideActionViewProps = {
   queueCount: number;
   cacheIcon: string;
   lockIcon: string;
+  showDecodeBadge: boolean;
   decodeBadgeClass: string;
   decodeBadgeLabel: string;
   decodeBadgeTitle: string;
@@ -71,6 +74,8 @@ export type CenterControlEventMap = {
   "set-left-channel-muted": (value: boolean) => void;
   "set-right-channel-muted": (value: boolean) => void;
   "set-channel-routing": (value: PlaybackState["channel_routing"]) => void;
+  "play-next": () => void;
+  "play-previous": () => void;
 };
 
 export type SideActionEventMap = {
@@ -98,6 +103,8 @@ export type CenterControlEmitContract = {
   "set-left-channel-muted": [boolean];
   "set-right-channel-muted": [boolean];
   "set-channel-routing": [PlaybackState["channel_routing"]];
+  "play-next": [];
+  "play-previous": [];
 };
 
 export type SideActionEmitContract = {

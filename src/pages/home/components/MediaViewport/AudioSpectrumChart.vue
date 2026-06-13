@@ -3,13 +3,6 @@ import { useResizeObserver } from "@vueuse/core";
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { ECharts, EChartsCoreOption } from "echarts/core";
 
-const props = defineProps<{
-  bars: number[];
-  holdBars: number[];
-  peakHold: number;
-  compact?: boolean;
-}>();
-
 const chartEl = ref<HTMLDivElement | null>(null);
 let chart: ECharts | null = null;
 let echartsModule: (typeof import("echarts/core")) | null = null;
@@ -42,9 +35,41 @@ function axisDbLabel(value: number) {
   return matched === undefined ? "" : `${matched}`;
 }
 
+const props = defineProps<{
+  bars: number[];
+  holdBars: number[];
+  peakHold: number;
+  compact?: boolean;
+  isDark?: boolean;
+}>();
+
+function chartPalette() {
+  if (props.isDark !== false) {
+    return {
+      axisLabel: "rgba(255,255,255,0.42)",
+      axisMuted: "rgba(255,255,255,0.32)",
+      grid: "rgba(255,255,255,0.07)",
+      barTop: "rgba(255,255,255,0.95)",
+      barBottom: "rgba(255,255,255,0.22)",
+      hold: "rgba(255,255,255,0.65)",
+      peak: "rgba(255,255,255,0.35)",
+    };
+  }
+  return {
+    axisLabel: "rgba(15,23,42,0.45)",
+    axisMuted: "rgba(15,23,42,0.38)",
+    grid: "rgba(15,23,42,0.08)",
+    barTop: "rgba(30,41,59,0.88)",
+    barBottom: "rgba(30,41,59,0.18)",
+    hold: "rgba(30,41,59,0.55)",
+    peak: "rgba(30,41,59,0.28)",
+  };
+}
+
 function buildOption(): EChartsCoreOption {
   const peakLine = clamp01(props.peakHold);
   const isCompact = Boolean(props.compact);
+  const palette = chartPalette();
   return {
     animation: false,
     backgroundColor: "transparent",
@@ -67,7 +92,7 @@ function buildOption(): EChartsCoreOption {
       },
       axisLabel: {
         interval: 0,
-        color: "rgba(255,255,255,0.30)",
+        color: palette.axisLabel,
         fontSize: 9,
         margin: isCompact ? 4 : 6,
         formatter: (value: string) => FREQ_LABELS.get(Number(value)) ?? "",
@@ -75,7 +100,7 @@ function buildOption(): EChartsCoreOption {
       splitLine: {
         show: true,
         lineStyle: {
-          color: "rgba(255,255,255,0.08)",
+          color: palette.grid,
           width: 1,
         },
       },
@@ -92,7 +117,7 @@ function buildOption(): EChartsCoreOption {
         show: false,
       },
       axisLabel: {
-        color: "rgba(255,255,255,0.24)",
+        color: palette.axisMuted,
         fontSize: 9,
         margin: isCompact ? 4 : 6,
         formatter: (value: number) => axisDbLabel(value),
@@ -100,7 +125,7 @@ function buildOption(): EChartsCoreOption {
       splitLine: {
         show: true,
         lineStyle: {
-          color: "rgba(255,255,255,0.08)",
+          color: palette.grid,
           width: 1,
         },
       },
@@ -119,8 +144,8 @@ function buildOption(): EChartsCoreOption {
         barMinHeight: isCompact ? 5 : 6,
         itemStyle: {
           color: new echartsModule!.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: "rgba(255,255,255,0.92)" },
-            { offset: 1, color: "rgba(255,255,255,0.18)" },
+            { offset: 0, color: palette.barTop },
+            { offset: 1, color: palette.barBottom },
           ]),
           opacity: 0.92,
         },
@@ -132,7 +157,7 @@ function buildOption(): EChartsCoreOption {
           symbol: "none",
           animation: false,
           lineStyle: {
-            color: "rgba(255,255,255,0.28)",
+            color: palette.peak,
             width: 1,
           },
           label: {
@@ -148,7 +173,7 @@ function buildOption(): EChartsCoreOption {
         symbol: "rect",
         symbolSize: isCompact ? [10, 2] : [11, 2],
         itemStyle: {
-          color: "rgba(255,255,255,0.58)",
+          color: palette.hold,
         },
         silent: true,
         emphasis: {
@@ -189,6 +214,7 @@ async function loadEcharts() {
       charts.BarChart,
       charts.ScatterChart,
       components.GridComponent,
+      components.TooltipComponent,
       renderers.CanvasRenderer,
     ]);
     chartsRegistered = true;
@@ -233,7 +259,18 @@ function scheduleChartDataUpdate() {
 }
 
 watch(
-  () => [props.compact, props.bars, props.holdBars, props.peakHold],
+  () => [props.compact, props.isDark],
+  () => {
+    if (!chart) {
+      void ensureChart();
+      return;
+    }
+    chart.setOption(buildOption(), true);
+  },
+);
+
+watch(
+  () => [props.bars, props.holdBars, props.peakHold],
   () => {
     if (!chart) {
       void ensureChart();
@@ -272,5 +309,5 @@ function buildHoldData(values: number[]) {
 </script>
 
 <template>
-  <div ref="chartEl" :class="props.compact ? 'h-32 w-full' : 'h-44 w-full'" />
+  <div ref="chartEl" :class="props.compact ? 'h-28 w-full' : 'h-36 w-full'" />
 </template>

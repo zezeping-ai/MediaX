@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import {
+  type LyricsCandidateSummary,
   type MediaAudioMeterPayload,
   type MediaLyricLine,
+  type MediaSnapshot,
   type PlaybackChannelRouting,
   type PlaybackState,
 } from "@/modules/media-types";
@@ -12,6 +14,7 @@ import {
 } from "@/modules/media-player/windowCommands";
 import AudioLyricPanel from "./AudioLyricsOverlay";
 import TransferStatusOverlay from "./TransferStatusOverlay.vue";
+import { useAppSurfaceTheme } from "@/pages/home/composables/useAppSurfaceTheme";
 
 const props = defineProps<{
   source: string;
@@ -27,6 +30,10 @@ const props = defineProps<{
   metadataAlbum: string;
   metadataHasCoverArt: boolean;
   metadataLyrics: MediaLyricLine[];
+  metadataLyricsSource: string | null;
+  metadataLyricsCandidateId: string | null;
+  metadataLyricsCandidates: LyricsCandidateSummary[];
+  metadataLyricsFetching: boolean;
   setLeftChannelVolume: (volume: number) => Promise<void>;
   setRightChannelVolume: (volume: number) => Promise<void>;
   setLeftChannelMuted: (muted: boolean) => Promise<void>;
@@ -38,6 +45,7 @@ const props = defineProps<{
   cacheOutputPath: string;
   cacheOutputSizeBytes: number | null;
   cacheWriteSpeedBytesPerSecond: number | null;
+  updatePlaybackSnapshot: (snapshot: MediaSnapshot) => void;
 }>();
 
 const emit = defineEmits<{
@@ -71,6 +79,8 @@ const showPlaybackSurface = computed(() =>
 const showEmptySourceActions = computed(() =>
   props.initialized && !props.loading && !hasRenderableSource.value && isTerminalPlaybackState.value,
 );
+
+const { emptyStateBackdrop, emptyStatePanel } = useAppSurfaceTheme();
 
 const WINDOW_DRAG_BLOCK_SELECTORS = [
   "button",
@@ -128,15 +138,22 @@ async function handleViewportMouseDown(event: MouseEvent) {
       leave-to-class="opacity-0"
     >
       <div v-if="showPlaybackSurface" key="playback-surface" class="h-full w-full" />
-      <div v-else-if="showEmptySourceActions" key="empty-actions" class="p-5">
-        <a-empty description="请从 File 菜单打开本地文件或 URL">
-          <template #default>
-            <a-space>
-              <a-button type="primary" @click="emit('quick-open-local')">打开本地文件</a-button>
-              <a-button @click="emit('quick-open-url')">打开 URL</a-button>
-            </a-space>
-          </template>
-        </a-empty>
+      <div
+        v-else-if="showEmptySourceActions"
+        key="empty-actions"
+        class="absolute inset-0 z-10 flex items-center justify-center p-5"
+        :class="emptyStateBackdrop"
+      >
+        <div :class="emptyStatePanel">
+          <a-empty description="请从 File 菜单打开本地文件或 URL">
+            <template #default>
+              <a-space>
+                <a-button type="primary" @click="emit('quick-open-local')">打开本地文件</a-button>
+                <a-button @click="emit('quick-open-url')">打开 URL</a-button>
+              </a-space>
+            </template>
+          </a-empty>
+        </div>
       </div>
     </Transition>
     <AudioLyricPanel
@@ -144,6 +161,10 @@ async function handleViewportMouseDown(event: MouseEvent) {
       :playback="playback"
       :audio-meter="latestAudioMeter"
       :lyrics="metadataLyrics"
+      :lyrics-source="metadataLyricsSource"
+      :lyrics-candidate-id="metadataLyricsCandidateId"
+      :lyrics-candidates="metadataLyricsCandidates"
+      :lyrics-fetching="metadataLyricsFetching"
       :title="metadataTitle"
       :artist="metadataArtist"
       :album="metadataAlbum"
@@ -152,6 +173,7 @@ async function handleViewportMouseDown(event: MouseEvent) {
       :set-right-channel-volume="setRightChannelVolume"
       :set-left-channel-muted="setLeftChannelMuted"
       :set-right-channel-muted="setRightChannelMuted"
+      :update-playback-snapshot="props.updatePlaybackSnapshot"
     />
     <TransferStatusOverlay
       :source="source"

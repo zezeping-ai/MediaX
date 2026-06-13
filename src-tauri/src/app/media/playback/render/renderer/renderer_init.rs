@@ -289,6 +289,7 @@ impl Renderer {
             texture_size: (1, 1),
             has_uploaded_frame: false,
             video_scale_mode: VideoScaleMode::Contain,
+            backdrop_color: super::renderer_state::backdrop_color_from_theme("dark"),
         })
     }
 

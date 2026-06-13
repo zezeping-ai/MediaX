@@ -51,6 +51,10 @@ export interface PlaybackState {
   album: string | null;
   has_cover_art: boolean;
   lyrics: MediaLyricLine[];
+  lyrics_source: string | null;
+  lyrics_candidate_id: string | null;
+  lyrics_candidates: LyricsCandidateSummary[];
+  lyrics_fetching: boolean;
   position_seconds: number;
   duration_seconds: number;
   buffered_position_seconds: number;
@@ -102,6 +106,14 @@ export interface PreviewFrame {
 export interface MediaLyricLine {
   time_seconds: number;
   text: string;
+}
+
+export interface LyricsCandidateSummary {
+  id: string;
+  provider_id: string;
+  label: string;
+  synced: boolean;
+  preview: string;
 }
 
 export interface MediaAudioMeterPayload {
@@ -272,6 +284,10 @@ export interface MediaMetadataPayload {
   album?: string | null;
   has_cover_art?: boolean;
   lyrics?: MediaLyricLine[];
+  lyrics_source?: string | null;
+  lyrics_candidate_id?: string | null;
+  lyrics_candidates?: LyricsCandidateSummary[];
+  lyrics_fetching?: boolean;
 }
 
 export interface MediaErrorPayload {

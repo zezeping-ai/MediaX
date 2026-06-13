@@ -43,7 +43,7 @@ impl Renderer {
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        load: wgpu::LoadOp::Clear(self.backdrop_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],

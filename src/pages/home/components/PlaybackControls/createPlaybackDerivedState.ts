@@ -4,6 +4,7 @@ import {
   formatDecodeBadgeTitle,
   type PlaybackQualityOption,
 } from "./playbackControlsUtils";
+import { usePreferences } from "@/modules/preferences";
 import type { PlaybackControlsProps } from "./usePlaybackControlsViewModel";
 
 export function createPlaybackDerivedState(
@@ -12,6 +13,7 @@ export function createPlaybackDerivedState(
   currentTime: { value: number },
   volumePreview: { value: number },
 ) {
+  const { isDark } = usePreferences();
   const canSeek = computed(() => {
     const playback = props.playback;
     if (!playback || !playback.current_path) {
@@ -30,6 +32,7 @@ export function createPlaybackDerivedState(
     const matched = props.qualityOptions.find((option: PlaybackQualityOption) => option.key === props.selectedQuality);
     return matched?.label ?? "原画";
   });
+  const showDecodeBadge = computed(() => props.playback?.media_kind !== "audio");
   const decodeBadgeLabel = computed(() =>
     formatDecodeBadgeLabel(Boolean(props.playback?.hw_decode_active)),
   );
@@ -40,11 +43,16 @@ export function createPlaybackDerivedState(
       props.playback?.hw_decode_error,
     ),
   );
-  const decodeBadgeClass = computed(() =>
-    props.playback?.hw_decode_active
-      ? "border-emerald-400/28 bg-emerald-500/12 text-emerald-100"
-      : "border-amber-300/28 bg-amber-500/12 text-amber-100",
-  );
+  const decodeBadgeClass = computed(() => {
+    if (props.playback?.hw_decode_active) {
+      return isDark.value
+        ? "border-emerald-400/28 bg-emerald-500/12 text-emerald-100"
+        : "border-emerald-500/25 bg-emerald-50 text-emerald-800";
+    }
+    return isDark.value
+      ? "border-amber-300/28 bg-amber-500/12 text-amber-100"
+      : "border-amber-500/25 bg-amber-50 text-amber-800";
+  });
   const volumeIcon = computed(() => {
     if (props.muted || volumePreview.value <= 0) {
       return "lucide:volume-x";
@@ -62,6 +70,7 @@ export function createPlaybackDerivedState(
   return {
     cacheIcon,
     canSeek,
+    showDecodeBadge,
     decodeBadgeClass,
     decodeBadgeLabel,
     decodeBadgeTitle,

@@ -69,6 +69,7 @@ export function usePlaybackControlsViewModel(
     cacheIcon: derivedState.cacheIcon,
     bufferedPosition,
     currentTime,
+    showDecodeBadge: derivedState.showDecodeBadge,
     decodeBadgeClass: derivedState.decodeBadgeClass,
     decodeBadgeLabel: derivedState.decodeBadgeLabel,
     decodeBadgeTitle: derivedState.decodeBadgeTitle,

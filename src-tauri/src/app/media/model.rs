@@ -47,6 +47,15 @@ pub struct MediaLyricLine {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LyricsCandidateSummary {
+    pub id: String,
+    pub provider_id: String,
+    pub label: String,
+    pub synced: bool,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheRecordingStatus {
     pub recording: bool,
     pub source: Option<String>,

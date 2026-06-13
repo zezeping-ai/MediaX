@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import UrlHistoryList from "./UrlHistoryList.vue";
 import type { UrlPlaylistItem } from "./types";
+import { useAppSurfaceTheme } from "@/pages/home/composables/useAppSurfaceTheme";
 
 const props = defineProps<{
   open: boolean;
@@ -26,6 +27,7 @@ function setOpen(value: boolean) {
 }
 
 const canConfirm = computed(() => props.inputValue.trim().length > 0 && !props.busy);
+const { sectionSubtitle, sectionTitle } = useAppSurfaceTheme();
 </script>
 
 <template>
@@ -41,8 +43,8 @@ const canConfirm = computed(() => props.inputValue.trim().length > 0 && !props.b
       <div class="space-y-2">
         <div class="flex items-center justify-between gap-3">
           <div>
-            <div class="text-sm font-medium text-white/88">媒体直链</div>
-            <div class="text-xs text-white/42">
+            <div :class="sectionTitle">媒体直链</div>
+            <div :class="sectionSubtitle">
               支持 http(s)、rtsp、rtmp、mms
             </div>
           </div>

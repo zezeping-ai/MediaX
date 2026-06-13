@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import { applyResumeLastPositionPreference } from "@/modules/player-settings-actions";
+import { applyLyricsFetchSettingsPreference, applyResumeLastPositionPreference } from "@/modules/player-settings-actions";
 import { usePreferences } from "@/modules/preferences";
 import type { HardwareDecodeMode, PreviewFrame } from "@/modules/media-types";
 import { useCacheRecordingController } from "./useCacheRecordingController";
@@ -23,6 +23,9 @@ export function useMediaCenter() {
     playerAlwaysOnTop,
     playerVideoScaleMode,
     playerResumeLastPosition,
+    playerAutoFetchOnlineLyrics,
+    playerLyricsProviders,
+    playerLrcApiBaseUrl,
   } = usePreferences();
   const mediaSession = useMediaSession();
   const commands = useMediaCommands();
@@ -137,10 +140,14 @@ export function useMediaCenter() {
     playerAlwaysOnTop,
     playerVideoScaleMode,
     playerResumeLastPosition,
+    playerAutoFetchOnlineLyrics,
+    playerLyricsProviders,
+    playerLrcApiBaseUrl,
     applyHwDecodePreference,
     applyAlwaysOnTopPreference,
     applyVideoScaleModePreference,
     applyResumeLastPositionPreference,
+    applyLyricsFetchSettingsPreference,
     onReady: async () => {
       await mediaCenterLifecycle.mountMediaCenter();
     },
@@ -211,7 +218,12 @@ export function useMediaCenter() {
     metadataAlbum: mediaSession.metadataAlbum,
     metadataHasCoverArt: mediaSession.metadataHasCoverArt,
     metadataLyrics: mediaSession.metadataLyrics,
+    metadataLyricsSource: mediaSession.metadataLyricsSource,
+    metadataLyricsCandidateId: mediaSession.metadataLyricsCandidateId,
+    metadataLyricsCandidates: mediaSession.metadataLyricsCandidates,
+    metadataLyricsFetching: mediaSession.metadataLyricsFetching,
     metadataVideoHeight: mediaSession.metadataVideoHeight,
+    updatePlaybackSnapshot: mediaSession.updateSnapshot,
     playlistController,
     ...actions,
   };

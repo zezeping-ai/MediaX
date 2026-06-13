@@ -26,6 +26,8 @@ export interface PlaybackControlsProps {
   requestPreviewFrame?: RequestPreviewFrame;
   playlistOpen: boolean;
   queueCount: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
   resumePromptPositionSeconds: number | null;
 }
 
@@ -49,6 +51,8 @@ export interface PlaybackControlsEmit {
   (event: "toggle-cache"): void;
   (event: "toggle-lock"): void;
   (event: "toggle-playlist"): void;
+  (event: "play-next"): void;
+  (event: "play-previous"): void;
   (event: "export-audio"): void;
   (event: "resume-prompt-accept"): void;
   (event: "resume-prompt-dismiss"): void;

@@ -42,6 +42,8 @@ export function usePlaybackControlsBindings(
     channelRouting: props.playback?.channel_routing ?? "stereo",
     speedDropdownOpen: viewModel.speedDropdownOpen.value,
     qualityDropdownOpen: viewModel.qualityDropdownOpen.value,
+    hasNext: props.hasNext,
+    hasPrevious: props.hasPrevious,
   }));
 
   const sideActionProps = computed(() => ({
@@ -52,6 +54,7 @@ export function usePlaybackControlsBindings(
     queueCount: props.queueCount,
     cacheIcon: unref(viewModel.cacheIcon),
     lockIcon: unref(viewModel.lockIcon),
+    showDecodeBadge: unref(viewModel.showDecodeBadge),
     decodeBadgeClass: unref(viewModel.decodeBadgeClass),
     decodeBadgeLabel: unref(viewModel.decodeBadgeLabel),
     decodeBadgeTitle: unref(viewModel.decodeBadgeTitle),
@@ -74,6 +77,8 @@ export function usePlaybackControlsBindings(
     "set-left-channel-muted": (value: boolean) => emit("set-left-channel-muted", value),
     "set-right-channel-muted": (value: boolean) => emit("set-right-channel-muted", value),
     "set-channel-routing": (value: PlaybackState["channel_routing"]) => emit("set-channel-routing", value),
+    "play-next": () => emit("play-next"),
+    "play-previous": () => emit("play-previous"),
   };
 
   const sideActionEvents: SideActionEventMap = {

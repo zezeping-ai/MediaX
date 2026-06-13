@@ -269,6 +269,8 @@ fn finalize_video_decode_context(
         artist: source_metadata.artist,
         album: source_metadata.album,
         lyrics: source_metadata.lyrics,
+        lyrics_source: source_metadata.lyrics_source,
+        lyrics_fetching: false,
         hw_decode_active: hw_status.active,
         hw_decode_backend: hw_status.backend,
         hw_decode_error: hw_status.error,

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
-import { CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST } from "./playbackControls.constants";
+import { usePlayerChromeTheme } from "@/pages/home/composables/usePlayerChromeTheme";
 import type { SideActionEmitContract, SideActionViewProps } from "./bindings.contract";
 
 defineProps<SideActionViewProps>();
+const { circleBtnBase, circleBtnGhost, isDark } = usePlayerChromeTheme();
 
 defineEmits<SideActionEmitContract>();
 </script>
@@ -16,7 +17,7 @@ defineEmits<SideActionEmitContract>();
         size="small"
         shape="circle"
         class="relative max-[720px]:h-9 max-[720px]:min-h-9 max-[720px]:w-9 max-[720px]:min-w-9"
-        :class="[CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST, playlistOpen ? 'bg-[#1677ff33] text-[#91caff]' : '']"
+        :class="[circleBtnBase, circleBtnGhost, playlistOpen ? 'bg-[#1677ff33] text-[#91caff]' : '']"
         title="播放列表"
         @click="$emit('toggle-playlist')"
       >
@@ -35,7 +36,7 @@ defineEmits<SideActionEmitContract>();
         size="small"
         shape="circle"
         class="max-[720px]:h-9 max-[720px]:min-h-9 max-[720px]:w-9 max-[720px]:min-w-9"
-        :class="[CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST]"
+        :class="[circleBtnBase, circleBtnGhost]"
         title="导出视频音频到文件"
         @click="$emit('export-audio')"
       >
@@ -47,7 +48,7 @@ defineEmits<SideActionEmitContract>();
         size="small"
         shape="circle"
         class="max-[720px]:h-9 max-[720px]:min-h-9 max-[720px]:w-9 max-[720px]:min-w-9"
-        :class="[CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST, cacheRecording ? 'bg-[#1677ff33] text-[#91caff]' : '']"
+        :class="[circleBtnBase, circleBtnGhost, cacheRecording ? 'bg-[#1677ff33] text-[#91caff]' : '']"
         :title="cacheRecording ? '停止缓存录制' : '开始缓存录制到文件'"
         @click="$emit('toggle-cache')"
       >
@@ -59,7 +60,7 @@ defineEmits<SideActionEmitContract>();
         size="small"
         shape="circle"
         class="max-[720px]:h-9 max-[720px]:min-h-9 max-[720px]:w-9 max-[720px]:min-w-9"
-        :class="[CIRCLE_BTN_BASE, CIRCLE_BTN_GHOST, locked ? 'bg-white/15 text-white' : '']"
+        :class="[circleBtnBase, circleBtnGhost, locked ? (isDark ? 'bg-white/15 text-white' : 'bg-black/8 text-slate-900') : '']"
         :title="locked ? '取消锁定控制器自动隐藏' : '锁定控制器常驻显示'"
         @click="$emit('toggle-lock')"
       >

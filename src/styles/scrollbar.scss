@@ -1,0 +1,95 @@
+// Theme-aware scrollbar styles (portable).
+//
+// Usage in another project:
+//   1. Copy this file.
+//   2. `@import "./scrollbar";` from your global stylesheet, or import directly in main entry.
+//   3. Set `html[data-theme="light"]` / `html[data-theme="dark"]`, or override the CSS variables below.
+//
+// Customization (optional overrides on :root or theme selector):
+//   --scrollbar-size
+//   --scrollbar-track
+//   --scrollbar-thumb
+//   --scrollbar-thumb-hover
+
+:root {
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(0, 0, 0, 0.18);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.28);
+  --scrollbar-size: 6px;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(0, 0, 0, 0.18);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.18);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+}
+
+html {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+body,
+#app,
+* {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+body::-webkit-scrollbar,
+#app::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+  background: transparent;
+}
+
+body::-webkit-scrollbar-track,
+#app::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border: none;
+  box-shadow: none;
+}
+
+body::-webkit-scrollbar-thumb,
+#app::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  border: none;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  min-height: 24px;
+  min-width: 24px;
+}
+
+body::-webkit-scrollbar-thumb:hover,
+#app::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+body::-webkit-scrollbar-corner,
+#app::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+// Hide scrollbar while keeping scroll behavior (e.g. lyrics panel).
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}

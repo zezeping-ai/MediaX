@@ -1,4 +1,5 @@
 // 全局 SCSS：在 main.ts 中引入（验证 sass）
+@use "scrollbar";
 
 html,
 body,
@@ -25,57 +26,6 @@ body,
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
-  --scrollbar-track: rgba(0, 0, 0, 0.04);
-  --scrollbar-thumb: rgba(0, 0, 0, 0.18);
-  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.28);
-  --scrollbar-size: 10px;
-}
-
-html {
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-  scrollbar-width: thin;
-}
-
-body,
-#app,
-* {
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-  scrollbar-width: thin;
-}
-
-body::-webkit-scrollbar,
-#app::-webkit-scrollbar,
-*::-webkit-scrollbar {
-  width: var(--scrollbar-size);
-  height: var(--scrollbar-size);
-}
-
-body::-webkit-scrollbar-track,
-#app::-webkit-scrollbar-track,
-*::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-}
-
-body::-webkit-scrollbar-thumb,
-#app::-webkit-scrollbar-thumb,
-*::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: var(--scrollbar-thumb);
-  background-clip: padding-box;
-}
-
-body::-webkit-scrollbar-thumb:hover,
-#app::-webkit-scrollbar-thumb:hover,
-*::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
-  background-clip: padding-box;
-}
-
-body::-webkit-scrollbar-corner,
-#app::-webkit-scrollbar-corner,
-*::-webkit-scrollbar-corner {
-  background: transparent;
 }
 
 html[data-theme="light"] {
@@ -86,9 +36,6 @@ html[data-theme="light"] {
 html[data-theme="dark"] {
   color: #f6f6f6;
   background-color: #2f2f2f;
-  --scrollbar-track: rgba(255, 255, 255, 0.05);
-  --scrollbar-thumb: rgba(255, 255, 255, 0.18);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
 }
 
 // Use global scrollbar style in dark mode without white gutter/background from antd table containers.
@@ -103,6 +50,120 @@ html[data-theme="dark"] .ant-table-body {
 // Player page: keep root fully transparent so native Rust renderer remains visible.
 html[data-page="home"] {
   background: transparent !important;
+}
+
+// Playlist drawer surfaces
+html[data-theme="dark"] .playlist-panel-drawer .ant-drawer-content {
+  background: linear-gradient(180deg, rgba(18, 18, 22, 0.98) 0%, rgba(10, 10, 14, 0.98) 100%);
+}
+
+html[data-theme="light"] .playlist-panel-drawer .ant-drawer-content {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.96) 100%);
+}
+
+.playlist-panel-drawer .ant-drawer-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.playlist-panel-drawer .ant-drawer-header {
+  flex-shrink: 0;
+}
+
+html[data-theme="dark"] .playlist-panel-drawer .ant-drawer-header {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="light"] .playlist-panel-drawer .ant-drawer-header {
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+.playlist-panel-drawer .ant-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+html[data-theme="dark"] .playlist-panel-drawer .ant-drawer-title,
+html[data-theme="dark"] .playlist-panel-drawer .ant-drawer-close {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+html[data-theme="light"] .playlist-panel-drawer .ant-drawer-title,
+html[data-theme="light"] .playlist-panel-drawer .ant-drawer-close {
+  color: rgba(15, 23, 42, 0.88);
+}
+
+html[data-theme="dark"] .playlist-panel-drawer .ant-tabs-tab {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+html[data-theme="light"] .playlist-panel-drawer .ant-tabs-tab {
+  color: rgba(15, 23, 42, 0.55);
+}
+
+html[data-theme="dark"] .playlist-panel-drawer .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+html[data-theme="light"] .playlist-panel-drawer .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.playlist-panel-drawer.ant-drawer-open .ant-drawer-content-wrapper {
+  transform: none !important;
+}
+
+html[data-theme="dark"] .playlist-sortable-ghost {
+  opacity: 0.45;
+  min-height: 52px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  outline: 1px dashed rgba(255, 255, 255, 0.28);
+  outline-offset: -1px;
+}
+
+html[data-theme="light"] .playlist-sortable-ghost {
+  opacity: 0.55;
+  min-height: 52px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.04);
+  outline: 1px dashed rgba(15, 23, 42, 0.18);
+  outline-offset: -1px;
+}
+
+html[data-theme="dark"] .playlist-sortable-chosen {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="light"] .playlist-sortable-chosen {
+  background: rgba(15, 23, 42, 0.03);
+}
+
+html[data-theme="dark"] .playlist-sortable-fallback {
+  opacity: 0.98;
+  border-radius: 8px;
+  background: rgba(24, 24, 28, 0.96);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+  cursor: grabbing;
+}
+
+html[data-theme="light"] .playlist-sortable-fallback {
+  opacity: 0.98;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+  cursor: grabbing;
+}
+
+.playlist-sortable-drag {
+  opacity: 0.98;
+}
+
+.playlist-drag-handle {
+  touch-action: none;
+  user-select: none;
 }
 
 .iconify {

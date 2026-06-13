@@ -10,6 +10,7 @@ import MediaViewport from "./components/MediaViewport";
 import StatusAlerts from "./components/StatusAlerts.vue";
 import { useHomePageBindings } from "./useHomePageBindings";
 import { useHomePageViewModel } from "./useHomePageViewModel";
+import { usePlayerChromeTheme } from "./composables/usePlayerChromeTheme";
 
 const viewModel = useHomePageViewModel();
 const route = useRoute();
@@ -36,6 +37,7 @@ const {
   urlDialogProps,
   urlDialogVisible,
 } = useHomePageBindings(viewModel);
+const { floatingIconButton, isDark } = usePlayerChromeTheme();
 
 watch(
   () => route.query.menuAction,
@@ -72,9 +74,13 @@ watch(
       />
       <div
         v-if="dropActive"
-        class="pointer-events-none absolute inset-5 z-40 flex items-center justify-center rounded-[28px] border border-dashed border-white/35 bg-black/28 backdrop-blur-md"
+        class="pointer-events-none absolute inset-5 z-40 flex items-center justify-center rounded-[28px] border border-dashed backdrop-blur-md"
+        :class="isDark ? 'border-white/35 bg-black/28' : 'border-black/18 bg-white/55'"
       >
-        <div class="rounded-2xl border border-white/12 bg-black/45 px-5 py-3 text-center text-sm font-medium tracking-[0.02em] text-white/92 shadow-[0_18px_48px_rgba(0,0,0,0.38)]">
+        <div
+          class="rounded-2xl border px-5 py-3 text-center text-sm font-medium tracking-[0.02em] shadow-[0_18px_48px_rgba(0,0,0,0.38)]"
+          :class="isDark ? 'border-white/12 bg-black/45 text-white/92' : 'border-black/10 bg-white/88 text-slate-800'"
+        >
           拖拽媒体文件到这里即可播放或加入列表
         </div>
       </div>
@@ -87,8 +93,10 @@ watch(
       />
       <StatusAlerts v-bind="statusAlertProps" />
       <button
+        v-if="!hasSource"
         type="button"
-        class="absolute right-4 top-4 z-40 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-black/45 text-white/88 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-md transition hover:bg-black/60"
+        class="absolute right-4 top-4 z-40"
+        :class="floatingIconButton"
         title="播放列表"
         @click="viewModel.togglePlaylistPanel()"
       >
@@ -141,6 +149,19 @@ watch(
 
 :deep(.ant-alert-message) {
   color: #fff;
+}
+
+html[data-theme="light"] :deep(.ant-empty-description) {
+  color: rgba(15, 23, 42, 0.68);
+}
+
+html[data-theme="light"] :deep(.ant-alert-message) {
+  color: rgba(15, 23, 42, 0.92);
+}
+
+html[data-theme="light"] :deep(.ant-alert-error) {
+  background: rgba(255, 77, 79, 0.12);
+  border: 1px solid rgba(255, 77, 79, 0.28);
 }
 
 :deep(.ant-alert-error) {

@@ -21,6 +21,8 @@ pub(crate) struct VideoDecodeContext {
     pub(crate) artist: Option<String>,
     pub(crate) album: Option<String>,
     pub(crate) lyrics: Vec<MediaLyricLine>,
+    pub(crate) lyrics_source: Option<String>,
+    pub(crate) lyrics_fetching: bool,
     pub(crate) hw_decode_active: bool,
     pub(crate) hw_decode_backend: Option<String>,
     pub(crate) hw_decode_error: Option<String>,

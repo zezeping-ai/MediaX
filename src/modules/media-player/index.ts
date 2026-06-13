@@ -6,6 +6,7 @@ export {
   getPlaybackSnapshot,
   playbackConfigureDecoderMode,
   playbackOpenSource,
+  playbackSetLyricsFetchSettings,
   playbackSetResumeLastPosition,
   playbackPause,
   playbackPreviewFrame,

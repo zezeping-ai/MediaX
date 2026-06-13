@@ -27,6 +27,7 @@ pub(super) struct Renderer {
     pub(super) texture_size: (u32, u32),
     pub(super) has_uploaded_frame: bool,
     pub(super) video_scale_mode: VideoScaleMode,
+    pub(super) backdrop_color: wgpu::Color,
 }
 
 pub(super) struct ColorParams {

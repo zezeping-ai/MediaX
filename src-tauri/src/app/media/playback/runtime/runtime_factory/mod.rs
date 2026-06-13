@@ -9,6 +9,7 @@ use super::decode_params::{DecodeDependencies, DecodeRequest};
 use super::emit::emit_debug;
 use super::session::DecodeLoopState;
 use super::DecodeRuntime;
+use crate::app::media::lyrics::bootstrap_online_lyrics;
 use crate::app::media::playback::decode_context::open_video_decode_context;
 use crate::app::media::state::MediaState;
 use tauri::Manager;
@@ -57,6 +58,12 @@ pub(super) fn create_decode_runtime(
     let audio_pipeline =
         prepare_audio_pipeline(dependencies.app, &video_ctx, dependencies.audio_controls)?;
     emit_runtime_metadata(dependencies.app, &video_ctx);
+    bootstrap_online_lyrics(
+        dependencies.app,
+        request.source,
+        &video_ctx,
+        request.stream_generation,
+    );
     dependencies
         .renderer
         .set_realtime_source(is_realtime_source);

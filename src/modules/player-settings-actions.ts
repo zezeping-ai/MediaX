@@ -1,9 +1,10 @@
 import {
+  playbackSetLyricsFetchSettings,
   playbackSetResumeLastPosition,
   setMainWindowAlwaysOnTop,
   setMainWindowVideoScaleMode,
 } from "./media-player";
-import type { PlayerVideoScaleMode } from "./preferences";
+import type { LyricsProviderPreferences, PlayerVideoScaleMode } from "./preferences";
 import type { HardwareDecodeMode, MediaSnapshot } from "./media-types";
 
 let hwDecodeApplyQueue: Promise<MediaSnapshot | null> = Promise.resolve(null);
@@ -45,5 +46,17 @@ export async function applyResumeLastPositionPreference(enabled: boolean) {
     await playbackSetResumeLastPosition(enabled);
   } catch {
     // Keep silent here; resume preference should not block settings flow.
+  }
+}
+
+export async function applyLyricsFetchSettingsPreference(settings: {
+  autoFetchOnlineLyrics: boolean;
+  providers: LyricsProviderPreferences;
+  lrcApiBaseUrl: string;
+}) {
+  try {
+    await playbackSetLyricsFetchSettings(settings);
+  } catch {
+    // Keep silent here; lyrics preference should not block settings flow.
   }
 }
