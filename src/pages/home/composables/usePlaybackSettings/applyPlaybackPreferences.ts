@@ -1,9 +1,11 @@
 import {
   applyAlwaysOnTopPreference,
   applyHwDecodePreference,
+  applyVideoPictureTunePreference,
   applyVideoScaleModePreference,
 } from "@/modules/player-settings-actions";
 import type { PlayerVideoScaleMode } from "@/modules/preferences";
+import type { VideoPictureTune } from "@/modules/video-picture-tune";
 import type { HardwareDecodeMode, MediaSnapshot } from "@/modules/media-types";
 
 type ConfigureDecoderMode = (mode: HardwareDecodeMode) => Promise<MediaSnapshot>;
@@ -21,9 +23,14 @@ export function createPlaybackPreferenceAppliers(configureDecoderMode: Configure
     await applyVideoScaleModePreference(mode);
   }
 
+  async function applyVideoPictureTune(tune: VideoPictureTune) {
+    await applyVideoPictureTunePreference(tune);
+  }
+
   return {
     applyAlwaysOnTop,
     applyHwDecode,
     applyVideoScaleMode,
+    applyVideoPictureTune,
   };
 }

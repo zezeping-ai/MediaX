@@ -2,6 +2,7 @@ import { computed, ref } from "vue";
 import { applyLyricsFetchSettingsPreference, applyResumeLastPositionPreference } from "@/modules/player-settings-actions";
 import { usePreferences } from "@/modules/preferences";
 import type { HardwareDecodeMode, PreviewFrame } from "@/modules/media-types";
+import type { VideoPictureTune } from "@/modules/video-picture-tune";
 import { useCacheRecordingController } from "./useCacheRecordingController";
 import { createMediaCenterActions } from "./createMediaCenterActions";
 import { createMediaInfoSnapshot } from "./createMediaInfoSnapshot";
@@ -22,6 +23,7 @@ export function useMediaCenter() {
     playerHwDecodeMode,
     playerAlwaysOnTop,
     playerVideoScaleMode,
+    playerVideoPictureTune,
     playerResumeLastPosition,
     playerAutoFetchOnlineLyrics,
     playerLyricsProviders,
@@ -108,6 +110,10 @@ export function useMediaCenter() {
     await playbackSettings.applyVideoScaleMode(mode);
   }
 
+  async function applyVideoPictureTunePreference(tune: VideoPictureTune) {
+    await playbackSettings.applyVideoPictureTune(tune);
+  }
+
   async function requestPreviewFrame(
     positionSeconds: number,
     maxWidth = 160,
@@ -139,6 +145,7 @@ export function useMediaCenter() {
     playerHwDecodeMode,
     playerAlwaysOnTop,
     playerVideoScaleMode,
+    playerVideoPictureTune,
     playerResumeLastPosition,
     playerAutoFetchOnlineLyrics,
     playerLyricsProviders,
@@ -146,6 +153,7 @@ export function useMediaCenter() {
     applyHwDecodePreference,
     applyAlwaysOnTopPreference,
     applyVideoScaleModePreference,
+    applyVideoPictureTunePreference,
     applyResumeLastPositionPreference,
     applyLyricsFetchSettingsPreference,
     onReady: async () => {

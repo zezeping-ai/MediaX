@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 mod queue_policy;
 
 use crate::app::media::error::MediaError;
+use crate::app::media::playback::render::picture_tune::VideoPictureTune;
 use tauri::Manager;
 
 use super::frame_queue::{pick_frame_for_present, submit_frame_to_queue};
@@ -39,6 +40,11 @@ pub(super) struct RendererInner {
     pub(super) render_cv: Condvar,
     pub(super) frame_slot_cv: Condvar,
     pub(super) video_scale_mode: AtomicU8,
+    pub(super) picture_brightness_bits: AtomicU32,
+    pub(super) picture_contrast_bits: AtomicU32,
+    pub(super) picture_saturation_bits: AtomicU32,
+    pub(super) picture_gamma_bits: AtomicU32,
+    pub(super) picture_hue_bits: AtomicU32,
     pub(super) backdrop_theme: AtomicU8,
     pub(super) is_realtime_source: AtomicBool,
     pub(super) target_queue_capacity: AtomicUsize,
@@ -83,6 +89,11 @@ impl RendererState {
                 render_cv: Condvar::new(),
                 frame_slot_cv: Condvar::new(),
                 video_scale_mode: AtomicU8::new(VideoScaleMode::Contain.as_u8()),
+                picture_brightness_bits: AtomicU32::new(0f32.to_bits()),
+                picture_contrast_bits: AtomicU32::new(0f32.to_bits()),
+                picture_saturation_bits: AtomicU32::new(0f32.to_bits()),
+                picture_gamma_bits: AtomicU32::new(0f32.to_bits()),
+                picture_hue_bits: AtomicU32::new(0f32.to_bits()),
                 backdrop_theme: AtomicU8::new(BACKDROP_THEME_DARK),
                 is_realtime_source: AtomicBool::new(false),
                 target_queue_capacity: AtomicUsize::new(
@@ -102,6 +113,34 @@ impl RendererState {
         self.inner
             .video_scale_mode
             .store(mode.as_u8(), Ordering::Relaxed);
+    }
+
+    pub fn set_picture_tune(&self, tune: VideoPictureTune) {
+        let tune = tune.clamped();
+        self.inner.picture_brightness_bits.store(tune.brightness.to_bits(), Ordering::Relaxed);
+        self.inner.picture_contrast_bits.store(tune.contrast.to_bits(), Ordering::Relaxed);
+        self.inner.picture_saturation_bits.store(tune.saturation.to_bits(), Ordering::Relaxed);
+        self.inner.picture_gamma_bits.store(tune.gamma.to_bits(), Ordering::Relaxed);
+        self.inner.picture_hue_bits.store(tune.hue.to_bits(), Ordering::Relaxed);
+    }
+
+    fn load_picture_tune(inner: &RendererInner) -> VideoPictureTune {
+        fn load(bits: &AtomicU32) -> f32 {
+            let value = f32::from_bits(bits.load(Ordering::Relaxed));
+            if value.is_finite() {
+                value.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            }
+        }
+        VideoPictureTune {
+            brightness: load(&inner.picture_brightness_bits),
+            contrast: load(&inner.picture_contrast_bits),
+            saturation: load(&inner.picture_saturation_bits),
+            gamma: load(&inner.picture_gamma_bits),
+            hue: load(&inner.picture_hue_bits),
+        }
+        .clamped()
     }
 
     pub fn set_backdrop_theme(&self, theme: &str) {
@@ -203,6 +242,7 @@ impl RendererState {
                                 renderer.set_video_scale_mode(VideoScaleMode::from_u8(
                                     inner.video_scale_mode.load(Ordering::Relaxed),
                                 ));
+                                renderer.set_picture_tune(Self::load_picture_tune(&inner));
                                 renderer.set_backdrop_color(backdrop_color_from_theme_u8(
                                     inner.backdrop_theme.load(Ordering::Relaxed),
                                 ));

@@ -1,6 +1,12 @@
 import { computed, watchEffect } from "vue";
 import { usePreferredDark, useStorage } from "@vueuse/core";
 import type { HardwareDecodeMode } from "./media-types";
+import {
+  DEFAULT_VIDEO_PICTURE_TUNE,
+  normalizeVideoPictureTune,
+  resolveStoredVideoPictureTune,
+  type VideoPictureTune,
+} from "./video-picture-tune";
 
 export type ThemePreference = "system" | "dark" | "light";
 export type PlayerVideoScaleMode = "contain" | "cover";
@@ -18,6 +24,7 @@ export type Preferences = {
     hwDecodeMode: HardwareDecodeMode;
     alwaysOnTop: boolean;
     videoScaleMode: PlayerVideoScaleMode;
+    videoPictureTune: VideoPictureTune;
     showDownlinkSpeed: boolean;
     showUplinkSpeed: boolean;
     resumeLastPosition: boolean;
@@ -41,6 +48,7 @@ const DEFAULT_PREFERENCES: Preferences = {
     hwDecodeMode: "auto",
     alwaysOnTop: true,
     videoScaleMode: "contain",
+    videoPictureTune: { ...DEFAULT_VIDEO_PICTURE_TUNE },
     showDownlinkSpeed: true,
     showUplinkSpeed: true,
     resumeLastPosition: true,
@@ -68,39 +76,10 @@ export function usePreferences() {
 
   watchEffect(() => {
     const player = preferences.value.player;
-    if (
-      !player
-      || !player.videoScaleMode
-      || typeof player.showDownlinkSpeed !== "boolean"
-      || typeof player.showUplinkSpeed !== "boolean"
-      || typeof player.resumeLastPosition !== "boolean"
-      || typeof player.autoFetchOnlineLyrics !== "boolean"
-      || typeof player.showLyrics !== "boolean"
-      || !player.lyricsProviders
-    ) {
+    if (needsPlayerPreferencesRepair(player)) {
       preferences.value = {
         ...preferences.value,
-        player: {
-          hwDecodeMode: resolveStoredHwDecodeMode(player),
-          alwaysOnTop: player?.alwaysOnTop ?? DEFAULT_PREFERENCES.player.alwaysOnTop,
-          videoScaleMode: player?.videoScaleMode ?? DEFAULT_PREFERENCES.player.videoScaleMode,
-          showDownlinkSpeed:
-            player?.showDownlinkSpeed ?? DEFAULT_PREFERENCES.player.showDownlinkSpeed,
-          showUplinkSpeed:
-            player?.showUplinkSpeed ?? DEFAULT_PREFERENCES.player.showUplinkSpeed,
-          resumeLastPosition:
-            player?.resumeLastPosition ?? DEFAULT_PREFERENCES.player.resumeLastPosition,
-          autoFetchOnlineLyrics:
-            player?.autoFetchOnlineLyrics ?? DEFAULT_PREFERENCES.player.autoFetchOnlineLyrics,
-          showLyrics: player?.showLyrics ?? DEFAULT_PREFERENCES.player.showLyrics,
-          lyricsProviders: {
-            lrclib: player?.lyricsProviders?.lrclib ?? DEFAULT_LYRICS_PROVIDERS.lrclib,
-            lrcapi: player?.lyricsProviders?.lrcapi ?? DEFAULT_LYRICS_PROVIDERS.lrcapi,
-            kugou: player?.lyricsProviders?.kugou ?? DEFAULT_LYRICS_PROVIDERS.kugou,
-            netease: player?.lyricsProviders?.netease ?? DEFAULT_LYRICS_PROVIDERS.netease,
-          },
-          lrcApiBaseUrl: player?.lrcApiBaseUrl ?? DEFAULT_PREFERENCES.player.lrcApiBaseUrl,
-        },
+        player: buildNormalizedPlayerPreferences(player),
       };
     }
   });
@@ -152,6 +131,18 @@ export function usePreferences() {
         preferences.value = {
           ...preferences.value,
           player: { ...preferences.value.player, videoScaleMode: v },
+        };
+      },
+    }),
+    playerVideoPictureTune: computed({
+      get: () => resolveStoredVideoPictureTune(preferences.value.player),
+      set: (v: VideoPictureTune) => {
+        preferences.value = {
+          ...preferences.value,
+          player: {
+            ...preferences.value.player,
+            videoPictureTune: normalizeVideoPictureTune(v),
+          },
         };
       },
     }),
@@ -218,6 +209,46 @@ export function usePreferences() {
         };
       },
     }),
+  };
+}
+
+function needsPlayerPreferencesRepair(
+  player: Preferences["player"] | undefined,
+): boolean {
+  return (
+    !player
+    || !player.videoScaleMode
+    || !player.videoPictureTune
+    || typeof player.showDownlinkSpeed !== "boolean"
+    || typeof player.showUplinkSpeed !== "boolean"
+    || typeof player.resumeLastPosition !== "boolean"
+    || typeof player.autoFetchOnlineLyrics !== "boolean"
+    || typeof player.showLyrics !== "boolean"
+    || !player.lyricsProviders
+  );
+}
+
+function buildNormalizedPlayerPreferences(
+  player: Preferences["player"] | undefined,
+): Preferences["player"] {
+  return {
+    hwDecodeMode: resolveStoredHwDecodeMode(player),
+    alwaysOnTop: player?.alwaysOnTop ?? DEFAULT_PREFERENCES.player.alwaysOnTop,
+    videoScaleMode: player?.videoScaleMode ?? DEFAULT_PREFERENCES.player.videoScaleMode,
+    videoPictureTune: resolveStoredVideoPictureTune(player),
+    showDownlinkSpeed: player?.showDownlinkSpeed ?? DEFAULT_PREFERENCES.player.showDownlinkSpeed,
+    showUplinkSpeed: player?.showUplinkSpeed ?? DEFAULT_PREFERENCES.player.showUplinkSpeed,
+    resumeLastPosition: player?.resumeLastPosition ?? DEFAULT_PREFERENCES.player.resumeLastPosition,
+    autoFetchOnlineLyrics:
+      player?.autoFetchOnlineLyrics ?? DEFAULT_PREFERENCES.player.autoFetchOnlineLyrics,
+    showLyrics: player?.showLyrics ?? DEFAULT_PREFERENCES.player.showLyrics,
+    lyricsProviders: {
+      lrclib: player?.lyricsProviders?.lrclib ?? DEFAULT_LYRICS_PROVIDERS.lrclib,
+      lrcapi: player?.lyricsProviders?.lrcapi ?? DEFAULT_LYRICS_PROVIDERS.lrcapi,
+      kugou: player?.lyricsProviders?.kugou ?? DEFAULT_LYRICS_PROVIDERS.kugou,
+      netease: player?.lyricsProviders?.netease ?? DEFAULT_LYRICS_PROVIDERS.netease,
+    },
+    lrcApiBaseUrl: player?.lrcApiBaseUrl ?? DEFAULT_PREFERENCES.player.lrcApiBaseUrl,
   };
 }
 

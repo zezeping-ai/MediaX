@@ -27,6 +27,11 @@ pub(super) struct Renderer {
     pub(super) texture_size: (u32, u32),
     pub(super) has_uploaded_frame: bool,
     pub(super) video_scale_mode: VideoScaleMode,
+    pub(super) picture_brightness: f32,
+    pub(super) picture_contrast: f32,
+    pub(super) picture_saturation: f32,
+    pub(super) picture_gamma: f32,
+    pub(super) picture_hue: f32,
     pub(super) backdrop_color: wgpu::Color,
 }
 
@@ -38,4 +43,5 @@ pub(super) struct ColorParams {
     pub(super) row0: [f32; 4],
     pub(super) row1: [f32; 4],
     pub(super) row2: [f32; 4],
+    pub(super) tune_extra: [f32; 4],
 }

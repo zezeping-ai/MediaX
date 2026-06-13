@@ -53,6 +53,7 @@ impl Renderer {
                 multiview_mask: None,
             });
             if self.has_uploaded_frame {
+                self.sync_picture_tune_uniform();
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(0, &self.bind_group, &[]);
                 let (x, y, width, height) = self.compute_content_viewport();

@@ -84,4 +84,10 @@ app.use(router);
   }
 });
 
+app.component("ATypographyTitle", Typography.Title);
+app.component("ATypographyText", Typography.Text);
+app.component("ATypographyParagraph", Typography.Paragraph);
+app.component("AButtonGroup", Button.Group);
+app.component("ARadioButton", Radio.Button);
+
 app.mount("#app");

@@ -1,6 +1,6 @@
 use super::{Renderer, VideoScaleMode};
 use crate::app::media::playback::render::renderer::helpers::{
-    create_plane_texture, sanitize_surface_size, select_present_mode,
+    create_plane_texture, sanitize_surface_size, select_present_mode, select_surface_format,
 };
 
 impl Renderer {
@@ -29,12 +29,7 @@ impl Renderer {
             .await
             .map_err(|err| format!("request device failed: {err}"))?;
         let surface_caps = surface.get_capabilities(&adapter);
-        let format = surface_caps
-            .formats
-            .iter()
-            .copied()
-            .find(|value| value.is_srgb())
-            .unwrap_or(surface_caps.formats[0]);
+        let format = select_surface_format(&surface_caps.formats);
         let mut size = window
             .inner_size()
             .map_err(|err| format!("get inner size failed: {err}"))?;
@@ -155,7 +150,7 @@ impl Renderer {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -178,7 +173,7 @@ impl Renderer {
         });
         let color_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mediax-color-params"),
-            size: 64,
+            size: 80,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -289,6 +284,11 @@ impl Renderer {
             texture_size: (1, 1),
             has_uploaded_frame: false,
             video_scale_mode: VideoScaleMode::Contain,
+            picture_brightness: 0.0,
+            picture_contrast: 0.0,
+            picture_saturation: 0.0,
+            picture_gamma: 0.0,
+            picture_hue: 0.0,
             backdrop_color: super::renderer_state::backdrop_color_from_theme("dark"),
         })
     }

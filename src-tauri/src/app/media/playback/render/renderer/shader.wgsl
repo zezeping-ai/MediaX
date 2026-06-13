@@ -36,8 +36,19 @@ struct ColorParams {
   row0: vec4<f32>,
   row1: vec4<f32>,
   row2: vec4<f32>,
+  tune_extra: vec4<f32>,
 };
 @group(0) @binding(7) var<uniform> color_params: ColorParams;
+
+fn hue_rotate(rgb: vec3<f32>, angle: f32) -> vec3<f32> {
+  let cos_a = cos(angle);
+  let sin_a = sin(angle);
+  return vec3<f32>(
+    dot(rgb, vec3<f32>(0.299, 0.587, 0.114) + vec3<f32>(0.701, -0.587, -0.114) * cos_a + vec3<f32>(0.168, 0.330, -0.497) * sin_a),
+    dot(rgb, vec3<f32>(0.299, 0.587, 0.114) + vec3<f32>(-0.299, 0.413, -0.114) * cos_a + vec3<f32>(-0.328, 0.035, 0.292) * sin_a),
+    dot(rgb, vec3<f32>(0.299, 0.587, 0.114) + vec3<f32>(-0.300, -0.588, 0.886) * cos_a + vec3<f32>(1.250, -1.050, -0.203) * sin_a)
+  );
+}
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
@@ -63,5 +74,20 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
   let r = dot(color_params.row0.xyz, yuv);
   let g = dot(color_params.row1.xyz, yuv);
   let b = dot(color_params.row2.xyz, yuv);
-  return vec4<f32>(r, g, b, 1.0);
+  var rgb = vec3<f32>(r, g, b);
+
+  let brightness = color_params.row1.w;
+  let contrast = color_params.row2.w;
+  let saturation = color_params.tune_extra.x;
+  let gamma_adj = color_params.tune_extra.y;
+  let hue = color_params.tune_extra.z;
+
+  rgb = (rgb - 0.5) * (1.0 + contrast) + 0.5 + brightness;
+  let luma = dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+  rgb = mix(vec3<f32>(luma), rgb, 1.0 + saturation);
+  let gamma_inv = 1.0 / max(1.0 + gamma_adj, 0.2);
+  rgb = pow(max(rgb, vec3<f32>(0.0)), vec3<f32>(gamma_inv));
+  rgb = hue_rotate(rgb, hue);
+
+  return vec4<f32>(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }

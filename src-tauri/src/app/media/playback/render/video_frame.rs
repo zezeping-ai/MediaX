@@ -122,9 +122,13 @@ fn apply_visible_cropping(frame: &mut frame::Video) -> Result<(), String> {
 }
 
 pub fn detect_color_profile(frame: &frame::Video) -> ColorProfile {
-    let (color_matrix, y_offset, y_scale, uv_offset, uv_scale) = color_conversion_params(frame);
+    let effective_range = resolve_effective_color_range(frame);
+    let storage = sample_storage_for_format(frame.format());
+    let matrix = yuv_to_rgb_matrix(frame.color_space());
+    let (y_offset, y_scale, uv_offset, uv_scale) =
+        range_conversion_params(storage, effective_range);
     ColorProfile {
-        color_matrix,
+        color_matrix: matrix,
         y_offset,
         y_scale,
         uv_offset,
@@ -132,11 +136,100 @@ pub fn detect_color_profile(frame: &frame::Video) -> ColorProfile {
     }
 }
 
-fn color_conversion_params(frame: &frame::Video) -> ([[f32; 3]; 3], f32, f32, f32, f32) {
-    use ffmpeg_next::color::{Range, Space};
-    let bit_depth = bit_depth_for_format(frame.format()) as f32;
-    let sample_max = (1u32 << bit_depth_for_format(frame.format())) as f32 - 1.0;
-    let matrix = match frame.color_space() {
+fn resolve_effective_color_range(frame: &frame::Video) -> ffmpeg_next::color::Range {
+    use ffmpeg_next::color::Range;
+    match frame.color_range() {
+        Range::JPEG => Range::JPEG,
+        Range::MPEG => sample_luma_range_hint(frame, true).unwrap_or(Range::MPEG),
+        Range::Unspecified => sample_luma_range_hint(frame, false).unwrap_or(Range::MPEG),
+    }
+}
+
+fn sample_luma_range_hint(
+    frame: &frame::Video,
+    conservative: bool,
+) -> Option<ffmpeg_next::color::Range> {
+    use ffmpeg_next::color::Range;
+    let (min_code, max_code) = sample_luma_code_extents(frame)?;
+    let bit_depth = bit_depth_for_format(frame.format());
+    let level_shift = bit_depth.saturating_sub(8);
+    let limited_black = 16u32 << level_shift;
+    let limited_white = 235u32 << level_shift;
+    if conservative {
+        let loose_black = 8u32 << level_shift;
+        let loose_white = 245u32 << level_shift;
+        if min_code < loose_black || max_code > loose_white {
+            return Some(Range::JPEG);
+        }
+        return None;
+    }
+    if min_code < limited_black || max_code > limited_white {
+        Some(Range::JPEG)
+    } else {
+        Some(Range::MPEG)
+    }
+}
+
+fn sample_luma_code_extents(frame: &frame::Video) -> Option<(u32, u32)> {
+    let width = frame.width() as usize;
+    let height = frame.height() as usize;
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let row_step = (height / 8).max(1);
+    let col_step = (width / 16).max(1);
+    match frame.format() {
+        format::pixel::Pixel::P010LE | format::pixel::Pixel::P010BE => {
+            let data = frame.data(0);
+            let stride = frame.stride(0);
+            let mut min_code = u32::MAX;
+            let mut max_code = 0u32;
+            let mut sampled = false;
+            for row in (0..height).step_by(row_step) {
+                for col in (0..width).step_by(col_step) {
+                    let byte_idx = row * stride + col * 2;
+                    if byte_idx + 1 >= data.len() {
+                        continue;
+                    }
+                    let sample = u16::from_le_bytes([data[byte_idx], data[byte_idx + 1]]);
+                    let code = (sample >> 6) as u32;
+                    min_code = min_code.min(code);
+                    max_code = max_code.max(code);
+                    sampled = true;
+                }
+            }
+            sampled.then_some((min_code, max_code))
+        }
+        _ => {
+            let data = frame.data(0);
+            let stride = frame.stride(0);
+            let mut min_code = u8::MAX;
+            let mut max_code = 0u8;
+            let mut sampled = false;
+            for row in (0..height).step_by(row_step) {
+                let row_start = row * stride;
+                if row_start >= data.len() {
+                    break;
+                }
+                for col in (0..width).step_by(col_step) {
+                    let idx = row_start + col;
+                    if idx >= data.len() {
+                        break;
+                    }
+                    let code = data[idx];
+                    min_code = min_code.min(code);
+                    max_code = max_code.max(code);
+                    sampled = true;
+                }
+            }
+            sampled.then_some((min_code as u32, max_code as u32))
+        }
+    }
+}
+
+fn yuv_to_rgb_matrix(color_space: ffmpeg_next::color::Space) -> [[f32; 3]; 3] {
+    use ffmpeg_next::color::Space;
+    match color_space {
         Space::BT2020NCL | Space::BT2020CL => [
             [1.0, 0.0, 1.4746],
             [1.0, -0.16455, -0.57135],
@@ -152,26 +245,52 @@ fn color_conversion_params(frame: &frame::Video) -> ([[f32; 3]; 3], f32, f32, f3
             [1.0, -0.1873, -0.4681],
             [1.0, 1.8556, 0.0],
         ],
-    };
-    match frame.color_range() {
-        Range::JPEG => (
-            matrix,
-            0.0,
-            1.0,
-            (1u32 << (bit_depth as u32 - 1)) as f32 / sample_max,
-            1.0,
-        ),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SampleStorage {
+    bit_depth: u32,
+    storage_bits: u32,
+}
+
+fn sample_storage_for_format(format: format::pixel::Pixel) -> SampleStorage {
+    match format {
+        format::pixel::Pixel::P010LE | format::pixel::Pixel::P010BE => SampleStorage {
+            bit_depth: 10,
+            // P010 stores 10-bit samples in the MSBs of 16-bit words; the renderer uploads R16Unorm.
+            storage_bits: 16,
+        },
         _ => {
-            let luma_offset = (16u32 << (bit_depth as u32 - 8)) as f32 / sample_max;
-            let luma_range = (219u32 << (bit_depth as u32 - 8)) as f32;
-            let chroma_center = (1u32 << (bit_depth as u32 - 1)) as f32 / sample_max;
-            let chroma_range = (224u32 << (bit_depth as u32 - 8)) as f32;
+            let bit_depth = bit_depth_for_format(format);
+            SampleStorage {
+                bit_depth,
+                storage_bits: bit_depth,
+            }
+        }
+    }
+}
+
+fn range_conversion_params(
+    storage: SampleStorage,
+    color_range: ffmpeg_next::color::Range,
+) -> (f32, f32, f32, f32) {
+    use ffmpeg_next::color::Range;
+    let storage_max = ((1u64 << storage.storage_bits) - 1) as f32;
+    let storage_shift = storage.storage_bits.saturating_sub(storage.bit_depth);
+    let chroma_center_code = 1u32 << (storage.bit_depth - 1);
+    let chroma_center = ((chroma_center_code << storage_shift) as f32) / storage_max;
+    match color_range {
+        Range::JPEG => (0.0, 1.0, chroma_center, 1.0),
+        _ => {
+            let luma_offset = ((16u32 << storage_shift) as f32) / storage_max;
+            let luma_span = ((235u32 - 16u32) << storage_shift) as f32;
+            let chroma_span = ((224u32 << (storage.bit_depth - 8)) << storage_shift) as f32;
             (
-                matrix,
                 luma_offset,
-                sample_max / luma_range,
+                storage_max / luma_span,
                 chroma_center,
-                sample_max / chroma_range,
+                storage_max / chroma_span,
             )
         }
     }
@@ -181,5 +300,95 @@ fn bit_depth_for_format(format: format::pixel::Pixel) -> u32 {
     match format {
         format::pixel::Pixel::P010LE | format::pixel::Pixel::P010BE => 10,
         _ => 8,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decode_normalized_luma(
+        storage: SampleStorage,
+        y_offset: f32,
+        y_scale: f32,
+        code: u32,
+    ) -> f32 {
+        let storage_shift = storage.storage_bits.saturating_sub(storage.bit_depth);
+        let storage_max = ((1u64 << storage.storage_bits) - 1) as f32;
+        let raw = ((code << storage_shift) as f32) / storage_max;
+        (raw - y_offset) * y_scale
+    }
+
+    #[test]
+    fn limited_range_8bit_maps_black_and_white_to_unit_span() {
+        let storage = SampleStorage {
+            bit_depth: 8,
+            storage_bits: 8,
+        };
+        let (y_offset, y_scale, _, _) = range_conversion_params(storage, ffmpeg_next::color::Range::MPEG);
+        let black = decode_normalized_luma(storage, y_offset, y_scale, 16);
+        let white = decode_normalized_luma(storage, y_offset, y_scale, 235);
+        assert!((black - 0.0).abs() < 1e-4);
+        assert!((white - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn limited_range_p010_maps_black_and_white_to_unit_span() {
+        let storage = sample_storage_for_format(format::pixel::Pixel::P010LE);
+        let (y_offset, y_scale, _, _) = range_conversion_params(storage, ffmpeg_next::color::Range::MPEG);
+        let black = decode_normalized_luma(storage, y_offset, y_scale, 16);
+        let white = decode_normalized_luma(storage, y_offset, y_scale, 235);
+        assert!((black - 0.0).abs() < 1e-4);
+        assert!((white - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn full_range_pixels_infer_jpeg_range_for_unspecified_metadata() {
+        assert!(matches!(
+            sample_luma_range_hint_for_extents(0, 255, 8, false),
+            Some(ffmpeg_next::color::Range::JPEG)
+        ));
+    }
+
+    #[test]
+    fn limited_range_pixels_infer_mpeg_range_for_unspecified_metadata() {
+        assert!(matches!(
+            sample_luma_range_hint_for_extents(32, 220, 8, false),
+            Some(ffmpeg_next::color::Range::MPEG)
+        ));
+    }
+
+    #[test]
+    fn conservative_hint_only_overrides_mpeg_when_pixels_clearly_full_range() {
+        assert!(matches!(
+            sample_luma_range_hint_for_extents(0, 255, 8, true),
+            Some(ffmpeg_next::color::Range::JPEG)
+        ));
+        assert!(sample_luma_range_hint_for_extents(32, 220, 8, true).is_none());
+    }
+
+    fn sample_luma_range_hint_for_extents(
+        min_code: u32,
+        max_code: u32,
+        bit_depth: u32,
+        conservative: bool,
+    ) -> Option<ffmpeg_next::color::Range> {
+        use ffmpeg_next::color::Range;
+        let level_shift = bit_depth.saturating_sub(8);
+        let limited_black = 16u32 << level_shift;
+        let limited_white = 235u32 << level_shift;
+        if conservative {
+            let loose_black = 8u32 << level_shift;
+            let loose_white = 245u32 << level_shift;
+            if min_code < loose_black || max_code > loose_white {
+                return Some(Range::JPEG);
+            }
+            return None;
+        }
+        if min_code < limited_black || max_code > limited_white {
+            Some(Range::JPEG)
+        } else {
+            Some(Range::MPEG)
+        }
     }
 }

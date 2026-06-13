@@ -1,11 +1,13 @@
 import { onMounted, watch, type Ref } from "vue";
 import type { HardwareDecodeMode } from "@/modules/media-types";
 import type { LyricsProviderPreferences } from "@/modules/preferences";
+import type { VideoPictureTune } from "@/modules/video-picture-tune";
 
 type UsePlayerPreferenceSyncOptions = {
   playerHwDecodeMode: Ref<HardwareDecodeMode>;
   playerAlwaysOnTop: Ref<boolean>;
   playerVideoScaleMode: Ref<"contain" | "cover">;
+  playerVideoPictureTune: Ref<VideoPictureTune>;
   playerResumeLastPosition: Ref<boolean>;
   playerAutoFetchOnlineLyrics: Ref<boolean>;
   playerLyricsProviders: Ref<LyricsProviderPreferences>;
@@ -13,6 +15,7 @@ type UsePlayerPreferenceSyncOptions = {
   applyHwDecodePreference: (mode: HardwareDecodeMode) => Promise<void>;
   applyAlwaysOnTopPreference: (enabled: boolean) => Promise<void>;
   applyVideoScaleModePreference: (mode: "contain" | "cover") => Promise<void>;
+  applyVideoPictureTunePreference: (tune: VideoPictureTune) => Promise<void>;
   applyResumeLastPositionPreference: (enabled: boolean) => Promise<void>;
   applyLyricsFetchSettingsPreference: (settings: {
     autoFetchOnlineLyrics: boolean;
@@ -36,6 +39,7 @@ export function usePlayerPreferenceSync(options: UsePlayerPreferenceSyncOptions)
     await options.applyHwDecodePreference(options.playerHwDecodeMode.value);
     await options.applyAlwaysOnTopPreference(options.playerAlwaysOnTop.value);
     await options.applyVideoScaleModePreference(options.playerVideoScaleMode.value);
+    await options.applyVideoPictureTunePreference(options.playerVideoPictureTune.value);
     await options.applyResumeLastPositionPreference(options.playerResumeLastPosition.value);
     await options.applyLyricsFetchSettingsPreference(currentLyricsSettings());
   });
@@ -65,6 +69,14 @@ export function usePlayerPreferenceSync(options: UsePlayerPreferenceSyncOptions)
       void options.applyVideoScaleModePreference(mode);
     },
     { immediate: false },
+  );
+
+  watch(
+    options.playerVideoPictureTune,
+    (tune) => {
+      void options.applyVideoPictureTunePreference(tune);
+    },
+    { deep: true, immediate: false },
   );
 
   watch(

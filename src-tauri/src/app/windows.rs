@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri::State;
 use tauri::{PhysicalPosition, PhysicalSize, Position, Size};
@@ -31,8 +31,81 @@ fn main_window_restore_bounds() -> &'static Mutex<Option<WindowRestoreBounds>> {
     RESTORE_BOUNDS.get_or_init(|| Mutex::new(None))
 }
 
+fn restore_main_window_bounds_after_fullscreen(window: tauri::WebviewWindow) {
+    let restore_bounds = main_window_restore_bounds()
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take());
+    let Some(bounds) = restore_bounds else {
+        return;
+    };
+    tauri::async_runtime::spawn(async move {
+        thread::sleep(Duration::from_millis(140));
+        if bounds.maximized {
+            let _ = window.maximize();
+            return;
+        }
+        let _ = window.unmaximize();
+        let _ = window.set_size(Size::Physical(bounds.size));
+        let _ = window.set_position(Position::Physical(bounds.position));
+    });
+}
+
+fn main_window_is_fullscreen(app: &tauri::AppHandle) -> bool {
+    app.get_webview_window(MAIN_WINDOW_LABEL)
+        .and_then(|window| window.is_fullscreen().ok())
+        .unwrap_or(false)
+}
+
+fn request_exit_main_window_fullscreen(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let _ = window.set_fullscreen(false);
+    }
+}
+
+async fn wait_for_main_window_fullscreen_exit(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    const MAX_WAIT: Duration = Duration::from_secs(3);
+    #[cfg(not(target_os = "macos"))]
+    const MAX_WAIT: Duration = Duration::from_millis(500);
+
+    let deadline = Instant::now() + MAX_WAIT;
+    while Instant::now() < deadline {
+        if !main_window_is_fullscreen(app) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    // macOS 全屏退出动画未完成时 hide 会失效（tauri#10580 / #12056）。
+    #[cfg(target_os = "macos")]
+    thread::sleep(Duration::from_millis(350));
+}
+
+async fn hide_main_window_safely(app: tauri::AppHandle) {
+    if main_window_is_fullscreen(&app) {
+        request_exit_main_window_fullscreen(&app);
+        wait_for_main_window_fullscreen_exit(&app).await;
+    }
+
+    for _ in 0..10 {
+        let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+            return;
+        };
+        let _ = window.hide();
+        if !window.is_visible().unwrap_or(false) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
 pub fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if window.is_fullscreen().unwrap_or(false) {
+            let _ = window.set_fullscreen(false);
+            restore_main_window_bounds_after_fullscreen(window.clone());
+        }
         window.show()?;
         window.set_focus()?;
     }
@@ -189,7 +262,10 @@ pub fn handle_close_requested(window: &tauri::Window, event: &tauri::WindowEvent
             });
         }
         api.prevent_close();
-        let _ = window.hide();
+        let app = window.app_handle().clone();
+        tauri::async_runtime::spawn(async move {
+            hide_main_window_safely(app).await;
+        });
     }
 }
 
@@ -211,6 +287,25 @@ pub fn window_set_main_video_scale_mode(
 ) -> Result<(), String> {
     let scale_mode = VideoScaleMode::try_from(mode.as_str())?;
     renderer.set_video_scale_mode(scale_mode);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn window_set_main_video_picture_tune(
+    renderer: State<'_, RendererState>,
+    brightness: i32,
+    contrast: i32,
+    saturation: i32,
+    gamma: i32,
+    hue: i32,
+) -> Result<(), String> {
+    renderer.set_picture_tune(crate::app::media::playback::render::picture_tune::VideoPictureTune::from_ui_values(
+        brightness,
+        contrast,
+        saturation,
+        gamma,
+        hue,
+    ));
     Ok(())
 }
 
@@ -254,23 +349,7 @@ pub fn window_toggle_main_fullscreen(app: tauri::AppHandle) -> Result<bool, Stri
         .set_fullscreen(next)
         .map_err(|err| format!("set fullscreen failed: {err}"))?;
     if !next {
-        let restore_bounds = main_window_restore_bounds()
-            .lock()
-            .ok()
-            .and_then(|mut guard| guard.take());
-        if let Some(bounds) = restore_bounds {
-            let restore_window = window.clone();
-            tauri::async_runtime::spawn(async move {
-                thread::sleep(Duration::from_millis(140));
-                if bounds.maximized {
-                    let _ = restore_window.maximize();
-                    return;
-                }
-                let _ = restore_window.unmaximize();
-                let _ = restore_window.set_size(Size::Physical(bounds.size));
-                let _ = restore_window.set_position(Position::Physical(bounds.position));
-            });
-        }
+        restore_main_window_bounds_after_fullscreen(window);
     }
     Ok(next)
 }

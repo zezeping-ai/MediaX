@@ -3,8 +3,11 @@ import {
   playbackSetResumeLastPosition,
   setMainWindowAlwaysOnTop,
   setMainWindowVideoScaleMode,
+  setMainWindowVideoPictureTune,
 } from "./media-player";
 import type { LyricsProviderPreferences, PlayerVideoScaleMode } from "./preferences";
+import type { VideoPictureTune } from "./video-picture-tune";
+import { normalizeVideoPictureTune } from "./video-picture-tune";
 import type { HardwareDecodeMode, MediaSnapshot } from "./media-types";
 
 let hwDecodeApplyQueue: Promise<MediaSnapshot | null> = Promise.resolve(null);
@@ -36,6 +39,14 @@ export async function applyAlwaysOnTopPreference(enabled: boolean) {
 export async function applyVideoScaleModePreference(mode: PlayerVideoScaleMode) {
   try {
     await setMainWindowVideoScaleMode(mode);
+  } catch {
+    // Keep silent here; rendering preference should not break playback flow.
+  }
+}
+
+export async function applyVideoPictureTunePreference(tune: VideoPictureTune) {
+  try {
+    await setMainWindowVideoPictureTune(normalizeVideoPictureTune(tune));
   } catch {
     // Keep silent here; rendering preference should not break playback flow.
   }

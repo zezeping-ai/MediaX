@@ -1,5 +1,6 @@
 import { invokeMediaCommand } from "../media-command";
 import type { PlayerVideoScaleMode } from "../preferences";
+import type { VideoPictureTune } from "../video-picture-tune";
 
 export function setMainWindowAlwaysOnTop(enabled: boolean) {
   return invokeMediaCommand<void>("window_set_main_always_on_top", { enabled });
@@ -11,6 +12,10 @@ export function setMainWindowTitle(title?: string | null) {
 
 export function setMainWindowVideoScaleMode(mode: PlayerVideoScaleMode) {
   return invokeMediaCommand<void>("window_set_main_video_scale_mode", { mode });
+}
+
+export function setMainWindowVideoPictureTune(tune: VideoPictureTune) {
+  return invokeMediaCommand<void>("window_set_main_video_picture_tune", tune);
 }
 
 export function setRendererBackdropTheme(theme: "light" | "dark") {

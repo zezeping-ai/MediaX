@@ -36,4 +36,5 @@ export {
   startMainWindowDragging,
   toggleMainWindowFullscreen,
   setMainWindowVideoScaleMode,
+  setMainWindowVideoPictureTune,
 } from "./windowCommands";

@@ -23,6 +23,25 @@ pub(super) fn wait_for_render_signal(inner: &RendererInner, timeout: Duration) -
     }
 }
 
+pub(super) fn select_surface_format(candidates: &[wgpu::TextureFormat]) -> wgpu::TextureFormat {
+    // YUV→RGB output is already display-referred; avoid sRGB write re-gamma (washed/bright look).
+    const PREFERRED: &[wgpu::TextureFormat] = &[
+        wgpu::TextureFormat::Bgra8Unorm,
+        wgpu::TextureFormat::Rgba8Unorm,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ];
+    for format in PREFERRED {
+        if candidates.contains(format) {
+            return *format;
+        }
+    }
+    candidates
+        .first()
+        .copied()
+        .unwrap_or(wgpu::TextureFormat::Bgra8Unorm)
+}
+
 pub(super) fn select_present_mode(candidates: &[wgpu::PresentMode]) -> wgpu::PresentMode {
     if candidates.contains(&wgpu::PresentMode::Fifo) {
         return wgpu::PresentMode::Fifo;

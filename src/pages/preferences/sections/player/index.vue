@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { applyLyricsFetchSettingsPreference, applyResumeLastPositionPreference, applyAlwaysOnTopPreference, applyVideoScaleModePreference } from "@/modules/player-settings-actions";
+import {
+  applyAlwaysOnTopPreference,
+  applyLyricsFetchSettingsPreference,
+  applyResumeLastPositionPreference,
+  applyVideoPictureTunePreference,
+  applyVideoScaleModePreference,
+} from "@/modules/player-settings-actions";
 import { usePreferences } from "@/modules/preferences";
+import { normalizeVideoPictureTune, type VideoPictureTune } from "@/modules/video-picture-tune";
+import VideoPictureTunePanel from "./VideoPictureTunePanel/index.vue";
 
 const {
   playerHwDecodeMode,
   playerAlwaysOnTop,
   playerVideoScaleMode,
+  playerVideoPictureTune,
   playerShowDownlinkSpeed,
   playerShowUplinkSpeed,
   playerResumeLastPosition,
@@ -21,6 +30,14 @@ async function applyAlwaysOnTop(enabled: boolean) {
 
 async function applyVideoScaleMode(mode: "contain" | "cover") {
   await applyVideoScaleModePreference(mode);
+}
+
+async function applyVideoPictureTune() {
+  await applyVideoPictureTunePreference(normalizeVideoPictureTune(playerVideoPictureTune.value));
+}
+
+function updateVideoPictureTune(next: VideoPictureTune) {
+  playerVideoPictureTune.value = normalizeVideoPictureTune(next);
 }
 
 async function syncLyricsSettings() {
@@ -214,6 +231,14 @@ async function syncLyricsSettings() {
           />
         </div>
       </a-space>
+    </a-card>
+
+    <a-card title="画面调节" :bordered="false" size="small" :body-style="{ padding: '12px' }">
+      <VideoPictureTunePanel
+        :tune="playerVideoPictureTune"
+        @update:tune="updateVideoPictureTune"
+        @change="() => void applyVideoPictureTune()"
+      />
     </a-card>
   </a-space>
 </template>

@@ -1,12 +1,42 @@
 use super::{ColorParams, QueuedFrame, Renderer, VideoFrame, VideoFramePlanes, VideoScaleMode};
+use crate::app::media::playback::render::picture_tune::{picture_tune_shader_values, VideoPictureTune};
 use crate::app::media::playback::render::renderer::helpers::{
     create_plane_texture, sanitize_surface_size,
 };
 use ffmpeg_next::format;
 
+struct FrameColorUniformInput {
+    y_offset: f32,
+    y_scale: f32,
+    uv_offset: f32,
+    uv_scale: f32,
+    row0: [f32; 4],
+    row1_xyz: [f32; 3],
+    row2_xyz: [f32; 3],
+}
+
 impl Renderer {
     pub(super) fn set_video_scale_mode(&mut self, mode: VideoScaleMode) {
         self.video_scale_mode = mode;
+    }
+
+    pub(super) fn set_picture_tune(&mut self, tune: VideoPictureTune) {
+        let tune = tune.clamped();
+        self.picture_brightness = tune.brightness;
+        self.picture_contrast = tune.contrast;
+        self.picture_saturation = tune.saturation;
+        self.picture_gamma = tune.gamma;
+        self.picture_hue = tune.hue;
+    }
+
+    fn current_picture_tune(&self) -> VideoPictureTune {
+        VideoPictureTune {
+            brightness: self.picture_brightness,
+            contrast: self.picture_contrast,
+            saturation: self.picture_saturation,
+            gamma: self.picture_gamma,
+            hue: self.picture_hue,
+        }
     }
 
     pub(super) fn set_backdrop_color(&mut self, color: wgpu::Color) {
@@ -246,7 +276,7 @@ impl Renderer {
     }
 
     fn upload_color_params(&self, frame: &VideoFrame) {
-        let params = ColorParams {
+        self.write_color_params_uniform(self.build_color_params(FrameColorUniformInput {
             y_offset: frame.y_offset,
             y_scale: frame.y_scale,
             uv_offset: frame.uv_offset,
@@ -257,36 +287,26 @@ impl Renderer {
                 frame.color_matrix[0][2],
                 1.0,
             ],
-            row1: [
+            row1_xyz: [
                 frame.color_matrix[1][0],
                 frame.color_matrix[1][1],
                 frame.color_matrix[1][2],
-                0.0,
             ],
-            row2: [
+            row2_xyz: [
                 frame.color_matrix[2][0],
                 frame.color_matrix[2][1],
                 frame.color_matrix[2][2],
-                0.0,
             ],
-        };
-        let words = flatten_color_params(params);
-        self.queue.write_buffer(
-            &self.color_params_buffer,
-            0,
-            // The color-parameter payload is a fixed 64-byte POD block, so a stack array
-            // keeps this per-frame upload allocation-free.
-            unsafe {
-                std::slice::from_raw_parts(
-                    words.as_ptr() as *const u8,
-                    std::mem::size_of_val(&words),
-                )
-            },
-        );
+        }));
     }
 
     fn upload_decoded_color_params(&self, frame: &super::DecodedVideoFrame) {
-        let params = ColorParams {
+        let layout_mode = match frame.frame.format() {
+            format::pixel::Pixel::NV12 => 1.0,
+            format::pixel::Pixel::P010LE | format::pixel::Pixel::P010BE => 2.0,
+            _ => 0.0,
+        };
+        self.write_color_params_uniform(self.build_color_params(FrameColorUniformInput {
             y_offset: frame.y_offset,
             y_scale: frame.y_scale,
             uv_offset: frame.uv_offset,
@@ -295,37 +315,96 @@ impl Renderer {
                 frame.color_matrix[0][0],
                 frame.color_matrix[0][1],
                 frame.color_matrix[0][2],
-                match frame.frame.format() {
-                    format::pixel::Pixel::NV12 => 1.0,
-                    format::pixel::Pixel::P010LE | format::pixel::Pixel::P010BE => 2.0,
-                    _ => 0.0,
-                },
+                layout_mode,
             ],
-            row1: [
+            row1_xyz: [
                 frame.color_matrix[1][0],
                 frame.color_matrix[1][1],
                 frame.color_matrix[1][2],
-                0.0,
             ],
-            row2: [
+            row2_xyz: [
                 frame.color_matrix[2][0],
                 frame.color_matrix[2][1],
                 frame.color_matrix[2][2],
-                0.0,
             ],
-        };
+        }));
+    }
+
+    fn build_color_params(&self, input: FrameColorUniformInput) -> ColorParams {
+        let shader = picture_tune_shader_values(self.current_picture_tune());
+        ColorParams {
+            y_offset: input.y_offset,
+            y_scale: input.y_scale,
+            uv_offset: input.uv_offset,
+            uv_scale: input.uv_scale,
+            row0: input.row0,
+            row1: [
+                input.row1_xyz[0],
+                input.row1_xyz[1],
+                input.row1_xyz[2],
+                shader.brightness,
+            ],
+            row2: [
+                input.row2_xyz[0],
+                input.row2_xyz[1],
+                input.row2_xyz[2],
+                shader.contrast,
+            ],
+            tune_extra: [shader.saturation, shader.gamma, shader.hue, 0.0],
+        }
+    }
+
+    pub(super) fn sync_picture_tune_uniform(&self) {
+        let shader = picture_tune_shader_values(self.current_picture_tune());
+        self.write_picture_tune_uniform(shader);
+    }
+
+    fn write_picture_tune_uniform(
+        &self,
+        shader: crate::app::media::playback::render::picture_tune::PictureTuneShaderValues,
+    ) {
+        self.write_uniform_f32(PICTURE_BRIGHTNESS_UNIFORM_OFFSET, shader.brightness);
+        self.write_uniform_f32(PICTURE_CONTRAST_UNIFORM_OFFSET, shader.contrast);
+        self.write_uniform_f32(PICTURE_SATURATION_UNIFORM_OFFSET, shader.saturation);
+        self.write_uniform_f32(PICTURE_GAMMA_UNIFORM_OFFSET, shader.gamma);
+        self.write_uniform_f32(PICTURE_HUE_UNIFORM_OFFSET, shader.hue);
+    }
+
+    fn write_uniform_f32(&self, offset: u64, value: f32) {
+        self.queue.write_buffer(
+            &self.color_params_buffer,
+            offset,
+            unsafe {
+                std::slice::from_raw_parts(
+                    (&value as *const f32) as *const u8,
+                    std::mem::size_of::<f32>(),
+                )
+            },
+        );
+    }
+
+    fn write_color_params_uniform(&self, params: ColorParams) {
         let words = flatten_color_params(params);
-        self.queue
-            .write_buffer(&self.color_params_buffer, 0, unsafe {
+        self.queue.write_buffer(
+            &self.color_params_buffer,
+            0,
+            unsafe {
                 std::slice::from_raw_parts(
                     words.as_ptr() as *const u8,
                     std::mem::size_of_val(&words),
                 )
-            });
+            },
+        );
     }
 }
 
-fn flatten_color_params(params: ColorParams) -> [f32; 16] {
+const PICTURE_BRIGHTNESS_UNIFORM_OFFSET: u64 = 44;
+const PICTURE_CONTRAST_UNIFORM_OFFSET: u64 = 60;
+const PICTURE_SATURATION_UNIFORM_OFFSET: u64 = 64;
+const PICTURE_GAMMA_UNIFORM_OFFSET: u64 = 68;
+const PICTURE_HUE_UNIFORM_OFFSET: u64 = 72;
+
+fn flatten_color_params(params: ColorParams) -> [f32; 20] {
     [
         params.y_offset,
         params.y_scale,
@@ -343,6 +422,10 @@ fn flatten_color_params(params: ColorParams) -> [f32; 16] {
         params.row2[1],
         params.row2[2],
         params.row2[3],
+        params.tune_extra[0],
+        params.tune_extra[1],
+        params.tune_extra[2],
+        params.tune_extra[3],
     ]
 }
 

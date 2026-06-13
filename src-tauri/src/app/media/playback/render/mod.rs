@@ -1,3 +1,4 @@
+pub mod picture_tune;
 pub mod preview;
 pub mod preview_config;
 pub mod pts;

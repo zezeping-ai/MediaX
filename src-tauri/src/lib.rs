@@ -127,6 +127,7 @@ pub fn run() {
             app::windows::window_set_main_always_on_top,
             app::windows::window_set_main_title,
             app::windows::window_set_main_video_scale_mode,
+            app::windows::window_set_main_video_picture_tune,
             app::windows::window_set_renderer_backdrop_theme,
             app::windows::window_toggle_main_fullscreen,
             app::windows::window_start_main_dragging,
