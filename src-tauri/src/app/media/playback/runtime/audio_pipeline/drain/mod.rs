@@ -20,6 +20,7 @@ use self::sync::{
     should_drop_pre_seek_audio_frame, sync_audio_clock, sync_audio_clock_to_output_head,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn drain_audio_frames(
     app: &AppHandle,
     audio_state: &mut AudioPipeline,
@@ -92,12 +93,11 @@ pub(crate) fn drain_audio_frames(
             audio_state.scratch_pcm = pcm;
             continue;
         }
-        if audio_state.output.queue_depth() == 0 {
-            if !audio_state.stats.intentional_refill_pending {
+        if audio_state.output.queue_depth() == 0
+            && !audio_state.stats.intentional_refill_pending {
                 audio_state.stats.underrun_count =
                     audio_state.stats.underrun_count.saturating_add(1);
             }
-        }
         if audio_state.output.is_paused() {
             audio_state.output.resume();
         }
@@ -197,6 +197,7 @@ pub(crate) fn drain_audio_frames(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn should_yield_audio_decode(
     queue_depth: usize,
     queued_seconds: f64,

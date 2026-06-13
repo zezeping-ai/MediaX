@@ -79,12 +79,13 @@ pub(super) fn transcode_audio_with_progress(
             .ok_or_else(|| "音频编码器不支持输出格式".to_string())?,
     );
     encoder.set_time_base((1, decoder.rate() as i32));
-    out_stream.set_time_base((1, decoder.rate() as i32));
     let mut opened_encoder = encoder
         .open_as(encoder_codec)
         .map_err(|err| format!("打开音频编码器失败: {err}"))?;
-    out_stream.set_parameters(&opened_encoder);
-    drop(out_stream);
+    {
+        out_stream.set_time_base((1, decoder.rate() as i32));
+        out_stream.set_parameters(&opened_encoder);
+    }
 
     let filter_spec = build_atempo_filter_chain(rate);
     let mut filter_graph = build_audio_filter_graph(&filter_spec, &decoder, &opened_encoder)?;

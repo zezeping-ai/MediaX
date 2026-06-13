@@ -12,8 +12,6 @@ use app::media::{
 use tauri::Manager;
 #[cfg(target_os = "macos")]
 use tauri::RunEvent;
-#[cfg(desktop)]
-use tauri_plugin_single_instance;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,6 +35,7 @@ pub fn run() {
             })?;
             app::menu::setup(app)?;
             app::tray::setup(app)?;
+            app::system_media_controls::setup(app.handle())?;
             // Milestone 0: start wgpu underlay test rendering.
             let renderer = app.state::<RendererState>();
             renderer.start_render_loop(app.handle()).map_err(|err| {

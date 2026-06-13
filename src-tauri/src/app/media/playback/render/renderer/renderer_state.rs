@@ -378,6 +378,7 @@ impl RendererState {
         submit_frame_to_queue(&self.inner, QueuedFrame::Prepared(frame));
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn submit_decoded_frame(
         &self,
         frame: frame::Video,

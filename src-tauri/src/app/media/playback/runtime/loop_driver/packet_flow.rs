@@ -23,6 +23,7 @@ use tauri::{AppHandle, Manager};
 const VIDEO_SEND_PACKET_RETRY_LIMIT: usize = 3;
 const AUDIO_SEND_PACKET_RETRY_LIMIT: usize = 3;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn handle_packet(
     app: &AppHandle,
     renderer: &RendererState,
@@ -259,6 +260,7 @@ fn handle_audio_packet(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn send_audio_packet_with_backpressure_recovery(
     app: &AppHandle,
     stop_flag: &Arc<AtomicBool>,

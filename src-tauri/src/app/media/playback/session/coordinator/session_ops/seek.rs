@@ -27,7 +27,7 @@ pub fn seek(
         if playback_state
             .current_path
             .as_deref()
-            .is_some_and(|source| supports_timeline_seek(source))
+            .is_some_and(supports_timeline_seek)
         {
             playback.seek(position_seconds);
         }

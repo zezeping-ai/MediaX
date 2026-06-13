@@ -73,8 +73,7 @@ pub fn play(
     let has_active_stream = state
         .runtime
         .stream
-        .has_active_stream()
-        .map_err(MediaError::from)?;
+        .has_active_stream()?;
     let should_restart_stream = !resume_prefetch_stream || !has_active_stream;
     if let Some(source) = current_path.as_deref() {
         if should_restart_stream && supports_timeline_seek(source) {

@@ -61,6 +61,7 @@ ffmpeg-next = { version = "7", default-features = false, features = [
     "software-resampling",
     "software-scaling",
 ] }
+raw-window-handle = "0.6"
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 ffmpeg-next = { version = "7", default-features = false, features = [
@@ -73,3 +74,4 @@ ffmpeg-next = { version = "7", default-features = false, features = [
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+souvlaki = "0.8.3"

@@ -21,6 +21,7 @@ pub struct CacheRecorderSession {
     pub error_message: Option<String>,
 }
 
+#[derive(Default)]
 pub struct MediaState {
     pub session: MediaSessionState,
     pub runtime: MediaRuntimeState,
@@ -28,13 +29,3 @@ pub struct MediaState {
     pub cache: MediaCacheState,
 }
 
-impl Default for MediaState {
-    fn default() -> Self {
-        Self {
-            session: MediaSessionState::default(),
-            runtime: MediaRuntimeState::default(),
-            controls: MediaControlState::default(),
-            cache: MediaCacheState::default(),
-        }
-    }
-}

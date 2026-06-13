@@ -128,6 +128,7 @@ impl VideoFramePipeline {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn record_stage_costs(
         &mut self,
         receive: Duration,

@@ -117,7 +117,7 @@ fn compute_target_dimensions(
     }
     let ratio = source_width as f64 / source_height as f64;
     let mut width = (target_height as f64 * ratio).round() as u32;
-    if width % 2 != 0 {
+    if !width.is_multiple_of(2) {
         width = width.saturating_sub(1);
     }
     (width.max(2), target_height)

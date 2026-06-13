@@ -25,7 +25,6 @@ pub fn open_default_player_settings(app: &AppHandle) {
             .title("设为默认播放器")
             .kind(MessageDialogKind::Info)
             .show(|_| {});
-        return;
     }
 
     #[cfg(target_os = "linux")]

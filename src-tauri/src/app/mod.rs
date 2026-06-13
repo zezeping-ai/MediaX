@@ -5,6 +5,7 @@ pub mod launch;
 pub mod media;
 pub mod menu;
 pub mod system_keep_awake;
+pub mod system_media_controls;
 pub mod tray;
 pub mod updates;
 pub mod windows;

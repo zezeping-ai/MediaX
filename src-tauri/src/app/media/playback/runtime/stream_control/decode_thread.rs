@@ -56,6 +56,7 @@ fn read_requested_hw_mode(app: &AppHandle) -> Result<HardwareDecodeMode, String>
     Ok(playback.hw_decode_mode())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_decode_stream_with_auto_fallback(
     app: &AppHandle,
     renderer: &RendererState,

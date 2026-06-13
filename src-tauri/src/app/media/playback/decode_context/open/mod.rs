@@ -231,6 +231,7 @@ fn finalize_audio_only_context(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finalize_video_decode_context(
     input_ctx: format::context::Input,
     video_stream_index: Option<usize>,

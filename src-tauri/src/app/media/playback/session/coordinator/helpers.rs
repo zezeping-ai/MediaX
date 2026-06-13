@@ -44,9 +44,7 @@ pub(super) fn set_pending_seek(
     state
         .runtime
         .stream
-        .set_pending_seek_seconds(position_seconds.max(0.0))
-        .map_err(Into::into)
-}
+        .set_pending_seek_seconds(position_seconds.max(0.0))}
 
 pub(super) fn activate_playback_and_resume_position(
     state: &State<'_, MediaState>,
@@ -58,8 +56,7 @@ pub(super) fn activate_playback_and_resume_position(
             state
                 .runtime
                 .stream
-                .latest_position_seconds()
-                .map_err(MediaError::from)?,
+                .latest_position_seconds()?,
         )
         .max(0.0);
     let current_path = {
@@ -75,8 +72,7 @@ pub(super) fn sync_pause_resume_position(state: &State<'_, MediaState>) -> Media
     let latest = state
         .runtime
         .stream
-        .latest_position_seconds()
-        .map_err(MediaError::from)?;
+        .latest_position_seconds()?;
     let (current_path, current_position) = {
         let playback = state::playback(state)?;
         (
