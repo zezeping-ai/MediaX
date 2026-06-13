@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { Icon } from "@iconify/vue";
 import { useWindowFileDrop } from "./composables/useWindowFileDrop";
 import OpenUrlModal from "./components/OpenUrlModal";
+import PlaylistPanel from "./components/PlaylistPanel/index.vue";
 import PlaybackControls from "./components/PlaybackControls";
 import MediaViewport from "./components/MediaViewport";
 import StatusAlerts from "./components/StatusAlerts.vue";
@@ -14,6 +16,7 @@ const route = useRoute();
 const router = useRouter();
 const { dropActive } = useWindowFileDrop({
   openPath: viewModel.openPath,
+  importPaths: viewModel.importPathsToQueue,
 });
 
 const {
@@ -23,6 +26,9 @@ const {
   mediaViewportProps,
   playbackControlsEvents,
   playbackControlsProps,
+  playlistPanelEvents,
+  playlistPanelProps,
+  playlistPanelVisible,
   shellEvents,
   statusAlertProps,
   urlDialogInputValue,
@@ -69,7 +75,7 @@ watch(
         class="pointer-events-none absolute inset-5 z-40 flex items-center justify-center rounded-[28px] border border-dashed border-white/35 bg-black/28 backdrop-blur-md"
       >
         <div class="rounded-2xl border border-white/12 bg-black/45 px-5 py-3 text-center text-sm font-medium tracking-[0.02em] text-white/92 shadow-[0_18px_48px_rgba(0,0,0,0.38)]">
-          拖拽媒体文件到这里即可播放
+          拖拽媒体文件到这里即可播放或加入列表
         </div>
       </div>
       <PlaybackControls
@@ -80,6 +86,27 @@ watch(
         v-on="playbackControlsEvents"
       />
       <StatusAlerts v-bind="statusAlertProps" />
+      <button
+        type="button"
+        class="absolute right-4 top-4 z-40 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-black/45 text-white/88 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-md transition hover:bg-black/60"
+        title="播放列表"
+        @click="viewModel.togglePlaylistPanel()"
+      >
+        <span class="relative inline-flex">
+          <Icon icon="lucide:list-music" width="18" height="18" />
+          <span
+            v-if="viewModel.playlistController.queueCount.value > 0"
+            class="absolute -right-2 -top-2 min-w-[14px] rounded-full bg-[#1677ff] px-1 text-[9px] leading-[14px] text-white"
+          >
+            {{ viewModel.playlistController.queueCount.value > 99 ? "99+" : viewModel.playlistController.queueCount.value }}
+          </span>
+        </span>
+      </button>
+      <PlaylistPanel
+        v-model:open="playlistPanelVisible"
+        v-bind="playlistPanelProps"
+        v-on="playlistPanelEvents"
+      />
       <OpenUrlModal
         v-if="urlDialogVisible"
         v-model:open="urlDialogVisible"

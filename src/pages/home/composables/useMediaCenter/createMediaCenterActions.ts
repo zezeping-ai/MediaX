@@ -3,8 +3,11 @@ import type {
   PlaybackQualityMode,
   PreviewFrame,
 } from "@/modules/media-types";
+import { scanMediaDirectory } from "@/modules/media-library";
 import { open } from "@tauri-apps/plugin-dialog";
 import { resolveDialogPath } from "@/modules/resolve-dialog-path";
+import type { Ref } from "vue";
+import type { PlaybackPlaylistController } from "@/pages/home/composables/usePlaybackPlaylist";
 import type { createPlaybackCommandRunner } from "./createPlaybackCommandRunner";
 import type { useCacheRecordingController } from "./useCacheRecordingController";
 import type { useMediaUrlInputController } from "./useMediaUrlInputController";
@@ -18,18 +21,25 @@ type CreateMediaCenterActionsOptions = {
   playbackRunner: PlaybackRunner;
   cacheRecordingController: CacheRecordingController;
   urlInputController: UrlInputController;
+  playlistController: PlaybackPlaylistController;
+  openPathWithPlaylist: (source: string) => Promise<void>;
+  currentSource: Ref<string>;
   requestPreviewFrame: (
     positionSeconds: number,
     maxWidth?: number,
     maxHeight?: number,
   ) => Promise<PreviewFrame | null>;
+  resumePromptPositionSeconds: Ref<number | null>;
   onNoticeMessage: (message: string) => void;
 };
 
 export function createMediaCenterActions(options: CreateMediaCenterActionsOptions) {
   const {
     cacheRecordingController,
+    currentSource,
+    openPathWithPlaylist,
     playbackRunner,
+    playlistController,
     requestPreviewFrame,
     urlInputController,
     withBusyState,
@@ -54,9 +64,21 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
     onNoticeMessage(`音频已导出：${outputPath}`);
   }
 
+  async function importLocalPaths(paths: string[], playFirst?: boolean) {
+    if (!paths.length) {
+      return 0;
+    }
+    const shouldPlayFirst = playFirst ?? !currentSource.value.trim();
+    const imported = await playlistController.importSources(paths, { playFirst: shouldPlayFirst });
+    if (imported > 0) {
+      onNoticeMessage(`已加入 ${imported} 个媒体到播放列表`);
+    }
+    return imported;
+  }
+
   return {
     openPath: (path: string) => withBusyState(async () => {
-      await playbackRunner.openPath(path);
+      await openPathWithPlaylist(path);
     }),
     openLocalFileByDialog: async () => {
       const selectedPath = await playbackRunner.openLocalFileByDialog();
@@ -64,9 +86,35 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
         return;
       }
       await withBusyState(async () => {
-        await playbackRunner.openPath(selectedPath);
+        await openPathWithPlaylist(selectedPath);
       });
     },
+    importLocalFilesToQueue: async () => {
+      const paths = await playbackRunner.pickLocalMediaFiles();
+      if (!paths.length) {
+        return;
+      }
+      await withBusyState(async () => {
+        await importLocalPaths(paths);
+      });
+    },
+    importFolderToQueue: async () => {
+      const directory = await pickDirectory("选择文件夹导入播放列表");
+      if (!directory) {
+        return;
+      }
+      await withBusyState(async () => {
+        const paths = await scanMediaDirectory(directory);
+        if (!paths.length) {
+          onNoticeMessage("所选文件夹中没有可播放的媒体文件");
+          return;
+        }
+        await importLocalPaths(paths);
+      });
+    },
+    importPathsToQueue: (paths: string[]) => withBusyState(async () => {
+      await importLocalPaths(paths);
+    }),
     openUrl: (url: string) => withBusyState(async () => {
       await urlInputController.submitUrl(url);
     }),
@@ -78,7 +126,10 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
     play: () => withBusyState(playbackRunner.play),
     pause: () => withBusyState(playbackRunner.pause),
     stop: () => withBusyState(playbackRunner.stop),
-    seek: (seconds: number) => playbackRunner.runWithoutBusyLock(() => playbackRunner.seek(seconds)),
+    seek: (seconds: number) => {
+      options.resumePromptPositionSeconds.value = null;
+      return playbackRunner.runWithoutBusyLock(() => playbackRunner.seek(seconds));
+    },
     seekPreview: (seconds: number) => playbackRunner.seekPreview(seconds),
     setRate: (rate: number) => playbackRunner.runWithoutBusyLock(() => playbackRunner.setRate(rate)),
     setVolume: (volume: number) =>
@@ -102,5 +153,27 @@ export function createMediaCenterActions(options: CreateMediaCenterActionsOption
       requestPreviewFrame(positionSeconds, maxWidth, maxHeight),
     syncPosition: (positionSeconds: number, durationSeconds: number) =>
       withBusyState(() => playbackRunner.syncPosition(positionSeconds, durationSeconds)),
+    togglePlaylistPanel: playlistController.togglePanel,
+    playNextInQueue: () => withBusyState(async () => {
+      await playlistController.tryPlayNextInQueue();
+    }),
+    playPreviousInQueue: () => withBusyState(async () => {
+      await playlistController.tryPlayPreviousInQueue();
+    }),
+    playQueueItem: (id: string) => withBusyState(async () => {
+      await playlistController.playQueueItem(id);
+    }),
+    playHistoryItem: (id: string) => withBusyState(async () => {
+      await playlistController.playHistoryItem(id);
+    }),
+    removeQueueItem: playlistController.removeFromQueue,
+    removeHistoryItem: playlistController.removeFromHistory,
+    reorderQueue: playlistController.reorderQueue,
+    addToQueue: playlistController.addToQueue,
+    clearQueue: playlistController.clearQueue,
+    clearHistory: playlistController.clearHistory,
+    setAdvanceMode: playlistController.setAdvanceMode,
+    handleTrackEnded: playlistController.handleTrackEnded,
+    tryPlayNextInQueue: playlistController.tryPlayNextInQueue,
   };
 }

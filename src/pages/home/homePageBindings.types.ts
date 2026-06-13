@@ -25,7 +25,10 @@ export type PlaybackControlsEventMap = {
   "set-channel-routing": (value: string) => void;
   "toggle-cache": () => void;
   "toggle-lock": () => void;
+  "toggle-playlist": () => void;
   "export-audio": () => void;
+  "resume-prompt-accept": () => void;
+  "resume-prompt-dismiss": () => void;
 };
 
 export type UrlDialogEventMap = {

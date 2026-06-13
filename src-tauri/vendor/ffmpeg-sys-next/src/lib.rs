@@ -6,6 +6,9 @@
 #![allow(clippy::redundant_static_lifetimes)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::type_complexity)]
+// bindgen 生成的 FFI 结构体含函数指针 PartialEq 与类型转换，Rust 1.86+ 会对此报警。
+#![allow(unpredictable_function_pointer_comparisons)]
+#![allow(unnecessary_transmutes)]
 
 extern crate libc;
 

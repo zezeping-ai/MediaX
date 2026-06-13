@@ -21,6 +21,7 @@ export function usePlaybackControlsBindings(
     timelineDisabled: viewModel.timelineDisabled.value,
     timelineTitle: viewModel.timelineTitle.value,
     sourceKey: props.playback?.current_path ?? "",
+    resumePromptPositionSeconds: props.resumePromptPositionSeconds,
     requestPreviewFrame: props.requestPreviewFrame,
   }));
 
@@ -47,6 +48,8 @@ export function usePlaybackControlsBindings(
     cacheRecording: props.cacheRecording,
     locked: props.locked,
     showAudioExport: props.showAudioExport,
+    playlistOpen: props.playlistOpen,
+    queueCount: props.queueCount,
     cacheIcon: unref(viewModel.cacheIcon),
     lockIcon: unref(viewModel.lockIcon),
     decodeBadgeClass: unref(viewModel.decodeBadgeClass),
@@ -76,12 +79,15 @@ export function usePlaybackControlsBindings(
   const sideActionEvents: SideActionEventMap = {
     "toggle-cache": () => emit("toggle-cache"),
     "toggle-lock": () => emit("toggle-lock"),
+    "toggle-playlist": () => emit("toggle-playlist"),
     "export-audio": () => emit("export-audio"),
   };
 
   const timelineEvents: TimelineEventMap = {
     preview: viewModel.handleProgressPreviewUpdate,
     commit: viewModel.handleProgressCommit,
+    "resume-prompt-accept": () => emit("resume-prompt-accept"),
+    "resume-prompt-dismiss": () => emit("resume-prompt-dismiss"),
   };
 
   return {

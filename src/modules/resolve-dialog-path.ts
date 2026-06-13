@@ -25,3 +25,16 @@ export function resolveDialogPath(selection: unknown): string | null {
   }
   return raw;
 }
+
+export function resolveDialogPaths(selection: unknown): string[] {
+  if (selection == null) {
+    return [];
+  }
+  if (Array.isArray(selection)) {
+    return selection
+      .map((item) => resolveDialogPath(item))
+      .filter((path): path is string => Boolean(path));
+  }
+  const single = resolveDialogPath(selection);
+  return single ? [single] : [];
+}

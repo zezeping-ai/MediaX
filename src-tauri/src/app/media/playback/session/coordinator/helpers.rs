@@ -1,4 +1,5 @@
 use crate::app::media::error::{MediaError, MediaResult};
+use crate::app::media::playback::session::player_settings;
 use crate::app::media::state;
 use crate::app::media::state::{CacheRecorderSession, MediaState};
 use std::fs;
@@ -44,7 +45,8 @@ pub(super) fn set_pending_seek(
     state
         .runtime
         .stream
-        .set_pending_seek_seconds(position_seconds.max(0.0))}
+        .set_pending_seek_seconds(position_seconds.max(0.0))
+}
 
 pub(super) fn activate_playback_and_resume_position(
     state: &State<'_, MediaState>,
@@ -87,7 +89,7 @@ pub(super) fn sync_pause_resume_position(state: &State<'_, MediaState>) -> Media
             let duration = playback.state().duration_seconds;
             (duration > 0.0).then_some(duration)
         };
-        state::library(state)?.mark_playback_progress(path, resume_position, duration_seconds);
+        persist_playback_progress_if_enabled(state, path, resume_position, duration_seconds)?;
     }
     {
         let mut playback = state::playback(state)?;
@@ -101,6 +103,47 @@ pub(super) fn sync_pause_resume_position(state: &State<'_, MediaState>) -> Media
             .fetch_add(1, Ordering::Relaxed);
     }
     Ok(())
+}
+
+pub(super) fn persist_playback_progress_if_enabled(
+    state: &State<'_, MediaState>,
+    path: &str,
+    position_seconds: f64,
+    duration_seconds: Option<f64>,
+) -> MediaResult<()> {
+    if !player_settings::should_persist_playback_progress(state) {
+        return Ok(());
+    }
+    state::library(state)?.mark_playback_progress(path, position_seconds, duration_seconds);
+    Ok(())
+}
+
+pub(super) fn persist_current_source_before_switch(
+    state: &State<'_, MediaState>,
+    next_path: &str,
+) -> MediaResult<()> {
+    if !player_settings::should_persist_playback_progress(state) {
+        return Ok(());
+    }
+    let latest = state.runtime.stream.latest_position_seconds()?;
+    let (current_path, current_position, duration_seconds) = {
+        let playback = state::playback(state)?;
+        let playback_state = playback.state();
+        (
+            playback_state.current_path.clone(),
+            playback_state.position_seconds.max(0.0),
+            playback_state.duration_seconds,
+        )
+    };
+    let Some(current_path) = current_path else {
+        return Ok(());
+    };
+    if current_path == next_path {
+        return Ok(());
+    }
+    let position_seconds = current_position.max(latest).max(0.0);
+    let duration = (duration_seconds > 0.0).then_some(duration_seconds);
+    persist_playback_progress_if_enabled(state, &current_path, position_seconds, duration)
 }
 
 pub(super) fn create_cache_recorder_session(

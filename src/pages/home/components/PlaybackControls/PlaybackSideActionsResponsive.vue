@@ -24,6 +24,7 @@ const emit = defineEmits<SideActionEmitContract>();
       v-bind="props"
       @toggle-cache="emit('toggle-cache')"
       @toggle-lock="emit('toggle-lock')"
+      @toggle-playlist="emit('toggle-playlist')"
       @export-audio="emit('export-audio')"
     />
   </div>
@@ -41,6 +42,7 @@ const emit = defineEmits<SideActionEmitContract>();
       v-bind="props"
       @toggle-cache="emit('toggle-cache')"
       @toggle-lock="emit('toggle-lock')"
+      @toggle-playlist="emit('toggle-playlist')"
       @export-audio="emit('export-audio')"
     />
   </div>

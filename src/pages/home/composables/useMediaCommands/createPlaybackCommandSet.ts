@@ -55,7 +55,7 @@ export interface PlaybackCommandSet {
 
 export function createPlaybackCommandSet(): PlaybackCommandSet {
   return {
-    openPath: (path, resumeLastPosition = true) => playbackOpenSource(path, resumeLastPosition),
+    openPath: (path, resumeLastPosition = false) => playbackOpenSource(path, resumeLastPosition),
     play: () => playbackResume(),
     pause: () => playbackPause(),
     stop: () => playbackStopSession(),

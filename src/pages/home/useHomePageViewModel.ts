@@ -4,7 +4,7 @@ export function useHomePageViewModel() {
   const controller = useHomePlaybackController();
 
   async function handleVideoEnded() {
-    await controller.stop();
+    await controller.handleTrackEnded();
   }
 
   return {

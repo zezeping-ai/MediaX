@@ -1,5 +1,6 @@
 use super::super::helpers::{
-    activate_playback_and_resume_position, finalize_active_cache_recording, set_pending_seek,
+    activate_playback_and_resume_position, finalize_active_cache_recording,
+    persist_current_source_before_switch, persist_playback_progress_if_enabled, set_pending_seek,
     sync_pause_resume_position,
 };
 use crate::app::media::error::{MediaError, MediaResult};
@@ -9,7 +10,6 @@ use crate::app::media::playback::runtime::emit_debug;
 use crate::app::media::playback::runtime::{start_decode_stream, stop_decode_stream_non_blocking};
 use crate::app::media::playback::session::service::supports_timeline_seek;
 use crate::app::media::playback::session::source_path::normalize_playable_source;
-use crate::app::media::playback::session::player_settings;
 use crate::app::media::state;
 use crate::app::media::state::emit_snapshot_with_request_id;
 use crate::app::media::state::MediaState;
@@ -20,10 +20,11 @@ pub fn open(
     state: State<'_, MediaState>,
     path: String,
     request_id: Option<String>,
-    resume_last_position: Option<bool>,
+    _resume_last_position: Option<bool>,
 ) -> MediaResult<MediaSnapshot> {
     let path = normalize_playable_source(path)?;
     finalize_active_cache_recording(&state, "播放源已切换，录制已自动停止")?;
+    persist_current_source_before_switch(&state, &path)?;
     state
         .runtime
         .pause_prefetch_active
@@ -33,30 +34,12 @@ pub fn open(
     if let Err(err) = (*app.state::<RendererState>()).clone().clear_surface(&app) {
         eprintln!("clear renderer surface on source switch failed: {err}");
     }
-    let resume_enabled = resume_last_position
-        .unwrap_or_else(|| player_settings::resume_last_position_enabled(&state));
-    let resume_position_seconds = if resume_enabled {
-        let library = state::library(&state)?;
-        library.saved_position_seconds(&path)
-    } else {
-        0.0
-    };
     {
         let mut playback = state::playback(&state)?;
         playback.open(path.clone());
-        if resume_position_seconds > f64::EPSILON {
-            playback.seek(resume_position_seconds);
-        }
     }
-    state
-        .runtime
-        .stream
-        .set_latest_position_seconds(resume_position_seconds)?;
-    if resume_position_seconds > f64::EPSILON {
-        set_pending_seek(&state, resume_position_seconds)?;
-    } else {
-        state.runtime.stream.reset_pending_seek_to_zero()?;
-    }
+    state.runtime.stream.set_latest_position_seconds(0.0)?;
+    state.runtime.stream.reset_pending_seek_to_zero()?;
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }
 
@@ -164,9 +147,8 @@ pub fn stop(
         playback.stop();
     }
     if let Some(path) = stop_progress.0.as_deref() {
-        let mut library = state::library(&state)?;
         let duration = (stop_progress.2 > 0.0).then_some(stop_progress.2);
-        library.mark_playback_progress(path, stop_progress.1, duration);
+        persist_playback_progress_if_enabled(&state, path, stop_progress.1, duration)?;
     }
     state.runtime.stream.reset_pending_seek_to_zero()?;
     if let Err(err) = (*app.state::<RendererState>()).clone().clear_surface(&app) {

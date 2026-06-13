@@ -1,22 +1,13 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { resolveDialogPath } from "@/modules/resolve-dialog-path";
+import { LOCAL_MEDIA_DIALOG_FILTERS, filterLocalMediaPaths } from "@/modules/local-media-files";
+import { getSavedPlaybackPosition } from "@/modules/media-library";
+import { resolveDialogPath, resolveDialogPaths } from "@/modules/resolve-dialog-path";
 import type { MediaSnapshot, PlaybackChannelRouting, PlaybackQualityMode } from "@/modules/media-types";
 import type { Ref } from "vue";
 
-const LOCAL_MEDIA_DIALOG_FILTERS = [
-  {
-    name: "媒体文件",
-    extensions: [
-      "mp4", "mkv", "mov", "avi", "webm", "flv", "m4v", "wmv", "mpeg", "mpg", "ts", "m2ts",
-      "mts", "mxf", "rm", "rmvb", "3gp", "3g2", "ogv", "asf", "vob", "f4v", "divx",
-      "mp3", "flac", "wav", "aac", "m4a", "ogg", "opus", "wma", "aif", "aiff", "ape",
-      "alac", "amr", "ac3", "dts", "mp2", "mka",
-    ],
-  },
-];
-
 const DEV_SEEK_LOG = import.meta.env.DEV;
 const SEEK_COALESCE_WINDOW_MS = 90;
+const RESUME_POSITION_EPSILON_SECONDS = 0.5;
 
 type CreatePlaybackCommandRunnerOptions = {
   commands: {
@@ -46,6 +37,7 @@ type CreatePlaybackCommandRunnerOptions = {
   updateSnapshot: (snapshot: MediaSnapshot) => void;
   refreshCacheRecordingStatus: () => Promise<void>;
   resumeLastPosition: Ref<boolean>;
+  resumePromptPositionSeconds: Ref<number | null>;
 };
 
 export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunnerOptions) {
@@ -127,14 +119,51 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     return resolveDialogPath(fallback);
   }
 
+  async function pickLocalMediaFiles() {
+    try {
+      const selected = await open({
+        title: "选择媒体文件加入播放列表",
+        multiple: true,
+        filters: LOCAL_MEDIA_DIALOG_FILTERS,
+      });
+      const resolved = filterLocalMediaPaths(resolveDialogPaths(selected));
+      if (resolved.length) {
+        return resolved;
+      }
+    } catch {
+      // Filtered picker can fail on some platforms; fall back to the system file dialog.
+    }
+    const fallback = await open({
+      title: "选择媒体文件加入播放列表",
+      multiple: true,
+    });
+    return filterLocalMediaPaths(resolveDialogPaths(fallback));
+  }
+
   async function openPath(path: string) {
     options.pendingSource.value = path;
     try {
-      await run(() => options.commands.openPath(path, options.resumeLastPosition.value));
+      let savedPositionSeconds = 0;
+      if (options.resumeLastPosition.value) {
+        try {
+          savedPositionSeconds = await getSavedPlaybackPosition(path);
+        } catch {
+          savedPositionSeconds = 0;
+        }
+      }
+      await run(() => options.commands.openPath(path, false));
       await run(options.commands.play);
       await options.refreshCacheRecordingStatus();
       options.recordingNoticeMessage.value = "";
       options.errorMessage.value = "";
+      if (
+        options.resumeLastPosition.value
+        && savedPositionSeconds > RESUME_POSITION_EPSILON_SECONDS
+      ) {
+        options.resumePromptPositionSeconds.value = savedPositionSeconds;
+      } else {
+        options.resumePromptPositionSeconds.value = null;
+      }
     } finally {
       options.pendingSource.value = "";
     }
@@ -149,6 +178,7 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
   }
 
   async function stop() {
+    options.resumePromptPositionSeconds.value = null;
     await run(options.commands.stop);
     await options.refreshCacheRecordingStatus();
   }
@@ -249,6 +279,7 @@ export function createPlaybackCommandRunner(options: CreatePlaybackCommandRunner
     openLocalFileByDialog,
     openPath,
     pause,
+    pickLocalMediaFiles,
     play,
     run,
     runWithoutBusyLock,

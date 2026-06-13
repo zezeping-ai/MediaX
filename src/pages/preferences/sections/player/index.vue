@@ -37,7 +37,7 @@ async function applyVideoScaleMode(mode: "contain" | "cover") {
           <div class="flex min-w-0 flex-col gap-1">
             <div class="font-semibold">记住播放进度</div>
             <div class="text-xs text-black/55 dark:text-white/55">
-              重新打开同一文件时，从上次停止的位置继续播放；已播到结尾则从头开始。
+              退出播放时保存进度；再次打开同一文件时从头播放，并在进度条上方提示是否跳转。
             </div>
           </div>
           <a-switch

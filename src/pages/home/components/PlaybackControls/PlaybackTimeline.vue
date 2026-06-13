@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from "vue";
 import type { PreviewFrame } from "@/modules/media-types";
+import ResumePlaybackPrompt from "./ResumePlaybackPrompt.vue";
 import { formatSeconds } from "./playbackControlsUtils";
 import type { TimelineEmitContract, TimelineViewProps } from "./bindings.contract";
 
@@ -37,9 +38,15 @@ const timelineRailInsetPx = 5;
 
 <template>
   <div class="space-y-1.5">
-    <div class="flex items-center justify-end gap-3">
+    <div class="flex items-center justify-between gap-3">
+      <ResumePlaybackPrompt
+        v-if="resumePromptPositionSeconds != null"
+        :position-seconds="resumePromptPositionSeconds"
+        @accept="$emit('resume-prompt-accept')"
+        @dismiss="$emit('resume-prompt-dismiss')"
+      />
       <div
-        class="flex items-baseline gap-1.5 text-[11px] text-white/70 [font-variant-numeric:tabular-nums]"
+        class="ml-auto flex shrink-0 items-baseline gap-1.5 text-[11px] text-white/70 [font-variant-numeric:tabular-nums]"
       >
         <span class="text-white/85">{{ formatSeconds(currentTime) }}</span>
         <span class="text-white/35">/</span>

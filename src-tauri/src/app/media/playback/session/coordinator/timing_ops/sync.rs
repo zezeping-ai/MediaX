@@ -1,6 +1,7 @@
 use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::session::constraints;
+use crate::app::media::playback::session::player_settings;
 use crate::app::media::state;
 use crate::app::media::state::emit_snapshot_with_request_id;
 use crate::app::media::state::MediaState;
@@ -23,9 +24,11 @@ pub fn sync_position(
         playback.state().current_path
     };
     if let Some(path) = path {
-        let mut library = state::library(&state)?;
-        let duration = (duration_seconds > 0.0).then_some(duration_seconds);
-        library.mark_playback_progress(&path, position_seconds, duration);
+        if player_settings::should_persist_playback_progress(&state) {
+            let mut library = state::library(&state)?;
+            let duration = (duration_seconds > 0.0).then_some(duration_seconds);
+            library.mark_playback_progress(&path, position_seconds, duration);
+        }
     }
     emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from)
 }

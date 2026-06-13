@@ -1,4 +1,5 @@
 use super::super::helpers::set_pending_seek;
+use super::super::helpers::persist_playback_progress_if_enabled;
 use crate::app::media::error::{MediaError, MediaResult};
 use crate::app::media::model::MediaSnapshot;
 use crate::app::media::playback::dto::{PlaybackMediaKind, PlaybackStatus};
@@ -54,9 +55,8 @@ pub fn seek(
         return emit_snapshot_with_request_id(&app, &state, request_id).map_err(MediaError::from);
     }
     if let Some(path_ref) = media_path.as_deref() {
-        let mut library = state::library(&state)?;
         let duration = (duration_seconds > 0.0).then_some(duration_seconds);
-        library.mark_playback_progress(path_ref, position_seconds, duration);
+        persist_playback_progress_if_enabled(&state, path_ref, position_seconds, duration)?;
     }
     set_pending_seek(&state, position_seconds)?;
     write_latest_stream_position(&state, position_seconds.max(0.0))?;

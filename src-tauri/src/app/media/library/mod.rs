@@ -66,7 +66,7 @@ impl MediaLibraryService {
             }
             self.collect_items_from_root(&root_path, &mut items);
         }
-        items.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        items.sort_by_key(|item| item.name.to_lowercase());
         self.state.items = items;
     }
 
@@ -206,6 +206,45 @@ pub fn media_rescan_library(
         library.rescan();
     }
     emit_snapshot(&app, &state)
+}
+
+#[tauri::command]
+pub fn media_scan_directory(directory: String) -> Result<Vec<String>, String> {
+    let root = PathBuf::from(directory.trim());
+    if directory.trim().is_empty() {
+        return Err("目录路径不能为空".to_string());
+    }
+    if !root.is_dir() {
+        return Err(format!("目录不存在: {}", root.to_string_lossy()));
+    }
+
+    let mut paths = Vec::new();
+    for entry in WalkDir::new(&root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        let path = entry.path();
+        if !entry.file_type().is_file() || !is_supported_media_file(path) {
+            continue;
+        }
+        paths.push(path.to_string_lossy().to_string());
+    }
+    paths.sort_by_key(|path| path.to_lowercase());
+    Ok(paths)
+}
+
+#[tauri::command]
+pub fn media_saved_playback_position(
+    state: State<'_, MediaState>,
+    path: String,
+) -> Result<f64, String> {
+    let library = state
+        .session
+        .library
+        .lock()
+        .map_err(|_| MediaError::state_poisoned_lock("media library state").to_string())?;
+    Ok(library.saved_position_seconds(path.trim()))
 }
 
 fn is_supported_media_file(path: &Path) -> bool {

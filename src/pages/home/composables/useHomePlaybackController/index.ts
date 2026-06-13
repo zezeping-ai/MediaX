@@ -33,6 +33,7 @@ export function useHomePlaybackController() {
     setRate: mediaCenter.setRate,
     setVolume: mediaCenter.setVolume,
     setMuted: mediaCenter.setMuted,
+    onTrackTailReached: () => mediaCenter.handleTrackEnded(),
   });
   const playbackActions = useHomePlaybackActions({
     currentSource: mediaCenter.currentSource,

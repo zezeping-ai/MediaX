@@ -15,6 +15,7 @@ import { useMediaErrorMap } from "../useMediaErrorMap";
 import { useMediaSession } from "../useMediaSession";
 import { usePlaybackSettings } from "../usePlaybackSettings";
 import { useMediaUrlInputController } from "./useMediaUrlInputController";
+import { usePlaybackPlaylist } from "@/pages/home/composables/usePlaybackPlaylist";
 
 export function useMediaCenter() {
   const {
@@ -35,6 +36,7 @@ export function useMediaCenter() {
   const recordingNoticeMessage = ref("");
   const lastSyncedSecond = ref(-1);
   const pendingSource = ref("");
+  const resumePromptPositionSeconds = ref<number | null>(null);
   const playback = computed(() => mediaSession.snapshot.value?.playback ?? null);
 
   const cacheRecordingController = useCacheRecordingController({
@@ -70,7 +72,20 @@ export function useMediaCenter() {
     updateSnapshot: mediaSession.updateSnapshot,
     refreshCacheRecordingStatus: cacheRecordingController.refreshCacheRecordingStatus,
     resumeLastPosition: playerResumeLastPosition,
+    resumePromptPositionSeconds,
   });
+
+  const playlistController = usePlaybackPlaylist({
+    currentSource: mediaSession.currentSource,
+    metadataTitle: mediaSession.metadataTitle,
+    openSource: (source) => playbackRunner.openPath(source),
+    stopPlayback: () => playbackRunner.stop(),
+  });
+
+  async function openPathWithPlaylist(source: string) {
+    await playbackRunner.openPath(source);
+    playlistController.recordSourceOpened(source, mediaSession.metadataTitle.value);
+  }
 
   async function applyHwDecodePreference(mode: HardwareDecodeMode) {
     if (playback.value?.hw_decode_mode === mode) {
@@ -103,7 +118,10 @@ export function useMediaCenter() {
   }
 
   const urlInputController = useMediaUrlInputController({
-    openUrl: playbackRunner.openPath,
+    openUrl: openPathWithPlaylist,
+    urlPlaylist: playlistController.urlPlaylist,
+    removeUrlFromHistory: playlistController.removeUrlFromHistory,
+    clearUrlHistory: playlistController.clearUrlHistory,
   });
 
   const mediaCenterLifecycle = useMediaCenterLifecycle({
@@ -139,11 +157,28 @@ export function useMediaCenter() {
     playbackRunner,
     cacheRecordingController,
     urlInputController,
+    playlistController,
+    openPathWithPlaylist,
+    currentSource: mediaSession.currentSource,
     requestPreviewFrame,
+    resumePromptPositionSeconds,
     onNoticeMessage: (message) => {
       recordingNoticeMessage.value = message;
     },
   });
+
+  async function acceptResumePrompt() {
+    const positionSeconds = resumePromptPositionSeconds.value;
+    if (positionSeconds == null) {
+      return;
+    }
+    resumePromptPositionSeconds.value = null;
+    await actions.seek(positionSeconds);
+  }
+
+  function dismissResumePrompt() {
+    resumePromptPositionSeconds.value = null;
+  }
 
   return {
     playback,
@@ -165,6 +200,9 @@ export function useMediaCenter() {
     cacheOutputDir: cacheRecordingController.cacheOutputDir,
     errorMessage,
     recordingNoticeMessage,
+    resumePromptPositionSeconds,
+    acceptResumePrompt,
+    dismissResumePrompt,
     latestAudioMeter: mediaSession.latestAudioMeter,
     mediaInfoSnapshot,
     metadataMediaKind: mediaSession.metadataMediaKind,
@@ -174,6 +212,7 @@ export function useMediaCenter() {
     metadataHasCoverArt: mediaSession.metadataHasCoverArt,
     metadataLyrics: mediaSession.metadataLyrics,
     metadataVideoHeight: mediaSession.metadataVideoHeight,
+    playlistController,
     ...actions,
   };
 }

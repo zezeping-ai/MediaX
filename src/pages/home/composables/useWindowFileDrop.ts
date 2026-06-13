@@ -1,9 +1,11 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { resolveDialogPath } from "@/modules/resolve-dialog-path";
+import { filterLocalMediaPaths } from "@/modules/local-media-files";
+import { resolveDialogPaths } from "@/modules/resolve-dialog-path";
 
 type UseWindowFileDropOptions = {
   openPath: (path: string) => Promise<void>;
+  importPaths: (paths: string[]) => Promise<void>;
 };
 
 export function useWindowFileDrop(options: UseWindowFileDropOptions) {
@@ -32,11 +34,15 @@ export function useWindowFileDrop(options: UseWindowFileDropOptions) {
 
       dragDepth = 0;
       dropActive.value = false;
-      const path = resolveDialogPath(event.payload.paths);
-      if (!path) {
+      const paths = filterLocalMediaPaths(resolveDialogPaths(event.payload.paths));
+      if (!paths.length) {
         return;
       }
-      await options.openPath(path);
+      if (paths.length === 1) {
+        await options.openPath(paths[0]!);
+        return;
+      }
+      await options.importPaths(paths);
     });
   });
 

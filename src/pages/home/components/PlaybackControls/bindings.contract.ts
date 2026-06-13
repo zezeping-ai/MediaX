@@ -18,6 +18,7 @@ export type TimelineViewProps = {
   timelineDisabled: boolean;
   timelineTitle: string;
   sourceKey: string;
+  resumePromptPositionSeconds: number | null;
   requestPreviewFrame?: PlaybackControlsProps["requestPreviewFrame"];
 };
 
@@ -44,6 +45,8 @@ export type SideActionViewProps = {
   cacheRecording: boolean;
   locked: boolean;
   showAudioExport: boolean;
+  playlistOpen: boolean;
+  queueCount: number;
   cacheIcon: string;
   lockIcon: string;
   decodeBadgeClass: string;
@@ -73,6 +76,7 @@ export type CenterControlEventMap = {
 export type SideActionEventMap = {
   "toggle-cache": () => void;
   "toggle-lock": () => void;
+  "toggle-playlist": () => void;
   "export-audio": () => void;
 };
 
@@ -99,12 +103,15 @@ export type CenterControlEmitContract = {
 export type SideActionEmitContract = {
   "toggle-cache": [];
   "toggle-lock": [];
+  "toggle-playlist": [];
   "export-audio": [];
 };
 
 export type TimelineEmitContract = {
   preview: [number | [number, number]];
   commit: [number | [number, number]];
+  "resume-prompt-accept": [];
+  "resume-prompt-dismiss": [];
 };
 
 export type PlaybackControlsBindingsResult = {

@@ -88,3 +88,7 @@ pub fn resume_last_position_enabled(state: &MediaState) -> bool {
         .resume_last_position_enabled
         .load(Ordering::Relaxed)
 }
+
+pub fn should_persist_playback_progress(state: &MediaState) -> bool {
+    resume_last_position_enabled(state)
+}

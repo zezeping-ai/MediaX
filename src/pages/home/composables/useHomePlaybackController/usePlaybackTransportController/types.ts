@@ -10,4 +10,5 @@ export interface UsePlaybackTransportControllerOptions {
   setRate: (rate: number) => Promise<void>;
   setVolume: (volume: number) => Promise<void>;
   setMuted: (muted: boolean) => Promise<void>;
+  onTrackTailReached?: (currentPath: string) => void | Promise<void>;
 }

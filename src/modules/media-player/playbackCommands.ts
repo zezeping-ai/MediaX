@@ -32,7 +32,7 @@ export function getPlaybackSnapshot() {
   return invokeMediaCommandValidated<MediaSnapshot>("playback_get_snapshot", isMediaSnapshot);
 }
 
-export function playbackOpenSource(path: string, resumeLastPosition = true) {
+export function playbackOpenSource(path: string, resumeLastPosition = false) {
   return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
     "playback_open_source",
     isMediaSnapshot,

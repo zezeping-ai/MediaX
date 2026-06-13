@@ -1,4 +1,1 @@
-export type UrlPlaylistItem = {
-  url: string;
-  lastOpenedAt: number;
-};
+export type { UrlPlaylistItem } from "@/pages/home/composables/usePlaybackPlaylist/types";

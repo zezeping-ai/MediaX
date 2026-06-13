@@ -1,4 +1,5 @@
 use crate::app::media::playback::render::renderer::RendererState;
+use crate::app::media::playback::session::player_settings;
 use crate::app::media::state::MediaState;
 use ffmpeg_next::{ffi, format};
 use tauri::{AppHandle, Manager};
@@ -84,12 +85,14 @@ pub fn update_playback_progress(
         playback.snapshot(library)
     };
     if let Some((path, position_seconds, duration_seconds)) = persist_progress {
-        let mut library = crate::app::media::state::library(&state)
-            .map_err(|err| err.to_string())?;
-        if finalize {
-            library.mark_playback_progress(&path, position_seconds, duration_seconds);
-        } else {
-            library.autosave_playback_progress(&path, position_seconds, duration_seconds);
+        if player_settings::should_persist_playback_progress(&state) {
+            let mut library = crate::app::media::state::library(&state)
+                .map_err(|err| err.to_string())?;
+            if finalize {
+                library.mark_playback_progress(&path, position_seconds, duration_seconds);
+            } else {
+                library.autosave_playback_progress(&path, position_seconds, duration_seconds);
+            }
         }
     }
     crate::app::media::state::emit_playback_state_snapshot(app, snapshot, None)?;

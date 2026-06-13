@@ -63,6 +63,9 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     qualityOptions: viewModel.playbackQualityOptions.value,
     selectedQuality: viewModel.selectedQuality.value,
     disabled: !viewModel.currentSource.value || viewModel.isBusy.value,
+    playlistOpen: viewModel.playlistController.panelVisible.value,
+    queueCount: viewModel.playlistController.queueCount.value,
+    resumePromptPositionSeconds: viewModel.resumePromptPositionSeconds.value,
     requestPreviewFrame: viewModel.requestPreviewFrame,
   }));
 
@@ -87,7 +90,10 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     "set-channel-routing": (value: string) => void viewModel.setChannelRouting(value as never),
     "toggle-cache": viewModel.toggleCacheRecording,
     "toggle-lock": viewModel.toggleLock,
+    "toggle-playlist": () => viewModel.togglePlaylistPanel(),
     "export-audio": viewModel.exportCurrentAudio,
+    "resume-prompt-accept": () => void viewModel.acceptResumePrompt(),
+    "resume-prompt-dismiss": viewModel.dismissResumePrompt,
   };
 
   const statusAlertProps = computed(() => ({
@@ -112,6 +118,33 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     play: viewModel.handlePlayFromUrlPlaylist,
   };
 
+  const playlistPanelProps = computed(() => ({
+    queue: viewModel.playlistController.queue.value,
+    history: viewModel.playlistController.history.value,
+    currentPlayingId: viewModel.playlistController.currentPlayingId.value,
+    busy: viewModel.isBusy.value,
+    hasNext: viewModel.playlistController.hasNext.value,
+    hasPrevious: viewModel.playlistController.hasPrevious.value,
+    queueCount: viewModel.playlistController.queueCount.value,
+    advanceMode: viewModel.playlistController.advanceMode.value,
+  }));
+
+  const playlistPanelEvents = {
+    playQueue: (id: string) => void viewModel.playQueueItem(id),
+    playHistory: (id: string) => void viewModel.playHistoryItem(id),
+    removeQueue: viewModel.removeQueueItem,
+    removeHistory: viewModel.removeHistoryItem,
+    addToQueue: viewModel.addToQueue,
+    reorder: viewModel.reorderQueue,
+    clearQueue: viewModel.clearQueue,
+    clearHistory: viewModel.clearHistory,
+    playNext: () => void viewModel.playNextInQueue(),
+    playPrevious: () => void viewModel.playPreviousInQueue(),
+    importFiles: () => void viewModel.importLocalFilesToQueue(),
+    importFolder: () => void viewModel.importFolderToQueue(),
+    changeAdvanceMode: viewModel.setAdvanceMode,
+  };
+
   return {
     controlsVisible: viewModel.controlsVisible,
     hasSource: viewModel.hasSource,
@@ -119,6 +152,9 @@ export function useHomePageBindings(viewModel: HomePageViewModel) {
     mediaViewportProps,
     playbackControlsEvents,
     playbackControlsProps,
+    playlistPanelEvents,
+    playlistPanelProps,
+    playlistPanelVisible: viewModel.playlistController.panelVisible,
     shellEvents,
     statusAlertProps,
     urlDialogInputValue: viewModel.urlInputValue,

@@ -24,6 +24,9 @@ export interface PlaybackControlsProps {
   qualityOptions: PlaybackQualityOption[];
   selectedQuality: string;
   requestPreviewFrame?: RequestPreviewFrame;
+  playlistOpen: boolean;
+  queueCount: number;
+  resumePromptPositionSeconds: number | null;
 }
 
 export interface PlaybackControlsEmit {
@@ -45,5 +48,8 @@ export interface PlaybackControlsEmit {
   (event: "set-channel-routing", value: PlaybackState["channel_routing"]): void;
   (event: "toggle-cache"): void;
   (event: "toggle-lock"): void;
+  (event: "toggle-playlist"): void;
   (event: "export-audio"): void;
+  (event: "resume-prompt-accept"): void;
+  (event: "resume-prompt-dismiss"): void;
 }

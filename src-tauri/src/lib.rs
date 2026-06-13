@@ -90,6 +90,8 @@ pub fn run() {
             playback_session_commands::playback_get_snapshot,
             library::media_set_library_roots,
             library::media_rescan_library,
+            library::media_scan_directory,
+            library::media_saved_playback_position,
             playback_session_commands::playback_open_source,
             playback_session_commands::playback_set_resume_last_position,
             playback_session_commands::playback_resume,
