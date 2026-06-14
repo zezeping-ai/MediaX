@@ -37,6 +37,40 @@ pub fn parse_lrc_contents(contents: &str) -> Vec<MediaLyricLine> {
     lines
 }
 
+pub fn format_lrc_contents(lines: &[MediaLyricLine]) -> String {
+    let mut ordered = lines.to_vec();
+    ordered.sort_by(|a, b| {
+        a.time_seconds
+            .partial_cmp(&b.time_seconds)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let has_synced = ordered.len() >= 2
+        && ordered
+            .windows(2)
+            .any(|pair| pair[0].time_seconds != pair[1].time_seconds);
+    if !has_synced {
+        return ordered
+            .into_iter()
+            .map(|line| line.text.trim().to_string())
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    ordered
+        .into_iter()
+        .filter(|line| !line.text.trim().is_empty())
+        .map(|line| format!("[{}]{}", format_lrc_timestamp(line.time_seconds), line.text.trim()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn format_lrc_timestamp(seconds: f64) -> String {
+    let safe_seconds = seconds.max(0.0);
+    let minutes = safe_seconds.floor() as u32 / 60;
+    let remainder = safe_seconds - f64::from(minutes * 60);
+    format!("{minutes:02}:{remainder:05.2}")
+}
+
 fn parse_lrc_timestamp(value: &str) -> Option<f64> {
     let parts: Vec<&str> = value.split(':').collect();
     match parts.as_slice() {

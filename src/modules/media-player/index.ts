@@ -23,6 +23,8 @@ export {
   playbackSetVolume,
   playbackStopSession,
   playbackSyncPosition,
+  playbackSearchLyrics,
+  playbackWriteAudioMetadata,
   type SeekMediaOptions,
 } from "./playbackCommands";
 export {

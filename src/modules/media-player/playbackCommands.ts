@@ -7,6 +7,7 @@ import {
   isMediaSnapshot,
   isPreviewFrame,
   type HardwareDecodeMode,
+  type LyricsSearchHit,
   type MediaSnapshot,
   type PlaybackChannelRouting,
   type PlaybackQualityMode,
@@ -44,6 +45,61 @@ export function playbackSelectLyricsCandidate(candidateId: string) {
   return invokeMediaCommandValidated<MediaSnapshot>("playback_select_lyrics_candidate", isMediaSnapshot, {
     candidateId,
   });
+}
+
+export function playbackWriteAudioMetadata(input: {
+  path: string;
+  title?: string;
+  artist?: string;
+  album?: string;
+  lyricsLrc?: string;
+  embedLyrics?: boolean;
+}) {
+  return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
+    "playback_write_audio_metadata",
+    isMediaSnapshot,
+    {
+      path: input.path,
+      title: input.title,
+      artist: input.artist,
+      album: input.album,
+      lyricsLrc: input.lyricsLrc,
+      embedLyrics: input.embedLyrics,
+    },
+  );
+}
+
+function isLyricsSearchHit(value: unknown): value is LyricsSearchHit {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.id === "string"
+    && typeof record.provider_id === "string"
+    && typeof record.title === "string"
+    && typeof record.artist === "string"
+    && typeof record.synced === "boolean"
+    && typeof record.preview === "string"
+    && typeof record.lyrics_lrc === "string";
+}
+
+export function playbackSearchLyrics(input: {
+  title: string;
+  artist?: string;
+  album?: string;
+  durationSeconds?: number;
+}) {
+  return invokeMediaCommandValidated<LyricsSearchHit[]>(
+    "playback_search_lyrics",
+    (value): value is LyricsSearchHit[] =>
+      Array.isArray(value) && value.every((item) => isLyricsSearchHit(item)),
+    {
+      title: input.title,
+      artist: input.artist,
+      album: input.album,
+      duration_seconds: input.durationSeconds,
+    },
+  );
 }
 
 export function playbackSetLyricsFetchSettings(settings: {

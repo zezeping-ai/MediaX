@@ -17,16 +17,79 @@ type ParsedMediaError = {
   detail: string;
 };
 
+type MediaCommandErrorPayload = {
+  code?: unknown;
+  message?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function tryParseJsonObject(value: string): Record<string, unknown> | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function mediaErrorFromObject(record: MediaCommandErrorPayload): string | null {
+  if (typeof record.message !== "string") {
+    return null;
+  }
+  const detail = record.message.trim();
+  if (!detail) {
+    return null;
+  }
+  const code = typeof record.code === "string" ? record.code.trim().toUpperCase() : null;
+  return code ? `${code}: ${detail}` : detail;
+}
+
+function normalizeMediaError(error: unknown): string {
+  if (error instanceof Error) {
+    const fromJson = tryParseJsonObject(error.message);
+    if (fromJson) {
+      const fromObject = mediaErrorFromObject(fromJson);
+      if (fromObject) {
+        return fromObject;
+      }
+    }
+    return error.message;
+  }
+  if (typeof error === "string") {
+    const fromJson = tryParseJsonObject(error);
+    if (fromJson) {
+      const fromObject = mediaErrorFromObject(fromJson);
+      if (fromObject) {
+        return fromObject;
+      }
+    }
+    return error;
+  }
+  if (isRecord(error)) {
+    const fromObject = mediaErrorFromObject(error);
+    if (fromObject) {
+      return fromObject;
+    }
+  }
+  return String(error);
+}
+
 function parseMediaError(error: unknown): ParsedMediaError {
-  const rawMessage = error instanceof Error ? error.message : String(error);
-  const normalized = rawMessage.trim();
-  const separatorIndex = normalized.indexOf(":");
+  const rawMessage = normalizeMediaError(error).trim();
+  const separatorIndex = rawMessage.indexOf(":");
   if (separatorIndex > 0) {
-    const code = normalized.slice(0, separatorIndex).trim().toUpperCase();
-    const detail = normalized.slice(separatorIndex + 1).trim();
+    const code = rawMessage.slice(0, separatorIndex).trim().toUpperCase();
+    const detail = rawMessage.slice(separatorIndex + 1).trim();
     return { code, detail };
   }
-  return { code: null, detail: normalized };
+  return { code: null, detail: rawMessage };
 }
 
 export function toUserMediaErrorMessage(error: unknown) {

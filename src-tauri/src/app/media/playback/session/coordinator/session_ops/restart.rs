@@ -10,7 +10,7 @@ use tauri::{AppHandle, Manager, State};
 
 use super::super::helpers::set_pending_seek;
 
-pub(super) fn restart_active_playback(
+pub(crate) fn restart_active_playback(
     app: &AppHandle,
     state: &State<'_, MediaState>,
     source: Option<String>,

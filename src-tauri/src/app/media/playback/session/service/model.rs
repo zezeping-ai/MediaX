@@ -13,6 +13,7 @@ pub(super) struct PlaybackSessionModel {
     pub audio: PlaybackAudioState,
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct MediaSourceMetadata {
     pub title: Option<String>,
     pub artist: Option<String>,

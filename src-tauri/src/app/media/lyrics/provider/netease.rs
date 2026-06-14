@@ -63,7 +63,18 @@ impl LyricsProvider for NeteaseProvider {
                 record.album.as_deref(),
             );
             if let Some(candidate) =
-                provider_result_to_candidate(result, &format!("netease:{index}"), label)
+                provider_result_to_candidate(
+                    result,
+                    &format!("netease:{index}"),
+                    label,
+                    Some(record.title.clone()),
+                    Some(record.artist.clone()),
+                    if record.duration_seconds > 0.0 {
+                        Some(record.duration_seconds)
+                    } else {
+                        None
+                    },
+                )
             {
                 candidates.push(candidate);
             }

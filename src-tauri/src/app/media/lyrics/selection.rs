@@ -47,6 +47,27 @@ pub fn save_selected_candidate_id(
     Ok(())
 }
 
+pub fn clear_selected_candidate_id(app: &AppHandle, source_path: &str) -> Result<(), String> {
+    let path = selections_file_path(app)?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let raw = fs::read_to_string(&path)
+        .map_err(|err| format!("read lyrics selections failed: {err}"))?;
+    let mut file: LyricsSelectionsFile = serde_json::from_str(&raw).unwrap_or_default();
+    if file.selections.remove(source_path).is_none() {
+        return Ok(());
+    }
+    if file.selections.is_empty() {
+        fs::remove_file(&path).map_err(|err| format!("remove lyrics selections failed: {err}"))?;
+        return Ok(());
+    }
+    let encoded = serde_json::to_string_pretty(&file)
+        .map_err(|err| format!("encode lyrics selections failed: {err}"))?;
+    fs::write(path, encoded).map_err(|err| format!("write lyrics selections failed: {err}"))?;
+    Ok(())
+}
+
 fn selections_file_path(app: &AppHandle) -> Result<PathBuf, String> {
     let mut path = app
         .path()

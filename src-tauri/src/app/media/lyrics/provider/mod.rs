@@ -47,6 +47,13 @@ pub trait LyricsProvider: Send + Sync {
                 synced: result.synced,
                 preview: super::candidate::build_preview(&result.lines),
                 lines: result.lines,
+                track_name: Some(signature.track_name.clone()),
+                artist_name: Some(signature.artist_name.clone()),
+                duration_seconds: if signature.duration_seconds > 0.0 {
+                    Some(signature.duration_seconds)
+                } else {
+                    None
+                },
             }]),
             Ok(_) => Ok(Vec::new()),
             Err(ProviderError::NotFound) => Ok(Vec::new()),

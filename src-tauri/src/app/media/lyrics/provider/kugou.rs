@@ -164,9 +164,14 @@ async fn search_candidates(
             record.song.as_deref(),
             None,
         );
-        if let Some(candidate) =
-            provider_result_to_candidate(result, &format!("kugou:{index}"), label)
-        {
+        if let Some(candidate) = provider_result_to_candidate(
+            result,
+            &format!("kugou:{index}"),
+            label,
+            record.song.clone(),
+            record.singer.clone(),
+            record.duration.map(|value| value as f64 / 1000.0),
+        ) {
             candidates.push(candidate);
         }
     }

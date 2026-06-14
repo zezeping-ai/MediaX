@@ -106,6 +106,9 @@ impl CachedLyricsEntry {
                 label: candidate.label.clone(),
                 synced: candidate.synced,
                 preview: candidate.preview.clone(),
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             })
             .collect()
     }
@@ -147,6 +150,9 @@ impl CachedLyricsEntry {
                 synced: candidate.synced,
                 preview: candidate.preview.clone(),
                 lines: candidate.lines.clone(),
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             })
             .collect()
     }
@@ -195,6 +201,22 @@ pub fn save_cached_lyrics(
     let encoded =
         serde_json::to_string_pretty(entry).map_err(|err| format!("encode lyrics cache failed: {err}"))?;
     fs::write(path, encoded).map_err(|err| format!("write lyrics cache failed: {err}"))?;
+    Ok(())
+}
+
+/// 清除曲目关联的歌词候选缓存（含旧版 duration 键）。
+pub fn clear_cached_lyrics(app: &AppHandle, signature: &TrackSignature) -> Result<(), String> {
+    let mut legacy_zero = signature.clone();
+    legacy_zero.duration_seconds = 0.0;
+    for path in [
+        cache_file_path(app, signature)?,
+        cache_file_path_legacy(app, &legacy_zero)?,
+        cache_file_path_legacy(app, signature)?,
+    ] {
+        if path.exists() {
+            fs::remove_file(&path).map_err(|err| format!("remove lyrics cache failed: {err}"))?;
+        }
+    }
     Ok(())
 }
 

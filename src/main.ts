@@ -48,6 +48,7 @@ app.use(router);
   Empty,
   Form,
   Input,
+  Input.TextArea,
   InputNumber,
   Layout,
   List,

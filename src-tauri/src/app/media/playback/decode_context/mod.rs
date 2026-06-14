@@ -3,5 +3,5 @@ mod open;
 mod output_size;
 mod types;
 
-pub(crate) use open::open_video_decode_context;
+pub(crate) use open::{open_video_decode_context, probe_source_metadata};
 pub(crate) use types::VideoDecodeContext;

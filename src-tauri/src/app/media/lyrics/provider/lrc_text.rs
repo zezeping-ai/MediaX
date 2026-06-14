@@ -36,6 +36,9 @@ pub fn provider_result_to_candidate(
     result: ProviderResult,
     id: &str,
     label: String,
+    track_name: Option<String>,
+    artist_name: Option<String>,
+    duration_seconds: Option<f64>,
 ) -> Option<LyricsCandidate> {
     if result.lines.is_empty() {
         return None;
@@ -47,6 +50,9 @@ pub fn provider_result_to_candidate(
         synced: result.synced,
         preview: build_preview(&result.lines),
         lines: result.lines,
+        track_name,
+        artist_name,
+        duration_seconds,
     })
 }
 

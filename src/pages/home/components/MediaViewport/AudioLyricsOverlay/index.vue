@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, toRef } from "vue";
+import { Icon } from "@iconify/vue";
 import type {
   LyricsCandidateSummary,
   MediaAudioMeterPayload,
@@ -7,12 +8,14 @@ import type {
   MediaSnapshot,
   PlaybackState,
 } from "@/modules/media-types";
-import LyricsCandidatePicker from "./LyricsCandidatePicker.vue";
+import AudioMetadataEditorModal from "./AudioMetadataEditorModal.vue";
+import LyricsSelect from "@/components/selects/LyricsSelect/index.vue";
 import LyricsEmptyState from "./LyricsEmptyState.vue";
 import LyricsPanelControls from "./LyricsPanelControls.vue";
 import LyricsScroller from "./LyricsScroller/index.vue";
 import StereoBridgePanel from "./StereoBridgePanel.vue";
 import { useAudioLyricPanel } from "./useAudioLyricPanel";
+import { useAudioMetadataEditor } from "./useAudioMetadataEditor";
 import { useLyricsOverlayControls } from "./useLyricsOverlayControls";
 
 const props = defineProps<{
@@ -92,6 +95,33 @@ const {
   album: toRef(props, "album"),
   hasCoverArt: toRef(props, "hasCoverArt"),
 });
+
+const metadataEditor = useAudioMetadataEditor({
+  sourcePath: () => currentSourcePath.value,
+  title: () => props.title,
+  artist: () => props.artist,
+  album: () => props.album,
+  durationSeconds: () => props.playback?.duration_seconds ?? 0,
+  lyrics: () => props.lyrics,
+  lyricsSource: () => props.lyricsSource,
+  updatePlaybackSnapshot: (snapshot) => props.updatePlaybackSnapshot(snapshot),
+});
+
+const {
+  album: metadataEditorAlbum,
+  artist: metadataEditorArtist,
+  canEdit: canEditMetadata,
+  durationSeconds: metadataEditorDurationSeconds,
+  embedLyrics: metadataEditorEmbedLyrics,
+  lyricsLrc: metadataEditorLyricsLrc,
+  lyricsSelectKey: metadataEditorLyricsSelectKey,
+  lyricsSource: metadataEditorLyricsSource,
+  open: metadataEditorOpen,
+  saveEditor,
+  saving: metadataEditorSaving,
+  showEditor,
+  title: metadataEditorTitle,
+} = metadataEditor;
 </script>
 
 <template>
@@ -125,6 +155,19 @@ const {
                   <p :class="titleTextClass">
                     {{ trackTitle }}
                   </p>
+                  <button
+                    v-if="canEditMetadata"
+                    type="button"
+                    class="pointer-events-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition hover:opacity-90"
+                    :class="isDark
+                      ? 'border-white/14 bg-black/45 text-white/72 hover:border-white/24'
+                      : 'border-black/10 bg-white/78 text-slate-600 hover:border-black/16'"
+                    title="编辑歌曲信息"
+                    data-no-window-drag="true"
+                    @click="showEditor()"
+                  >
+                    <Icon icon="lucide:pencil" width="12" height="12" aria-hidden="true" />
+                  </button>
                   <span
                     v-if="isMasterMuted"
                     class="shrink-0 rounded-full border px-1.5 py-px text-[9px] uppercase tracking-[0.16em]"
@@ -155,13 +198,16 @@ const {
                   @reset-offset="resetOffset"
                   @adjust-offset="adjustOffset"
                 />
-                <LyricsCandidatePicker
+                <LyricsSelect
                   v-if="props.lyricsCandidates.length > 1 && lyricsVisible"
-                  :candidate-id="props.lyricsCandidateId"
+                  mode="candidates"
+                  compact
+                  overlay
+                  :is-dark="isDark"
+                  :transparent-overlay="hasCoverArt"
                   :candidates="props.lyricsCandidates"
                   :fetching="props.lyricsFetching"
-                  :transparent-overlay="hasCoverArt"
-                  :is-dark="isDark"
+                  :selected-id="props.lyricsCandidateId"
                   :update-playback-snapshot="props.updatePlaybackSnapshot"
                 />
                 <span
@@ -209,5 +255,19 @@ const {
         </div>
       </div>
     </div>
+
+    <AudioMetadataEditorModal
+      v-model:open="metadataEditorOpen"
+      v-model:title="metadataEditorTitle"
+      v-model:artist="metadataEditorArtist"
+      v-model:album="metadataEditorAlbum"
+      v-model:lyrics-lrc="metadataEditorLyricsLrc"
+      v-model:embed-lyrics="metadataEditorEmbedLyrics"
+      :duration-seconds="metadataEditorDurationSeconds"
+      :lyrics-source="metadataEditorLyricsSource"
+      :lyrics-select-key="metadataEditorLyricsSelectKey"
+      :saving="metadataEditorSaving"
+      :on-save="saveEditor"
+    />
   </div>
 </template>

@@ -107,14 +107,15 @@ export function useOverlayLayout(options: UseOverlayLayoutOptions) {
       : "shrink-0 rounded-[18px] border border-black/6 bg-white/82 px-2.5 py-2 backdrop-blur-md";
   });
   const titleTextClass = computed(() => {
+    const base = "m-0 min-w-0 truncate text-sm font-semibold leading-6 tracking-wide md:text-base";
     if (isDark.value) {
       return options.hasCoverArt.value
-        ? "min-w-0 truncate text-sm font-semibold tracking-wide text-white [text-shadow:0_1px_10px_rgba(0,0,0,0.55)] md:text-base"
-        : "min-w-0 truncate text-sm font-semibold tracking-wide text-white md:text-base";
+        ? `${base} text-white [text-shadow:0_1px_10px_rgba(0,0,0,0.55)]`
+        : `${base} text-white`;
     }
     return options.hasCoverArt.value
-      ? "min-w-0 truncate text-sm font-semibold tracking-wide text-slate-900 [text-shadow:0_1px_8px_rgba(255,255,255,0.7)] md:text-base"
-      : "min-w-0 truncate text-sm font-semibold tracking-wide text-slate-900 md:text-base";
+      ? `${base} text-slate-900 [text-shadow:0_1px_8px_rgba(255,255,255,0.7)]`
+      : `${base} text-slate-900`;
   });
   const trackMetaClass = computed(() => (
     isDark.value

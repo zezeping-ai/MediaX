@@ -15,15 +15,15 @@ const TITLE_METADATA_KEYS: &[&str] = &["title", "TITLE"];
 const ARTIST_METADATA_KEYS: &[&str] = &["artist", "ARTIST", "album_artist", "ALBUMARTIST"];
 const ALBUM_METADATA_KEYS: &[&str] = &["album", "ALBUM"];
 
-pub(super) struct SourceMetadata {
-    pub(super) media_kind: PlaybackMediaKind,
-    pub(super) has_cover_art: bool,
-    pub(super) cover_frame: Option<VideoFrame>,
-    pub(super) title: Option<String>,
-    pub(super) artist: Option<String>,
-    pub(super) album: Option<String>,
-    pub(super) lyrics: Vec<MediaLyricLine>,
-    pub(super) lyrics_source: Option<String>,
+pub(crate) struct SourceMetadata {
+    pub(crate) media_kind: PlaybackMediaKind,
+    pub(crate) has_cover_art: bool,
+    pub(crate) cover_frame: Option<VideoFrame>,
+    pub(crate) title: Option<String>,
+    pub(crate) artist: Option<String>,
+    pub(crate) album: Option<String>,
+    pub(crate) lyrics: Vec<MediaLyricLine>,
+    pub(crate) lyrics_source: Option<String>,
 }
 
 pub(super) fn build_source_metadata(

@@ -277,3 +277,20 @@ fn finalize_video_decode_context(
         hw_decode_decision: hw_status.decision,
     })
 }
+
+pub(crate) fn probe_source_metadata(source: &str) -> Result<SourceMetadata, String> {
+    ffmpeg::init().map_err(|err| format!("ffmpeg init failed: {err}"))?;
+    let input_ctx = format::input(source).map_err(|err| format!("open media failed: {err}"))?;
+    let audio_stream_index = input_ctx
+        .streams()
+        .best(Type::Audio)
+        .map(|stream| stream.index());
+    let cover_stream_index = input_ctx
+        .streams()
+        .find(|stream| {
+            stream.parameters().medium() == Type::Video
+                && stream.disposition().contains(Disposition::ATTACHED_PIC)
+        })
+        .map(|stream| stream.index());
+    build_source_metadata(source, &input_ctx, audio_stream_index, cover_stream_index)
+}

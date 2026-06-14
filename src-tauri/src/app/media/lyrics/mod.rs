@@ -5,6 +5,7 @@ mod lrc;
 mod orchestrator;
 mod plain;
 mod provider;
+mod search;
 mod selection;
 pub(crate) mod text_encoding;
 mod track_signature;
@@ -13,14 +14,14 @@ use apply::{
     apply_lyrics_selection, clear_lyrics_fetching, mark_lyrics_fetching, patch_lyrics_with_candidates,
     LyricsMetadataContext, LyricsPatch, LyricsSelection,
 };
-use cache::{load_cached_lyrics, save_cached_lyrics, CachedLyricsEntry};
+use cache::{clear_cached_lyrics, load_cached_lyrics, save_cached_lyrics, CachedLyricsEntry};
 use candidate::{
     contains_cjk, dedupe_candidates, local_lyrics_candidate, merge_candidates, pick_default_candidate_id,
     LyricsCandidate,
 };
 use orchestrator::fetch_all_candidates;
 use provider::user_agent;
-use selection::{load_selected_candidate_id, save_selected_candidate_id};
+use selection::{clear_selected_candidate_id, load_selected_candidate_id, save_selected_candidate_id};
 use track_signature::TrackSignature;
 
 use crate::app::media::model::{MediaLyricLine, LyricsCandidateSummary};
@@ -30,7 +31,110 @@ use crate::app::media::playback::decode_context::VideoDecodeContext;
 use crate::app::media::state::MediaState;
 use tauri::{AppHandle, Manager};
 
-pub use lrc::parse_lrc_contents;
+pub use lrc::{format_lrc_contents, parse_lrc_contents};
+pub use search::search_lyrics_hits;
+
+/// 内嵌歌词写入成功后，清除该曲目的在线歌词缓存与手动切换记录。
+pub fn clear_local_lyrics_cache_after_embed(
+    app: &AppHandle,
+    source_path: &str,
+    old_title: Option<&str>,
+    old_artist: Option<&str>,
+    old_album: Option<&str>,
+    duration_seconds: f64,
+    new_title: Option<&str>,
+    new_artist: Option<&str>,
+    new_album: Option<&str>,
+) -> Result<(), String> {
+    let old_signature = TrackSignature::from_metadata(
+        source_path,
+        old_title,
+        old_artist,
+        old_album,
+        duration_seconds,
+    );
+    let new_signature = TrackSignature::from_metadata(
+        source_path,
+        new_title,
+        new_artist,
+        new_album,
+        duration_seconds,
+    );
+    clear_cached_lyrics(app, &old_signature)?;
+    if new_signature.track_name != old_signature.track_name
+        || new_signature.artist_name != old_signature.artist_name
+        || new_signature.album_name != old_signature.album_name
+    {
+        clear_cached_lyrics(app, &new_signature)?;
+    }
+    clear_selected_candidate_id(app, source_path)?;
+    Ok(())
+}
+
+const EMBEDDED_LOCAL_SOURCE: &str = "embedded";
+const LOCAL_LYRIC_SOURCES: &[&str] = &[EMBEDDED_LOCAL_SOURCE, "sidecar"];
+
+fn local_candidate_id(source: &str) -> String {
+    format!("local:{source}")
+}
+
+/// 文件自带歌词（内嵌/同目录 LRC）且用户未手动切换过时，锁定为本地来源。
+fn is_local_lyrics_locked(app: &AppHandle, context: &OnlineLyricsFetchContext) -> bool {
+    let Some(local) = context.local_lyrics.as_ref() else {
+        return false;
+    };
+    if !LOCAL_LYRIC_SOURCES.contains(&local.source.as_str()) {
+        return false;
+    }
+    let local_id = local_candidate_id(&local.source);
+    !load_selected_candidate_id(app, &context.source)
+        .is_some_and(|saved| saved != local_id)
+}
+
+fn local_pinned_candidate(context: &OnlineLyricsFetchContext) -> Option<LyricsCandidate> {
+    context.local_lyrics.as_ref().and_then(|local| {
+        if !LOCAL_LYRIC_SOURCES.contains(&local.source.as_str()) {
+            return None;
+        }
+        Some(local_lyrics_candidate(
+            &local.lines,
+            Some(local.source.as_str()),
+        ))
+    })
+}
+
+fn user_chose_lyrics_candidate(app: &AppHandle, source_path: &str) -> bool {
+    load_selected_candidate_id(app, source_path).is_some()
+}
+
+/// 未手动切换前只暴露当前选中项，避免播放器默认弹出多候选下拉。
+fn candidate_summaries_for_playback(
+    user_chose: bool,
+    selected: &LyricsCandidate,
+    all_candidates: &[LyricsCandidate],
+) -> Vec<LyricsCandidateSummary> {
+    if user_chose {
+        all_candidates
+            .iter()
+            .map(LyricsCandidate::summary)
+            .collect()
+    } else {
+        vec![selected.summary()]
+    }
+}
+
+fn playback_visible_summaries(
+    app: &AppHandle,
+    source_path: &str,
+    selected: &LyricsCandidate,
+    all_candidates: &[LyricsCandidate],
+) -> Vec<LyricsCandidateSummary> {
+    candidate_summaries_for_playback(
+        user_chose_lyrics_candidate(app, source_path),
+        selected,
+        all_candidates,
+    )
+}
 
 #[derive(Clone)]
 pub struct OnlineLyricsFetchContext {
@@ -113,32 +217,38 @@ pub fn bootstrap_online_lyrics(
 
     let context = OnlineLyricsFetchContext::from_video_ctx(source, video_ctx);
     let metadata_context = context.metadata_context();
+    let local_locked = is_local_lyrics_locked(app, &context);
     let initial = build_seed_candidates(app, &context);
 
     if initial.lines.is_empty() && initial.candidates.is_empty() {
         let _ = mark_lyrics_fetching(app, &metadata_context, stream_generation);
-    } else {
-        let summaries: Vec<LyricsCandidateSummary> = initial
-            .candidates
-            .iter()
-            .map(LyricsCandidate::summary)
-            .collect();
+    } else if let Some(selected) = initial
+        .candidates
+        .iter()
+        .find(|candidate| initial.candidate_id.as_deref() == Some(candidate.id.as_str()))
+        .or_else(|| initial.candidates.first())
+    {
+        let summaries = playback_visible_summaries(app, source, selected, &initial.candidates);
         let _ = patch_lyrics_with_candidates(
             app,
             &metadata_context,
             LyricsPatch {
                 lyrics: initial.lines.clone(),
                 lyrics_source: initial.source.clone(),
-                lyrics_fetching: true,
+                lyrics_fetching: !local_locked,
                 lyrics_candidate_id: initial.candidate_id.clone(),
                 lyrics_candidates: summaries,
                 stream_generation,
             },
         );
-        persist_seed_cache(app, &context, &initial);
+        if !local_locked {
+            persist_seed_cache(app, &context, &initial);
+        }
     }
 
-    spawn_online_lyrics_fetch(app.clone(), context, stream_generation);
+    if !local_locked {
+        spawn_online_lyrics_fetch(app.clone(), context, stream_generation);
+    }
 }
 
 fn persist_seed_cache(
@@ -165,6 +275,17 @@ struct SeedLyricsState {
 }
 
 fn build_seed_candidates(app: &AppHandle, context: &OnlineLyricsFetchContext) -> SeedLyricsState {
+    if is_local_lyrics_locked(app, context) {
+        if let Some(pinned) = local_pinned_candidate(context) {
+            return SeedLyricsState {
+                lines: pinned.lines.clone(),
+                source: Some(pinned.provider_id.clone()),
+                candidate_id: Some(pinned.id.clone()),
+                candidates: vec![pinned],
+            };
+        }
+    }
+
     let mut candidates = Vec::new();
     let mut lines = Vec::new();
     let mut source = None;
@@ -180,15 +301,15 @@ fn build_seed_candidates(app: &AppHandle, context: &OnlineLyricsFetchContext) ->
     }
 
     let signature = build_signature(context);
-    if let Some(mut cached) = load_cached_lyrics(app, &signature) {
-        if let Some(saved_id) = load_selected_candidate_id(app, &context.source) {
+    if let Some(saved_id) = load_selected_candidate_id(app, &context.source) {
+        if let Some(mut cached) = load_cached_lyrics(app, &signature) {
             let _ = cached.select_candidate(&saved_id);
-        }
-        candidates.extend(cached.to_candidates());
-        if let Some(active) = cached.active_candidate() {
-            lines = active.lines.clone();
-            source = Some(active.provider_id.clone());
-            candidate_id = cached.selected_candidate_id.clone().or(candidate_id);
+            candidates.extend(cached.to_candidates());
+            if let Some(active) = cached.active_candidate() {
+                lines = active.lines.clone();
+                source = Some(active.provider_id.clone());
+                candidate_id = cached.selected_candidate_id.clone().or(candidate_id);
+            }
         }
     }
 
@@ -226,8 +347,10 @@ fn build_seed_candidates_for_fetch(app: &AppHandle, context: &OnlineLyricsFetchC
             Some(local.source.as_str()),
         ));
     }
-    if let Some(cached) = load_cached_lyrics(app, &signature) {
-        candidates.extend(cached.to_candidates());
+    if !is_local_lyrics_locked(app, context) {
+        if let Some(cached) = load_cached_lyrics(app, &signature) {
+            candidates.extend(cached.to_candidates());
+        }
     }
     dedupe_candidates(candidates)
 }
@@ -263,6 +386,24 @@ fn apply_merged_candidates(
         return;
     }
 
+    if is_local_lyrics_locked(app, context) {
+        if let Some(pinned) = local_pinned_candidate(context) {
+            let cache_entry =
+                CachedLyricsEntry::from_candidates(vec![pinned.clone()], Some(pinned.id.clone()));
+            let _ = save_cached_lyrics(app, signature, &cache_entry);
+            let _ = clear_lyrics_fetching(
+                app,
+                &metadata_context,
+                pinned.lines.clone(),
+                Some(pinned.provider_id.clone()),
+                Some(pinned.id.clone()),
+                vec![pinned.summary()],
+                stream_generation,
+            );
+            return;
+        }
+    }
+
     let prefer_cjk = contains_cjk(&signature.track_name) || contains_cjk(&signature.artist_name);
     let saved_candidate_id = load_selected_candidate_id(app, &context.source)
         .or_else(|| current_lyrics_candidate_id(app));
@@ -285,15 +426,16 @@ fn apply_merged_candidates(
     };
     let selected_candidate_id = Some(selected.id.clone());
     let cache_entry =
-        CachedLyricsEntry::from_candidates(candidates, selected_candidate_id.clone());
+        CachedLyricsEntry::from_candidates(candidates.clone(), selected_candidate_id.clone());
     let _ = save_cached_lyrics(app, signature, &cache_entry);
+    let visible = playback_visible_summaries(app, &context.source, &selected, &candidates);
     let _ = clear_lyrics_fetching(
         app,
         &metadata_context,
         selected.lines,
         Some(selected.provider_id),
         selected_candidate_id,
-        cache_entry.summaries(),
+        visible,
         stream_generation,
     );
 }
@@ -441,4 +583,68 @@ fn build_signature(context: &OnlineLyricsFetchContext) -> TrackSignature {
         context.album.as_deref(),
         context.duration_seconds,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::media::model::MediaLyricLine;
+
+    fn embedded_context() -> OnlineLyricsFetchContext {
+        OnlineLyricsFetchContext {
+            source: "/music/song.mp3".to_string(),
+            title: Some("Song".to_string()),
+            artist: Some("Artist".to_string()),
+            album: None,
+            duration_seconds: 240.0,
+            media_kind: PlaybackMediaKind::Audio,
+            width: 0,
+            height: 0,
+            fps: 0.0,
+            has_cover_art: false,
+            local_lyrics: Some(LocalLyricsSeed {
+                lines: vec![MediaLyricLine {
+                    time_seconds: 0.0,
+                    text: "内嵌歌词".to_string(),
+                }],
+                source: EMBEDDED_LOCAL_SOURCE.to_string(),
+            }),
+        }
+    }
+
+    #[test]
+    fn local_pinned_candidate_uses_local_embedded_id() {
+        let pinned = local_pinned_candidate(&embedded_context()).expect("embedded candidate");
+        assert_eq!(pinned.id, local_candidate_id(EMBEDDED_LOCAL_SOURCE));
+        assert_eq!(pinned.provider_id, EMBEDDED_LOCAL_SOURCE);
+    }
+
+    #[test]
+    fn candidate_summaries_hide_alternates_until_user_choice() {
+        let selected = local_lyrics_candidate(
+            &[MediaLyricLine {
+                time_seconds: 0.0,
+                text: "内嵌".to_string(),
+            }],
+            Some("embedded"),
+        );
+        let online = LyricsCandidate {
+            id: "netease:1".to_string(),
+            provider_id: "netease".to_string(),
+            label: "在线".to_string(),
+            synced: true,
+            preview: "在线".to_string(),
+            lines: vec![MediaLyricLine {
+                time_seconds: 0.0,
+                text: "在线".to_string(),
+            }],
+            track_name: None,
+            artist_name: None,
+            duration_seconds: None,
+        };
+        let visible =
+            candidate_summaries_for_playback(false, &selected, &[selected.clone(), online]);
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].id, selected.id);
+    }
 }

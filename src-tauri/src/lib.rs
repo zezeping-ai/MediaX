@@ -99,6 +99,8 @@ pub fn run() {
             playback_session_commands::playback_resume,
             playback_session_commands::playback_pause,
             playback_session_commands::playback_stop_session,
+            playback_session_commands::playback_search_lyrics,
+            playback_session_commands::playback_write_audio_metadata,
             playback_timing_commands::playback_seek_to,
             playback_timing_commands::playback_set_rate,
             playback_timing_commands::playback_set_volume,

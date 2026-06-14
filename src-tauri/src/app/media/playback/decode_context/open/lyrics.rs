@@ -18,20 +18,23 @@ pub(super) fn load_source_lyrics(
     input_ctx: &ffmpeg::format::context::Input,
     audio_stream_index: Option<usize>,
 ) -> Result<LocalLyricsLoadResult, String> {
-    let mut lyrics = load_sidecar_lrc(source)?;
-    if !lyrics.lines.is_empty() {
-        return Ok(lyrics);
-    }
+    let embedded = load_embedded_lyrics(input_ctx, audio_stream_index);
+    Ok(pick_preferred_local_lyrics(embedded, load_sidecar_lrc(source)?))
+}
+
+fn load_embedded_lyrics(
+    input_ctx: &ffmpeg::format::context::Input,
+    audio_stream_index: Option<usize>,
+) -> LocalLyricsLoadResult {
     if let Some(stream) = audio_stream_index
         .and_then(|index| input_ctx.streams().find(|value| value.index() == index))
     {
-        lyrics = extract_lyrics_from_metadata(&stream.metadata());
+        let lyrics = extract_lyrics_from_metadata(&stream.metadata());
         if !lyrics.lines.is_empty() {
-            return Ok(lyrics);
+            return lyrics;
         }
     }
-    lyrics = extract_lyrics_from_metadata(&input_ctx.metadata());
-    Ok(lyrics)
+    extract_lyrics_from_metadata(&input_ctx.metadata())
 }
 
 fn load_sidecar_lrc(source: &str) -> Result<LocalLyricsLoadResult, String> {
@@ -79,5 +82,53 @@ fn extract_lyrics_from_metadata(dictionary: &ffmpeg::DictionaryRef<'_>) -> Local
     LocalLyricsLoadResult {
         lines: Vec::new(),
         source: None,
+    }
+}
+
+fn pick_preferred_local_lyrics(
+    embedded: LocalLyricsLoadResult,
+    sidecar: LocalLyricsLoadResult,
+) -> LocalLyricsLoadResult {
+    if !embedded.lines.is_empty() {
+        embedded
+    } else {
+        sidecar
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LocalLyricsLoadResult, pick_preferred_local_lyrics};
+
+    fn result(source: &str, text: &str) -> LocalLyricsLoadResult {
+        LocalLyricsLoadResult {
+            lines: vec![crate::app::media::model::MediaLyricLine {
+                time_seconds: 0.0,
+                text: text.to_string(),
+            }],
+            source: Some(source.to_string()),
+        }
+    }
+
+    fn empty() -> LocalLyricsLoadResult {
+        LocalLyricsLoadResult {
+            lines: Vec::new(),
+            source: None,
+        }
+    }
+
+    #[test]
+    fn prefers_embedded_over_sidecar() {
+        let embedded = result("embedded", "内嵌");
+        let sidecar = result("sidecar", "同目录");
+        let picked = pick_preferred_local_lyrics(embedded, sidecar);
+        assert_eq!(picked.source.as_deref(), Some("embedded"));
+        assert_eq!(picked.lines[0].text, "内嵌");
+    }
+
+    #[test]
+    fn falls_back_to_sidecar_when_embedded_missing() {
+        let picked = pick_preferred_local_lyrics(empty(), result("sidecar", "同目录"));
+        assert_eq!(picked.source.as_deref(), Some("sidecar"));
     }
 }

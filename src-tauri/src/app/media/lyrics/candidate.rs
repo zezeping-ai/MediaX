@@ -9,6 +9,12 @@ pub struct LyricsCandidate {
     pub synced: bool,
     pub preview: String,
     pub lines: Vec<MediaLyricLine>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artist_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<f64>,
 }
 
 impl LyricsCandidate {
@@ -19,6 +25,9 @@ impl LyricsCandidate {
             label: self.label.clone(),
             synced: self.synced,
             preview: self.preview.clone(),
+            track_name: self.track_name.clone(),
+            artist_name: self.artist_name.clone(),
+            duration_seconds: self.duration_seconds,
         }
     }
 }
@@ -140,6 +149,9 @@ pub fn local_lyrics_candidate(lines: &[MediaLyricLine], source: Option<&str>) ->
         synced: lines.iter().any(|line| line.time_seconds > 0.0),
         preview: build_preview(lines),
         lines: lines.to_vec(),
+        track_name: None,
+        artist_name: None,
+        duration_seconds: None,
     }
 }
 
@@ -174,7 +186,8 @@ pub fn dedupe_candidates(mut candidates: Vec<LyricsCandidate>) -> Vec<LyricsCand
 /// 歌词源优先级：本地 > 网易云 > 酷狗 > 其他在线源
 pub fn provider_priority(provider_id: &str) -> i32 {
     match provider_id {
-        "embedded" | "sidecar" => 60,
+        "embedded" => 65,
+        "sidecar" => 55,
         "netease" => 40,
         "kugou" => 30,
         "lrclib" => 8,
@@ -220,6 +233,9 @@ mod tests {
                     time_seconds: 0.0,
                     text: "中文".to_string(),
                 }],
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             },
             LyricsCandidate {
                 id: "b".to_string(),
@@ -231,6 +247,9 @@ mod tests {
                     time_seconds: 0.0,
                     text: "English".to_string(),
                 }],
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             },
         ];
         assert_eq!(
@@ -251,6 +270,9 @@ mod tests {
                 time_seconds: 0.0,
                 text: "cached".to_string(),
             }],
+            track_name: None,
+            artist_name: None,
+            duration_seconds: None,
         }];
         let merged = merge_candidates(seed, Vec::new());
         assert_eq!(merged.len(), 1);
@@ -270,6 +292,9 @@ mod tests {
                     time_seconds: 0.0,
                     text: "歌词".to_string(),
                 }],
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             },
             LyricsCandidate {
                 id: "netease:0".to_string(),
@@ -281,6 +306,9 @@ mod tests {
                     time_seconds: 1.0,
                     text: "歌词二".to_string(),
                 }],
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             },
         ];
         assert_eq!(
@@ -302,6 +330,9 @@ mod tests {
                     time_seconds: 0.0,
                     text: "歌词".to_string(),
                 }],
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             },
             LyricsCandidate {
                 id: "kugou:0".to_string(),
@@ -313,6 +344,9 @@ mod tests {
                     time_seconds: 1.0,
                     text: "歌词二".to_string(),
                 }],
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             },
         ];
         assert_eq!(
@@ -334,6 +368,9 @@ mod tests {
                     time_seconds: 0.0,
                     text: "c".to_string(),
                 }],
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             },
             LyricsCandidate {
                 id: "kugou:0".to_string(),
@@ -345,6 +382,9 @@ mod tests {
                     time_seconds: 0.0,
                     text: "b".to_string(),
                 }],
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             },
             LyricsCandidate {
                 id: "netease:0".to_string(),
@@ -356,6 +396,9 @@ mod tests {
                     time_seconds: 0.0,
                     text: "a".to_string(),
                 }],
+                track_name: None,
+                artist_name: None,
+                duration_seconds: None,
             },
         ];
         sort_candidates_by_provider_priority(&mut candidates);

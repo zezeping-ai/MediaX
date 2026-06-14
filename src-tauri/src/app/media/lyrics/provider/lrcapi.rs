@@ -2,9 +2,10 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 
 use super::{LyricsProvider, ProviderError, ProviderResult};
-use crate::app::media::lyrics::candidate::{build_preview, truncate_preview, LyricsCandidate};
+use crate::app::media::lyrics::candidate::{truncate_preview, LyricsCandidate};
 use crate::app::media::lyrics::lrc::parse_lrc_contents;
 use crate::app::media::lyrics::plain::plain_text_to_timed_lines;
+use crate::app::media::lyrics::provider::lrc_text::provider_result_to_candidate;
 use crate::app::media::lyrics::track_signature::TrackSignature;
 
 const DEFAULT_LRCAPI_BASE_URL: &str = "https://api.lrc.cx";
@@ -58,6 +59,13 @@ impl LyricsProvider for LrcApiProvider {
                 result,
                 "lrcapi:single",
                 format_label("LrcApi", signature, None),
+                Some(signature.track_name.clone()),
+                Some(signature.artist_name.clone()),
+                if signature.duration_seconds > 0.0 {
+                    Some(signature.duration_seconds)
+                } else {
+                    None
+                },
             ) {
                 candidates.push(candidate);
             }
@@ -144,6 +152,13 @@ async fn fetch_jsonapi_candidates(
             result,
             &format!("lrcapi:jsonapi:{index}"),
             label,
+            Some(signature.track_name.clone()),
+            Some(signature.artist_name.clone()),
+            if signature.duration_seconds > 0.0 {
+                Some(signature.duration_seconds)
+            } else {
+                None
+            },
         ) {
             candidates.push(candidate);
         }
@@ -177,24 +192,6 @@ fn map_lrc_text(body: &str, provider_id: &'static str) -> Result<Option<Provider
         synced: false,
         provider_id,
     }))
-}
-
-fn provider_result_to_candidate(
-    result: ProviderResult,
-    id: &str,
-    label: String,
-) -> Option<LyricsCandidate> {
-    if result.lines.is_empty() {
-        return None;
-    }
-    Some(LyricsCandidate {
-        id: id.to_string(),
-        provider_id: result.provider_id.to_string(),
-        label,
-        synced: result.synced,
-        preview: build_preview(&result.lines),
-        lines: result.lines,
-    })
 }
 
 fn format_label(

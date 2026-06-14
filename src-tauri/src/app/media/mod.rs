@@ -4,6 +4,7 @@ pub mod lyrics;
 pub mod model;
 pub mod playback;
 pub mod state;
+pub mod tags;
 pub mod transcode;
 
 pub use playback::render::renderer::RendererState;

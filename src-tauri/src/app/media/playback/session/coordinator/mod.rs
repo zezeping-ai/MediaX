@@ -5,6 +5,7 @@
 mod audio_export_ops;
 mod cache_ops;
 mod helpers;
+mod metadata_ops;
 mod preview_ops;
 mod session_ops;
 mod timing_ops;
@@ -17,6 +18,7 @@ use tauri::State;
 
 pub use audio_export_ops::export_current_audio_track;
 pub use cache_ops::{get_cache_recording_status, start_cache_recording, stop_cache_recording};
+pub use metadata_ops::write_audio_metadata;
 pub use preview_ops::preview_frame;
 pub use session_ops::{open, pause, play, seek, set_hw_decode_mode, set_quality_mode, stop};
 pub use timing_ops::{

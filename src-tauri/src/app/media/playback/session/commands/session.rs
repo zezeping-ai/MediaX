@@ -94,3 +94,47 @@ pub fn playback_stop_session(
 ) -> Result<MediaSnapshot, MediaCommandError> {
     command_result(coordinator::stop(app, state, request_id))
 }
+
+#[tauri::command]
+pub async fn playback_search_lyrics(
+    title: String,
+    artist: Option<String>,
+    album: Option<String>,
+    duration_seconds: Option<f64>,
+) -> Result<Vec<crate::app::media::model::LyricsSearchHit>, MediaCommandError> {
+    command_result(
+        crate::app::media::lyrics::search_lyrics_hits(
+            &title,
+            artist.as_deref(),
+            album.as_deref(),
+            duration_seconds.unwrap_or(0.0),
+        )
+        .await
+        .map_err(crate::app::media::error::MediaError::internal),
+    )
+}
+
+#[tauri::command]
+pub fn playback_write_audio_metadata(
+    app: AppHandle,
+    state: State<'_, MediaState>,
+    path: String,
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    lyrics_lrc: Option<String>,
+    embed_lyrics: Option<bool>,
+    request_id: Option<String>,
+) -> Result<MediaSnapshot, MediaCommandError> {
+    command_result(coordinator::write_audio_metadata(
+        app,
+        state,
+        path,
+        title,
+        artist,
+        album,
+        lyrics_lrc,
+        embed_lyrics,
+        request_id,
+    ))
+}

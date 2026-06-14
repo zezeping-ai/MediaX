@@ -53,6 +53,25 @@ pub struct LyricsCandidateSummary {
     pub label: String,
     pub synced: bool,
     pub preview: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artist_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LyricsSearchHit {
+    pub id: String,
+    pub provider_id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: Option<String>,
+    pub duration_seconds: Option<f64>,
+    pub synced: bool,
+    pub preview: String,
+    pub lyrics_lrc: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

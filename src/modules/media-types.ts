@@ -114,6 +114,21 @@ export interface LyricsCandidateSummary {
   label: string;
   synced: boolean;
   preview: string;
+  track_name?: string | null;
+  artist_name?: string | null;
+  duration_seconds?: number | null;
+}
+
+export interface LyricsSearchHit {
+  id: string;
+  provider_id: string;
+  title: string;
+  artist: string;
+  album?: string | null;
+  duration_seconds?: number | null;
+  synced: boolean;
+  preview: string;
+  lyrics_lrc: string;
 }
 
 export interface MediaAudioMeterPayload {
