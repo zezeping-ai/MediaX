@@ -5,9 +5,6 @@ on:
     tags:
       - "v*"
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 permissions:
   contents: write
 
@@ -55,7 +52,7 @@ jobs:
             args: "--features bundled-ffmpeg"
           - os_name: windows
             arch: x64
-            platform: windows-2025
+            platform: windows-2025-vs2026
             args: ""
           - os_name: windows
             arch: arm64
@@ -132,6 +129,8 @@ jobs:
       - name: Install macOS build tools (FFmpeg from source)
         if: matrix.os_name == 'macos'
         run: |
+          # Runner image ships untrusted taps we don't use; remove to silence Homebrew 6 trust warnings.
+          brew untap aws/tap azure/bicep 2>/dev/null || true
           brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
           # x86_64 FFmpeg needs nasm; arm64 can use system toolchain
           if [ "${{ matrix.arch }}" = "x64" ]; then
@@ -424,7 +423,7 @@ jobs:
           NODE
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: "MediaX ${{ github.ref_name }}"
