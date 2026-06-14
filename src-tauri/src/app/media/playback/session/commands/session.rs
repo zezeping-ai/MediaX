@@ -115,6 +115,21 @@ pub async fn playback_search_lyrics(
 }
 
 #[tauri::command]
+pub fn playback_read_audio_cover_art(
+    state: State<'_, MediaState>,
+    path: String,
+) -> Result<Option<coordinator::AudioCoverArtPayload>, MediaCommandError> {
+    command_result(coordinator::read_audio_cover_art_for_path(state, path))
+}
+
+#[tauri::command]
+pub fn playback_read_image_file_for_cover(
+    path: String,
+) -> Result<coordinator::AudioCoverArtPayload, MediaCommandError> {
+    command_result(coordinator::read_image_file_for_cover_preview(path))
+}
+
+#[tauri::command]
 pub fn playback_write_audio_metadata(
     app: AppHandle,
     state: State<'_, MediaState>,
@@ -124,6 +139,9 @@ pub fn playback_write_audio_metadata(
     album: Option<String>,
     lyrics_lrc: Option<String>,
     embed_lyrics: Option<bool>,
+    cover_art_change: Option<String>,
+    cover_art_data_base64: Option<String>,
+    cover_art_mime_type: Option<String>,
     request_id: Option<String>,
 ) -> Result<MediaSnapshot, MediaCommandError> {
     command_result(coordinator::write_audio_metadata(
@@ -135,6 +153,9 @@ pub fn playback_write_audio_metadata(
         album,
         lyrics_lrc,
         embed_lyrics,
+        cover_art_change,
+        cover_art_data_base64,
+        cover_art_mime_type,
         request_id,
     ))
 }

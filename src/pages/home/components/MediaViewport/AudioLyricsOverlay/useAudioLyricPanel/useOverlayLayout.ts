@@ -107,7 +107,7 @@ export function useOverlayLayout(options: UseOverlayLayoutOptions) {
       : "shrink-0 rounded-[18px] border border-black/6 bg-white/82 px-2.5 py-2 backdrop-blur-md";
   });
   const titleTextClass = computed(() => {
-    const base = "m-0 min-w-0 truncate text-sm font-semibold leading-6 tracking-wide md:text-base";
+    const base = "min-w-0 truncate text-sm font-semibold leading-none md:text-base";
     if (isDark.value) {
       return options.hasCoverArt.value
         ? `${base} text-white [text-shadow:0_1px_10px_rgba(0,0,0,0.55)]`

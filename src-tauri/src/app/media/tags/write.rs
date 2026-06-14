@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use super::cover::{apply_cover_art_change, decode_cover_art_base64, CoverArtChange};
 use lofty::config::WriteOptions;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
@@ -16,6 +17,9 @@ pub struct AudioTagWriteInput {
     pub album: Option<String>,
     pub lyrics_lrc: Option<String>,
     pub embed_lyrics: bool,
+    pub cover_art_change: CoverArtChange,
+    pub cover_art_data_base64: Option<String>,
+    pub cover_art_mime_type: Option<String>,
 }
 
 pub fn supports_tag_writing(path: &str) -> bool {
@@ -64,6 +68,21 @@ pub fn write_audio_tags(path: &str, input: &AudioTagWriteInput) -> Result<(), St
         apply_lyrics_field(tag, tag_type, input.lyrics_lrc.as_deref());
     }
 
+    if input.cover_art_change != CoverArtChange::None {
+        let cover_bytes = if input.cover_art_change == CoverArtChange::Replace {
+            Some(decode_cover_art_base64(
+                input
+                    .cover_art_data_base64
+                    .as_deref()
+                    .unwrap_or(""),
+                input.cover_art_mime_type.as_deref(),
+            )?)
+        } else {
+            None
+        };
+        apply_cover_art_change(tag, input.cover_art_change, cover_bytes.as_deref())?;
+    }
+
     tagged_file
         .save_to_path(path_buf, WriteOptions::default())
         .map_err(|err| format!("保存标签失败: {err}"))?;
@@ -105,6 +124,7 @@ fn apply_lyrics_field(tag: &mut Tag, tag_type: TagType, value: Option<&str>) {
 #[cfg(test)]
 mod tests {
     use super::{supports_tag_writing, write_audio_tags, AudioTagWriteInput};
+    use crate::app::media::tags::CoverArtChange;
     use lofty::file::TaggedFileExt;
     use lofty::probe::Probe;
     use lofty::tag::ItemKey;
@@ -136,6 +156,9 @@ mod tests {
                 album: None,
                 lyrics_lrc: Some(sample.to_string()),
                 embed_lyrics: true,
+                cover_art_change: CoverArtChange::None,
+                cover_art_data_base64: None,
+                cover_art_mime_type: None,
             },
         )
         .expect("write tags");

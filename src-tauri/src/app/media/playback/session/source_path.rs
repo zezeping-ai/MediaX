@@ -14,6 +14,8 @@ const AUDIO_EXTENSIONS: &[&str] = &[
     "ac3", "dts", "mp2", "mka",
 ];
 
+const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "bmp"];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum MediaFileKind {
     Audio = 0,
@@ -57,6 +59,39 @@ pub fn normalize_local_source_path(path: String) -> MediaResult<String> {
         .unwrap_or(resolved)
         .to_string_lossy()
         .to_string())
+}
+
+/// Normalize a local image path for cover-art import (not playable media validation).
+pub fn normalize_local_image_path(path: String) -> MediaResult<String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(MediaError::invalid_input("图片路径为空"));
+    }
+    let path_buf = parse_local_path(trimmed)?;
+    if !path_buf.is_file() {
+        return Err(MediaError::invalid_input(format!(
+            "图片路径不存在或不是文件: {}",
+            path_buf.display()
+        )));
+    }
+    if !is_supported_image_path(&path_buf) {
+        return Err(MediaError::invalid_input(format!(
+            "不支持的图片格式: {}",
+            path_buf.display()
+        )));
+    }
+    Ok(path_buf
+        .canonicalize()
+        .unwrap_or(path_buf)
+        .to_string_lossy()
+        .to_string())
+}
+
+fn is_supported_image_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.as_str()))
 }
 
 fn resolve_playable_path(path: &Path) -> MediaResult<PathBuf> {
@@ -197,6 +232,46 @@ mod tests {
     use super::*;
     use std::fs;
     use std::io::Write;
+
+    #[test]
+    fn accepts_local_jpeg_for_cover_import() {
+        let root = std::env::temp_dir().join(format!(
+            "mediax-cover-image-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("root");
+        let image = root.join("cover.jpeg");
+        fs::write(&image, b"fake-jpeg").expect("jpeg");
+
+        let resolved = normalize_local_image_path(image.to_string_lossy().to_string())
+            .expect("normalize jpeg");
+        assert!(resolved.ends_with("cover.jpeg"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_non_image_for_cover_import() {
+        let root = std::env::temp_dir().join(format!(
+            "mediax-cover-reject-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("root");
+        let audio = root.join("track.flac");
+        fs::write(&audio, b"fake-flac").expect("flac");
+
+        let err = normalize_local_image_path(audio.to_string_lossy().to_string())
+            .expect_err("reject flac");
+        assert!(err.to_string().contains("不支持的图片格式"));
+
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn remote_url_passes_through_unchanged() {

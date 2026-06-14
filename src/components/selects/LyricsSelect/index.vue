@@ -57,6 +57,9 @@ const theme = useLyricsSelectTheme({
   transparentOverlay: computed(() => props.transparentOverlay),
 });
 
+const triggerInlineStyle = computed(() => theme.triggerStyle.value);
+const menuInlineStyle = computed(() => theme.menuStyle.value);
+
 const searchState = props.mode === "search"
   ? useLyricsSelectSearch({
       query: () => ({
@@ -157,8 +160,9 @@ defineExpose({ reset, resolveSelectedLyrics });
     >
       <button
         type="button"
-        class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[12px] transition disabled:cursor-not-allowed disabled:opacity-60"
+        class="flex w-full items-center gap-2 rounded-lg border border-solid px-2.5 py-1.5 text-left text-[12px] outline-none transition disabled:cursor-not-allowed disabled:opacity-60"
         :class="theme.triggerClass"
+        :style="triggerInlineStyle"
         :disabled="isBusy || (mode === 'search' && !hasOptions)"
         @click="canOpen && toggleOpen()"
       >
@@ -183,11 +187,12 @@ defineExpose({ reset, resolveSelectedLyrics });
 
       <div
         v-if="open && hasOptions"
-        class="absolute top-[calc(100%+0.35rem)] z-50 max-h-52 overflow-y-auto rounded-xl border p-1 backdrop-blur-md scrollbar-none"
+        class="absolute top-[calc(100%+0.35rem)] z-50 max-h-52 overflow-y-auto rounded-xl border border-solid p-1 backdrop-blur-md scrollbar-none"
         :class="[
           theme.menuClass,
           compact ? 'right-0 w-[min(100vw-2.5rem,20rem)]' : 'left-0 w-full min-w-[18rem]',
         ]"
+        :style="menuInlineStyle"
       >
         <LyricsSelectOptionRow
           v-for="(option, index) in options"

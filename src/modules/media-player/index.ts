@@ -24,7 +24,12 @@ export {
   playbackStopSession,
   playbackSyncPosition,
   playbackSearchLyrics,
+  playbackReadAudioCoverArt,
+  playbackReadImageFileForCover,
   playbackWriteAudioMetadata,
+  coverArtPayloadToDataUrl,
+  normalizeAudioCoverArtPayload,
+  type AudioCoverArtPayload,
   type SeekMediaOptions,
 } from "./playbackCommands";
 export {

@@ -104,6 +104,7 @@ const metadataEditor = useAudioMetadataEditor({
   durationSeconds: () => props.playback?.duration_seconds ?? 0,
   lyrics: () => props.lyrics,
   lyricsSource: () => props.lyricsSource,
+  hasCoverArt: () => props.hasCoverArt,
   updatePlaybackSnapshot: (snapshot) => props.updatePlaybackSnapshot(snapshot),
 });
 
@@ -111,12 +112,17 @@ const {
   album: metadataEditorAlbum,
   artist: metadataEditorArtist,
   canEdit: canEditMetadata,
+  coverLoading: metadataEditorCoverLoading,
+  coverMarkedForRemoval: metadataEditorCoverMarkedForRemoval,
+  coverPreviewUrl: metadataEditorCoverPreviewUrl,
   durationSeconds: metadataEditorDurationSeconds,
   embedLyrics: metadataEditorEmbedLyrics,
   lyricsLrc: metadataEditorLyricsLrc,
   lyricsSelectKey: metadataEditorLyricsSelectKey,
   lyricsSource: metadataEditorLyricsSource,
   open: metadataEditorOpen,
+  pickCoverImage: metadataEditorPickCoverImage,
+  removeCoverImage: metadataEditorRemoveCoverImage,
   saveEditor,
   saving: metadataEditorSaving,
   showEditor,
@@ -151,14 +157,14 @@ const {
           <div :class="[headerPanelClass, headerDividerClass, 'relative z-20 overflow-visible']">
             <div class="relative flex min-w-0 items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
-                <div class="flex min-w-0 items-center gap-2">
-                  <p :class="titleTextClass">
+                <div class="flex min-w-0 items-center gap-1.5">
+                  <span :class="titleTextClass">
                     {{ trackTitle }}
-                  </p>
+                  </span>
                   <button
                     v-if="canEditMetadata"
                     type="button"
-                    class="pointer-events-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition hover:opacity-90"
+                    class="pointer-events-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition hover:opacity-90"
                     :class="isDark
                       ? 'border-white/14 bg-black/45 text-white/72 hover:border-white/24'
                       : 'border-black/10 bg-white/78 text-slate-600 hover:border-black/16'"
@@ -266,8 +272,13 @@ const {
       :duration-seconds="metadataEditorDurationSeconds"
       :lyrics-source="metadataEditorLyricsSource"
       :lyrics-select-key="metadataEditorLyricsSelectKey"
+      :cover-loading="metadataEditorCoverLoading"
+      :cover-preview-url="metadataEditorCoverPreviewUrl"
+      :cover-marked-for-removal="metadataEditorCoverMarkedForRemoval"
       :saving="metadataEditorSaving"
       :on-save="saveEditor"
+      :on-pick-cover="metadataEditorPickCoverImage"
+      :on-remove-cover="metadataEditorRemoveCoverImage"
     />
   </div>
 </template>

@@ -29,6 +29,32 @@ export interface SeekMediaOptions {
   requestId?: string;
 }
 
+export interface AudioCoverArtPayload {
+  mime_type: string;
+  data_base64: string;
+}
+
+export function normalizeAudioCoverArtPayload(value: unknown): AudioCoverArtPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const mimeRaw = record.mime_type ?? record.mimeType;
+  const dataRaw = record.data_base64 ?? record.dataBase64;
+  if (typeof dataRaw !== "string" || !dataRaw.trim()) {
+    return null;
+  }
+  const mime_type = typeof mimeRaw === "string" && mimeRaw.trim()
+    ? mimeRaw.trim()
+    : "image/jpeg";
+  return { mime_type, data_base64: dataRaw.trim() };
+}
+
+export function coverArtPayloadToDataUrl(payload: AudioCoverArtPayload): string {
+  const mime = payload.mime_type.trim() || "image/jpeg";
+  return `data:${mime};base64,${payload.data_base64}`;
+}
+
 export function getPlaybackSnapshot() {
   return invokeMediaCommandValidated<MediaSnapshot>("playback_get_snapshot", isMediaSnapshot);
 }
@@ -47,6 +73,25 @@ export function playbackSelectLyricsCandidate(candidateId: string) {
   });
 }
 
+export function playbackReadAudioCoverArt(path: string) {
+  return invokeMediaCommand<unknown>("playback_read_audio_cover_art", { path }).then((value) => {
+    if (value == null) {
+      return null;
+    }
+    return normalizeAudioCoverArtPayload(value);
+  });
+}
+
+export function playbackReadImageFileForCover(path: string) {
+  return invokeMediaCommand<unknown>("playback_read_image_file_for_cover", { path }).then((value) => {
+    const payload = normalizeAudioCoverArtPayload(value);
+    if (!payload) {
+      throw new Error("Invalid cover art payload");
+    }
+    return payload;
+  });
+}
+
 export function playbackWriteAudioMetadata(input: {
   path: string;
   title?: string;
@@ -54,6 +99,9 @@ export function playbackWriteAudioMetadata(input: {
   album?: string;
   lyricsLrc?: string;
   embedLyrics?: boolean;
+  coverArtChange?: "none" | "replace" | "remove";
+  coverArtDataBase64?: string;
+  coverArtMimeType?: string;
 }) {
   return invokeMediaCommandWithRequestIdValidated<MediaSnapshot>(
     "playback_write_audio_metadata",
@@ -65,6 +113,9 @@ export function playbackWriteAudioMetadata(input: {
       album: input.album,
       lyricsLrc: input.lyricsLrc,
       embedLyrics: input.embedLyrics,
+      coverArtChange: input.coverArtChange,
+      coverArtDataBase64: input.coverArtDataBase64,
+      coverArtMimeType: input.coverArtMimeType,
     },
   );
 }
